@@ -1,0 +1,583 @@
+[
+  {
+    "text": "最新进度：本批110个文件已完成扫描和格式检查。报告尚未生成，图表尚未生成。下一步生成本地报告。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "checkedFileCount",
+        "value": 110,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批110个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "86490de34ef1cde05f1edcc5629535b05bf28de93e25db7ba7d3e71de8aff50a"
+      },
+      {
+        "key": "scanCompleted",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批110个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "c100be18167aa001217c0ee993fc461fe8e6b69c8c2e0746a3123aa25d5bb339"
+      },
+      {
+        "key": "reportGenerated",
+        "value": false,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告尚未生成，图表尚未生成。",
+        "verification": "assistant-reported",
+        "id": "14e03944cec998bded72ad729968e1199a7db34d53f7dcab4787d0250300961d"
+      },
+      {
+        "key": "chartGenerated",
+        "value": false,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告尚未生成，图表尚未生成。",
+        "verification": "assistant-reported",
+        "id": "d7d4c4445ba050ca63ae359297f65fa295b301c224684359adfed1e94d4743a7"
+      },
+      {
+        "key": "nextAction",
+        "value": "generate-report",
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "下一步生成本地报告。",
+        "verification": "assistant-reported",
+        "id": "45c705ee16baaae494fd354fb9169dbccb6341f31742001f06488ab532ac5be5"
+      }
+    ]
+  },
+  {
+    "text": "批次 A 已检查110个文件。批次 B checkedFileCount: null。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "checkedFileCount",
+        "value": 110,
+        "scope": "batch:A",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "批次 A 已检查110个文件。",
+        "verification": "assistant-reported",
+        "id": "834650544c2b884b7d03c2fb0f1d26ead487c4d79f88ccba90c7c68b3c83429b"
+      },
+      {
+        "key": "checkedFileCount",
+        "value": null,
+        "scope": "batch:B",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "批次 B checkedFileCount: null。",
+        "verification": "assistant-reported",
+        "id": "429719a24f6db2a8c7469761c8b13097cfbc6df259d7280ebf2d6872d04b251b"
+      }
+    ]
+  },
+  {
+    "text": "报告已生成并保存到 work/report.json，图表已生成并保存到 work/chart.svg。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "reportGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成并保存到 work/report.json，图表已生成并保存到 work/chart.svg。",
+        "verification": "assistant-reported",
+        "id": "c82cf00fcbaae78d64b2fe54cf7bdac4d729b952cab93db4f1f311a254c3f658"
+      },
+      {
+        "key": "chartGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成并保存到 work/report.json，图表已生成并保存到 work/chart.svg。",
+        "verification": "assistant-reported",
+        "id": "7aabd8271f0a0160d03ad092fc4d4ff8c6767e719ee1dbe5a7b6fee99610b358"
+      },
+      {
+        "key": "reportPath",
+        "value": "work/report.json",
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成并保存到 work/report.json，图表已生成并保存到 work/chart.svg。",
+        "verification": "assistant-reported",
+        "id": "0523bb9f66d61b44bde0d2e45f95b5ca6c291b6df5ffc4db6738a1ff3689d71b"
+      },
+      {
+        "key": "chartPath",
+        "value": "work/chart.svg",
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成并保存到 work/report.json，图表已生成并保存到 work/chart.svg。",
+        "verification": "assistant-reported",
+        "id": "4a5f72b5492410b426f4047a093b80a8a8dbe57ff53d371e94746ae1d42969f3"
+      }
+    ]
+  },
+  {
+    "text": "计划生成报告。若报告尚未生成，则下一步生成报告。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": []
+  },
+  {
+    "text": "当前不得提前声称图表已生成或已上传。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "chartGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "当前不得提前声称图表已生成或已上传。",
+        "verification": "assistant-reported",
+        "id": "2ea83786485459417752c68fe6b15500be632794c54f76d41aea177dfbd839df"
+      }
+    ]
+  },
+  {
+    "text": "报告生成后按最新进度更新 reportGenerated=true。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "reportGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告生成后按最新进度更新 reportGenerated=true。",
+        "verification": "assistant-reported",
+        "id": "7d66b1817b66a3a6f15018f2f32c97bfd03978c0be59215ddb043fb0b3d8f541"
+      }
+    ]
+  },
+  {
+    "text": "当前只有 checkedFileCount 的批次关联未知。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "checkedFileCount",
+        "value": null,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "当前只有 checkedFileCount 的批次关联未知。",
+        "verification": "assistant-reported",
+        "id": "82b4f99627974b9c25c2d0088d1899221869064e8d0797c9442ae93a5828adce"
+      }
+    ]
+  },
+  {
+    "text": "最新进度报告：本批110个文件已完成扫描和格式检查；报告尚未生成。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "checkedFileCount",
+        "value": 110,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度报告：本批110个文件已完成扫描和格式检查；",
+        "verification": "assistant-reported",
+        "id": "8b77d63f671db5217273f3d65950d8d6ae71ace004e1334c1323ab726deab44e"
+      },
+      {
+        "key": "scanCompleted",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度报告：本批110个文件已完成扫描和格式检查；",
+        "verification": "assistant-reported",
+        "id": "8e48f5bb2b30af1f7aea7c4936da9f7d8591e91d1ca1dc6b64f8c36ee7006cc4"
+      },
+      {
+        "key": "reportGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度报告：本批110个文件已完成扫描和格式检查；",
+        "verification": "assistant-reported",
+        "id": "34060be941f21f0f8d195c80580deeb24e7916e72ac1b7937e42e5d901f991f3"
+      },
+      {
+        "key": "reportGenerated",
+        "value": false,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告尚未生成。",
+        "verification": "assistant-reported",
+        "id": "78852a28fc64580ce0dfe7d2942561b01c590bb12392a44b15e7d0e97badf40d"
+      }
+    ]
+  },
+  {
+    "text": "也没有图表已生成的证据。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "chartGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "也没有图表已生成的证据。",
+        "verification": "assistant-reported",
+        "id": "798ddc047d9801bc6972c4a0d712053b25cd4be3011aafbc05cf1ef56c3f3b03"
+      }
+    ]
+  },
+  {
+    "text": "```js\ncheckedFileCount=999\n```\n> 报告已生成。\n{\"checkedFileCount\":null}",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": []
+  },
+  {
+    "text": "{\"checkedFileCount\":null}",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": []
+  },
+  {
+    "text": "报告已生成，图表已生成。离线包已完成打包及哈希校验。全部任务完成，没有剩余动作。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "reportGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成，图表已生成。",
+        "verification": "assistant-reported",
+        "id": "c9d174bb627cfb5e41e85c9fe4a386a533fb946a8c22e81ad41050eed8281f6c"
+      },
+      {
+        "key": "chartGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成，图表已生成。",
+        "verification": "assistant-reported",
+        "id": "b392d63f339853d09fa222ac76f979d89bdcda9fe323a32ae30755b60b578586"
+      },
+      {
+        "key": "packageCompleted",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "离线包已完成打包及哈希校验。",
+        "verification": "assistant-reported",
+        "id": "06738b6434429e21564f9413596cbe7b2507d4cd6fe80d382dac7a07c75b7559"
+      },
+      {
+        "key": "nextAction",
+        "value": "none",
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "全部任务完成，没有剩余动作。",
+        "verification": "assistant-reported",
+        "id": "e08a21acbbc218dceb28f802e4e4fe6b9a8aaa4f2940992c52b23e2647157a82"
+      }
+    ]
+  },
+  {
+    "text": "最新进度：本批123个文件已完成扫描和格式检查。报告已生成，图表尚未生成。下一步生成图表。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "checkedFileCount",
+        "value": 123,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批123个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "c858a90622d0eef74ead45aadc5bb644abbe6e4bc4d03ab4121645f978ed5bd1"
+      },
+      {
+        "key": "scanCompleted",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批123个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "23ae85be3129df292811b2a2aab7802ec9022e97ed3e3d13ebb49dab8c7806be"
+      },
+      {
+        "key": "reportGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成，图表尚未生成。",
+        "verification": "assistant-reported",
+        "id": "c69868a33d5d74d49603e510c19cd61bda39bce101d0bf01d408fae190c8d065"
+      },
+      {
+        "key": "chartGenerated",
+        "value": false,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成，图表尚未生成。",
+        "verification": "assistant-reported",
+        "id": "aa013cda30eaa461899789570b1ee5662c441364ed4f543a805b53d3ef50da03"
+      },
+      {
+        "key": "nextAction",
+        "value": "generate-chart",
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "下一步生成图表。",
+        "verification": "assistant-reported",
+        "id": "50519b1a82f0c9be8752578b2709c4b60d3b57602ddf3150bd47ea56932fb7da"
+      }
+    ]
+  },
+  {
+    "text": "最新进度：本批127个文件已完成扫描和格式检查。报告尚未生成，图表尚未生成。下一步生成本地报告。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "checkedFileCount",
+        "value": 127,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批127个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "f41e09b24839fb3a47db0f5e719692ac5349113669dc5ec8d1fc835cc6e94547"
+      },
+      {
+        "key": "scanCompleted",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批127个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "4027100e3526932d288ca0df2e672d5b04b05d2c9b3db7ef9719b78a2cb129e1"
+      },
+      {
+        "key": "reportGenerated",
+        "value": false,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告尚未生成，图表尚未生成。",
+        "verification": "assistant-reported",
+        "id": "14e03944cec998bded72ad729968e1199a7db34d53f7dcab4787d0250300961d"
+      },
+      {
+        "key": "chartGenerated",
+        "value": false,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告尚未生成，图表尚未生成。",
+        "verification": "assistant-reported",
+        "id": "d7d4c4445ba050ca63ae359297f65fa295b301c224684359adfed1e94d4743a7"
+      },
+      {
+        "key": "nextAction",
+        "value": "generate-report",
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "下一步生成本地报告。",
+        "verification": "assistant-reported",
+        "id": "45c705ee16baaae494fd354fb9169dbccb6341f31742001f06488ab532ac5be5"
+      }
+    ]
+  },
+  {
+    "text": "最新进度：本批127个文件已完成扫描和格式检查。报告已生成，图表已生成。离线包已完成打包及哈希校验。全部任务完成，没有剩余动作。不上传。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "checkedFileCount",
+        "value": 127,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批127个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "f41e09b24839fb3a47db0f5e719692ac5349113669dc5ec8d1fc835cc6e94547"
+      },
+      {
+        "key": "scanCompleted",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批127个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "4027100e3526932d288ca0df2e672d5b04b05d2c9b3db7ef9719b78a2cb129e1"
+      },
+      {
+        "key": "reportGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成，图表已生成。",
+        "verification": "assistant-reported",
+        "id": "c9d174bb627cfb5e41e85c9fe4a386a533fb946a8c22e81ad41050eed8281f6c"
+      },
+      {
+        "key": "chartGenerated",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告已生成，图表已生成。",
+        "verification": "assistant-reported",
+        "id": "b392d63f339853d09fa222ac76f979d89bdcda9fe323a32ae30755b60b578586"
+      },
+      {
+        "key": "packageCompleted",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "离线包已完成打包及哈希校验。",
+        "verification": "assistant-reported",
+        "id": "06738b6434429e21564f9413596cbe7b2507d4cd6fe80d382dac7a07c75b7559"
+      },
+      {
+        "key": "nextAction",
+        "value": "none",
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "全部任务完成，没有剩余动作。",
+        "verification": "assistant-reported",
+        "id": "e08a21acbbc218dceb28f802e4e4fe6b9a8aaa4f2940992c52b23e2647157a82"
+      }
+    ]
+  },
+  {
+    "text": "最新进度：本批110个文件已完成扫描和格式检查。报告尚未生成，图表尚未生成。下一步生成本地报告。不上传。",
+    "options": {
+      "seq": 17,
+      "sha256": "synthetic-source-hash"
+    },
+    "facts": [
+      {
+        "key": "checkedFileCount",
+        "value": 110,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批110个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "86490de34ef1cde05f1edcc5629535b05bf28de93e25db7ba7d3e71de8aff50a"
+      },
+      {
+        "key": "scanCompleted",
+        "value": true,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "最新进度：本批110个文件已完成扫描和格式检查。",
+        "verification": "assistant-reported",
+        "id": "c100be18167aa001217c0ee993fc461fe8e6b69c8c2e0746a3123aa25d5bb339"
+      },
+      {
+        "key": "reportGenerated",
+        "value": false,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告尚未生成，图表尚未生成。",
+        "verification": "assistant-reported",
+        "id": "14e03944cec998bded72ad729968e1199a7db34d53f7dcab4787d0250300961d"
+      },
+      {
+        "key": "chartGenerated",
+        "value": false,
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "报告尚未生成，图表尚未生成。",
+        "verification": "assistant-reported",
+        "id": "d7d4c4445ba050ca63ae359297f65fa295b301c224684359adfed1e94d4743a7"
+      },
+      {
+        "key": "nextAction",
+        "value": "generate-report",
+        "scope": "current-work",
+        "seq": 17,
+        "sha256": "synthetic-source-hash",
+        "excerpt": "下一步生成本地报告。",
+        "verification": "assistant-reported",
+        "id": "45c705ee16baaae494fd354fb9169dbccb6341f31742001f06488ab532ac5be5"
+      }
+    ]
+  }
+]

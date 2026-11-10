@@ -1,0 +1,206 @@
+{
+  "source": "最新进度：本批110个文件已完成扫描和格式检查。报告尚未生成，图表尚未生成。下一步生成本地报告。不上传。",
+  "seq": 448,
+  "cases": [
+    {
+      "name": "attribution-report-verb",
+      "text": "最新进度报告：本批110个文件已完成扫描和格式检查；报告尚未生成。",
+      "expectedValid": true
+    },
+    {
+      "name": "report-noun-status",
+      "text": "报告尚未生成。",
+      "expectedValid": true
+    },
+    {
+      "name": "missing-evidence-negation",
+      "text": "也没有图表已生成的证据。",
+      "expectedValid": true
+    },
+    {
+      "name": "missing-evidence-before-comma",
+      "text": "尚未见到报告已写出的证据，也没有图表已生成的证据。",
+      "expectedValid": true
+    },
+    {
+      "name": "explicit-false",
+      "text": "图表尚未生成。",
+      "expectedValid": true
+    },
+    {
+      "name": "genuine-false-to-true",
+      "text": "图表已经生成。",
+      "expectedValid": false
+    },
+    {
+      "name": "genuine-report-false-to-true",
+      "text": "报告已生成。",
+      "expectedValid": false
+    },
+    {
+      "name": "genuine-known-to-unknown",
+      "text": "checkedFileCount=null。",
+      "expectedValid": false
+    },
+    {
+      "name": "genuine-count-conflict",
+      "text": "已检查999个文件。",
+      "expectedValid": false
+    },
+    {
+      "name": "indirect-future-uncertainty",
+      "text": "seq 448 是本段内最新报告，但其后是否已生成图表未知。",
+      "expectedValid": true
+    },
+    {
+      "name": "expanded-negation",
+      "text": "当前不得提前声称图表已生成或已上传。",
+      "expectedValid": true
+    },
+    {
+      "name": "negation-enumerated-objects",
+      "text": "不能据此增加已检查文件数或声称报告、图表已生成。",
+      "expectedValid": true
+    },
+    {
+      "name": "unknown-requirement-not-unknown-state",
+      "text": "是否要求生成图表不明确。",
+      "expectedValid": true
+    },
+    {
+      "name": "future-assignment",
+      "text": "报告生成后按最新进度更新 reportGenerated=true。",
+      "expectedValid": true
+    },
+    {
+      "name": "same-current-count-other-batches-unclear",
+      "text": "当前批次已检查110个文件；历史日志与其他批次的对应关系无法确认。",
+      "expectedValid": true
+    },
+    {
+      "name": "bare-key-other-batch",
+      "text": "seq=448 的“110 个文件”与 seq=438–445 的 700 条 sample 日志是否属于同一批次、最终 `checkedFileCount` 是否还有其他批次，当前无法确认。",
+      "expectedValid": true
+    },
+    {
+      "name": "attribution-real-candidate",
+      "text": "外部最新进度（seq448）报告：本批 110 个文件已完成扫描和格式检查，scanCompleted 为 true；",
+      "expectedValid": true
+    },
+    {
+      "name": "negation-with-known-value",
+      "text": "是否要求生成图表不明确：已知 chartGenerated=false，但没有明确要求必须生成图表。",
+      "expectedValid": true
+    },
+    {
+      "name": "current-requirement-unknown",
+      "text": "当前有效要求中是否要求生成图表不明确。",
+      "expectedValid": true
+    },
+    {
+      "name": "negation-with-source",
+      "text": "不得提前声称图表已生成或已上传（seq448）。",
+      "expectedValid": true
+    },
+    {
+      "name": "negation-then-current",
+      "text": "当前不得提前声称图表已生成，但目前图表已生成。",
+      "expectedValid": false
+    },
+    {
+      "name": "no-evidence-then-claim",
+      "text": "没有图表已生成的证据，但图表已经生成。",
+      "expectedValid": false
+    },
+    {
+      "name": "no-evidence-then-assignment",
+      "text": "没有图表已生成的证据，chartGenerated=true。",
+      "expectedValid": false
+    },
+    {
+      "name": "requirement-question-then-conflict",
+      "text": "是否要求生成图表不明确：已知 chartGenerated=true。",
+      "expectedValid": false
+    },
+    {
+      "name": "future-plan-then-current",
+      "text": "报告生成后按最新进度更新 reportGenerated=true，但报告已生成。",
+      "expectedValid": false
+    },
+    {
+      "name": "future-plan-then-assignment",
+      "text": "报告生成后按最新进度更新 reportGenerated=true，reportGenerated=true。",
+      "expectedValid": false
+    },
+    {
+      "name": "indirect-future-then-current",
+      "text": "seq448是本段内最新报告，但其后是否已生成图表未知，但图表已经生成。",
+      "expectedValid": false
+    },
+    {
+      "name": "indirect-future-old-source",
+      "text": "seq400是本段内最新报告，但其后是否已生成图表未知。",
+      "expectedValid": false
+    },
+    {
+      "name": "indirect-future-current-null",
+      "text": "seq448是本段内最新报告，但其后当前图表状态未知。",
+      "expectedValid": false
+    },
+    {
+      "name": "indirect-future-scalar",
+      "text": "seq448是本段内最新报告，但其后是否有更新未知，chartGenerated=true。",
+      "expectedValid": false
+    },
+    {
+      "name": "field-unknown-explicit",
+      "text": "checkedFileCount 未知。",
+      "expectedValid": false
+    },
+    {
+      "name": "field-unknown-with-backticks",
+      "text": "`checkedFileCount` 未知。",
+      "expectedValid": false
+    },
+    {
+      "name": "reporting-false-count",
+      "text": "进度报告：已检查999个文件。",
+      "expectedValid": false
+    },
+    {
+      "name": "reporting-true-report",
+      "text": "进度报告：报告已生成。",
+      "expectedValid": false
+    },
+    {
+      "name": "requirement-unknown-before-current",
+      "text": "是否要求生成图表不明确，但图表已经完成。",
+      "expectedValid": false
+    },
+    {
+      "name": "no-evidence-before-current-no-comma",
+      "text": "没有图表已生成的证据但当前图表已生成。",
+      "expectedValid": false
+    },
+    {
+      "name": "report-label-complete",
+      "text": "报告：已生成。",
+      "expectedValid": false
+    },
+    {
+      "name": "report-label-incomplete",
+      "text": "报告：尚未生成。",
+      "expectedValid": true
+    },
+    {
+      "name": "report-label-unknown",
+      "text": "报告：生成状态未知。",
+      "expectedValid": false
+    },
+    {
+      "name": "report-label-after-evidence",
+      "text": "没有报告已生成的证据；报告：已生成。",
+      "expectedValid": false
+    }
+  ]
+}

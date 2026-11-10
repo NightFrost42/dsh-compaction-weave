@@ -1,0 +1,35 @@
+import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {randomUUID} from 'node:crypto';import {fileURLToPath,pathToFileURL} from 'node:url';
+import {registerCompactionTool} from '../../lib/proactive.js';
+import {WeaveCompactionEngine} from '../../lib/engine.js';import {resolveConfig} from '../../lib/config.js';import {approxTokens,blocksToText} from '../../lib/meter.js';
+const root=process.env.WEAVE_TEST_ROOT;
+const {Session}=await import(pathToFileURL(path.join(process.env.DSH_TEST_NODE_MODULES,'@deepseek-ai/dsh-session/lib/index.js')));
+const {assertObjectJsonSchema}=await import(pathToFileURL(path.join(process.env.DSH_TEST_NODE_MODULES,'@deepseek-ai/dsh-tools/lib/types/json-schema.js')));
+const report=[],hooks=new Map();let tool;
+const session=Session.create('session-'+randomUUID());
+const add=(role,text,kind='user')=>{const message={id:randomUUID(),role,content:[{type:'text',text}],source:role==='user'?{kind}:role==='system'?{kind:'system-prompt'}:{kind:'model',provider:'p',model:'m'}};return session.append(role+'/message',role==='user'?message:{message,...(role==='assistant'?{turn:0,step:0,stream:[],usage:{inputTokens:0,outputTokens:0}}:{})},{surfaceOp:'append'});};
+add('system','Stable system prefix.');add('user','Timeout must be 35 seconds.');add('user','Timeout must be 55 seconds.');add('user','Reference document '.repeat(2000),'runtime-context');add('assistant','Verified work '.repeat(2000));
+const summary=['Primary Request and Intent','Key Technical Concepts','Files and Code Sections','Errors and Fixes','Problem Solving','All User Messages','Pending Tasks','Work Completed','Context for Continuing Work'].map((h,i)=>`## ${i+1}. ${h}\n${i===0?'Repair compaction.':i===5?'[filled by engine]':'(none)'}`).join('\n\n');
+let calls=0;const ctx={on:(name,fn)=>hooks.set(name,fn),provide(){},logger:{info(){},warn(){}},sessions:{async flush(){}},tokenMeter:{measure(){const nodes=session.surface.nodes.map(seq=>({seq,tokens:approxTokens(blocksToText(session.deriveEventMessage(session.eventAt(seq))?.content))}));return {nodes,totalTokens:nodes.reduce((n,x)=>n+x.tokens,0)};}},llm:{async resolveModelInfo(){return {contextWindow:1000000};},async *stream(){calls++;yield {type:'text-delta',text:summary};yield {type:'finish',kind:'stop'};}}};
+const engine=new WeaveCompactionEngine(ctx,resolveConfig({archiveDir:path.join(root,'test-tmp','native-'+Date.now(),'archive'),language:'en',auto:false}).config);engine.historyToolsAvailable=true;
+const agent={session,options:{provider:'p',model:'m'},runMaintenance:fn=>fn(new AbortController().signal)};
+registerCompactionTool({tools:{register(spec){assertObjectJsonSchema(spec.parameters);tool=spec;}}},engine);
+try {
+ assert.ok(tool,'tool must register');
+ session.append('turn/start',{turn:1});
+ const callId='phase-'+randomUUID();
+ const assistant=session.append('assistant/message',{message:{id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},content:[{type:'tool-call',callId,name:'context_compact',arguments:{reason:'Diagnostics phase complete'}}]},turn:1,step:0,stream:[],usage:{inputTokens:0,outputTokens:0}},{surfaceOp:'append'});
+ const call=session.append('tool/call',{turn:1,step:0,callId,name:'context_compact',arguments:{reason:'Diagnostics phase complete'}});
+ const signal=new AbortController().signal;
+ const queued=await tool.execute({reason:'Diagnostics phase complete'},{agent,signal});
+ assert.equal(JSON.parse(queued).status,'queued');assert.equal(calls,0);
+ const result=session.append('tool/result',{turn:1,step:0,message:{id:randomUUID(),role:'tool',source:{kind:'tool',callId},toolCallId:callId,content:[{type:'text',text:queued}],isError:false}},{surfaceOp:'append',sourceEventSeqs:[call.seq]});
+ await hooks.get('agent/pre-step')({agent,signal,messages:[]},async()=>({kind:'enter'}));
+ const receipt=session.eventAt(session.surface.nodes.at(-1));assert.equal(receipt.data.source.kind,'weave-compaction-status');assert.equal(receipt.data.source.status,'compacted',receipt.data.content[0].text);
+ assert.ok(session.surface.nodes.includes(assistant.seq)&&session.surface.nodes.includes(result.seq),'keep the requesting call/result pair balanced');
+ const cp=session.surface.nodes.map(n=>session.eventAt(n)).find(e=>e.data?.source?.kind==='compact-checkpoint');assert.ok(cp);assert.ok(!JSON.stringify(cp.data.content).includes('35 seconds'));assert.ok(JSON.stringify(cp.data.content).includes('55 seconds'));
+ const archived=await engine.archive.readSpan(session.id,cp.data.source.compactionId);assert.ok(archived.ok);
+ session.append('turn/end',{turn:1,reason:'completed'});
+ const clone=Session.create(session.id,session.snapshotEvents(),session.header);assert.deepEqual(clone.surface.nodes,session.surface.nodes);
+ report.push({name:'native-Session-proactive-tool-prestep-archive-pairing-reopen',pass:true,calls,checkpointBytes:Buffer.byteLength(JSON.stringify(cp.data.content)),sourceEvents:archived.entries.length});
+}catch(e){report.push({name:'native-Session-proactive-tool-prestep-archive-pairing-reopen',pass:false,error:e.message,code:e.code,stack:e.stack});process.exitCode=1;}
+fs.writeFileSync(path.join(root,'validation','native-proactive.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));

@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "measuredDate": "2026-11-11",
+  "timeZone": "Asia/Shanghai",
+  "pluginVersion": "0.3.1-review.35",
+  "model": "DeepSeek V4.1 Flash",
+  "provider": "DeepSeek official API",
+  "usageSource": "Official SSE usage; inputTokens is total input, including cached and cache-creation tokens.",
+  "sampleSelection": {
+    "run": "replication",
+    "generations": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "beforePhase": "warmup-2",
+    "afterPhase": "incremental-1",
+    "successfulCompactions": 4,
+    "incrementalCompactions": 3,
+    "consolidations": 1,
+    "failedCompactionsIncluded": false,
+    "summaryGenerationCostIncluded": false
+  },
+  "formulas": {
+    "inputReductionPercent": "100 * (beforeInputTokens - afterInputTokens) / beforeInputTokens",
+    "meanInputReductionPercent": "arithmetic mean of the four unrounded per-compaction input reduction percentages",
+    "meanInputRetainedPercent": "100 - meanInputReductionPercent",
+    "weightedInputReductionPercent": "100 * (sum(beforeInputTokens) - sum(afterInputTokens)) / sum(beforeInputTokens)"
+  },
+  "samples": [
+    {
+      "generation": 1,
+      "mode": "incremental",
+      "before": {
+        "inputTokens": 58838,
+        "cacheReadTokens": 58624,
+        "uncachedTokens": 214,
+        "cacheCreationTokens": 0
+      },
+      "after": {
+        "inputTokens": 19778,
+        "cacheReadTokens": 7168,
+        "uncachedTokens": 12610,
+        "cacheCreationTokens": 0
+      },
+      "inputReductionPercent": 66.38566912539515,
+      "inputRetainedPercent": 33.614330874604846
+    },
+    {
+      "generation": 2,
+      "mode": "incremental",
+      "before": {
+        "inputTokens": 78559,
+        "cacheReadTokens": 78336,
+        "uncachedTokens": 223,
+        "cacheCreationTokens": 0
+      },
+      "after": {
+        "inputTokens": 32242,
+        "cacheReadTokens": 13696,
+        "uncachedTokens": 18546,
+        "cacheCreationTokens": 0
+      },
+      "inputReductionPercent": 58.95823521175168,
+      "inputRetainedPercent": 41.04176478824832
+    },
+    {
+      "generation": 3,
+      "mode": "incremental",
+      "before": {
+        "inputTokens": 91046,
+        "cacheReadTokens": 90880,
+        "uncachedTokens": 166,
+        "cacheCreationTokens": 0
+      },
+      "after": {
+        "inputTokens": 44812,
+        "cacheReadTokens": 26112,
+        "uncachedTokens": 18700,
+        "cacheCreationTokens": 0
+      },
+      "inputReductionPercent": 50.78092392856358,
+      "inputRetainedPercent": 49.21907607143642
+    },
+    {
+      "generation": 4,
+      "mode": "consolidation",
+      "before": {
+        "inputTokens": 103827,
+        "cacheReadTokens": 103680,
+        "uncachedTokens": 147,
+        "cacheCreationTokens": 0
+      },
+      "after": {
+        "inputTokens": 2187,
+        "cacheReadTokens": 0,
+        "uncachedTokens": 2187,
+        "cacheCreationTokens": 0
+      },
+      "inputReductionPercent": 97.89361148834118,
+      "inputRetainedPercent": 2.106388511658821
+    }
+  ],
+  "aggregates": {
+    "meanInputReductionPercent": 68.5046099385129,
+    "meanInputRetainedPercent": 31.4953900614871,
+    "meanIncrementalInputReductionPercent": 58.70827608857014,
+    "beforeInputTokens": 332270,
+    "afterInputTokens": 99019,
+    "weightedInputReductionPercent": 70.199235561441
+  },
+  "sourceSha256": {
+    "requestLedgerCsv": "46319cddf905f9bed3ebda2ec44f0cbe305ce2bfac1386a2e52bfc16176e3df2",
+    "completeReportMarkdown": "9107f5ef0f73ee4ccc14230439b9616297e7f77243b46217ff9d625056d51a41"
+  }
+}

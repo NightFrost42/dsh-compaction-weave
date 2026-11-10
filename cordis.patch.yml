@@ -1,0 +1,19 @@
+# Register the configuration gate before loading agent presets.
+- insert:
+    - id: compaction-weave-gate
+      name: dsh-compaction-weave
+      config:
+        mode: replace
+        engine: {}
+
+- id: preset-standard
+  inject: [compactionWeaveGate]
+
+- id: preset-ptc
+  inject: [compactionWeaveGate]
+
+- id: preset-minimal
+  inject: [compactionWeaveGate]
+
+- id: preset-cordis
+  inject: [compactionWeaveGate]

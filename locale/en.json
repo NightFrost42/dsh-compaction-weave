@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Weave Context Compaction",
+    "description": "Cache-friendly incremental summaries with requirement and progress retention, history lookup, resumable pages, and failure retries."
+  }
+}

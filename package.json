@@ -1,0 +1,73 @@
+{
+  "name": "dsh-compaction-weave",
+  "version": "0.3.2-rc.1",
+  "type": "module",
+  "main": "lib/index.js",
+  "description": "面向 DeepSeek Harness 的上下文压缩插件：缓存友好的增量摘要、要求与进度保留、历史回查和失败重试。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "compaction",
+    "context",
+    "deepseek",
+    "context-compression",
+    "prompt-caching",
+    "conversation-history"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": "0.2.2-rc.1"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./engine": "./lib/engine-entry.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json",
+    "./command-compact": "./lib/command-compact.js"
+  },
+  "files": [
+    "lib",
+    "locale",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node scripts/test.mjs",
+    "test:host": "node scripts/test.mjs --host",
+    "check": "node scripts/check.mjs",
+    "pack:release": "node scripts/release.mjs",
+    "prepack": "npm run check"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NightFrost42/dsh-compaction-weave.git"
+  },
+  "homepage": "https://github.com/NightFrost42/dsh-compaction-weave#readme",
+  "bugs": {
+    "url": "https://github.com/NightFrost42/dsh-compaction-weave/issues"
+  }
+}

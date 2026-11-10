@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {auditCompaction} from '../lib/audit.js';
+const rows=[];function test(name,fn){try{fn();rows.push({name,pass:true});}catch(e){rows.push({name,pass:false,error:e.message});}}
+const run=(source,candidate)=>auditCompaction({userMessages:[{seq:10,text:source}],summaryText:candidate,checkpointText:source+'\n'+candidate,includeAllConflicts:true});
+const ok=(s,c)=>assert.deepEqual(run(s,c).lost,[]);
+const bad=(s,c)=>assert.ok(run(s,c).lost.length,JSON.stringify({s,c}));
+test('bare-follow-heading-does-not-own-unrelated-prohibition',()=>ok('必须遵守\n不要安装生产。','继续遵守“不安装生产”的边界。'));
+test('quoted-diagnostic-rules-have-independent-polarity',()=>ok('如果语义变了，事务提交逻辑要跟着改。\n不要终止 dsh 进程。','86e8e640 04:44:25：2 条 polarity（“如果语义变了，事务提交逻辑要跟着改”“不要终止 dsh 进程”）'));
+test('rejected-paraphrase-is-evidence-not-fresh-instruction',()=>ok('如果语义变了，事务提交逻辑要跟着改。','源句 seq10「如果语义变了，事务提交逻辑要跟着改」被摘要写成「若语义变了事务提交逻辑要跟着改」，仍被判 polarity。'));
+test('explicit-denied-consent-list-keeps-scope',()=>ok('不要改 profile。\n不要终止进程。','不授权重置 state、终止进程、改 profile 配置或再次安装。'));
+test('quoted-operative-reversal-still-rejected',()=>bad('不要改 profile。','现在执行“改 profile 配置”。'));
+test('diagnostic-label-cannot-hide-following-action',()=>bad('不要改 profile。','1 条 polarity（“不要改 profile”）；接着改 profile 配置。'));
+test('approval-after-contrast-is-not-negated-by-prior-clause',()=>bad('不要改 profile。','不授权终止进程，但可以改 profile。'));
+test('unapproved-option-still-conflicts',()=>bad('不要改 profile。','A. 提高 maxTokens，改 profile 的 engine config。'));
+test('plain-condition-omission-still-conflicts',()=>bad('如果语义变了，事务提交逻辑要跟着改。','事务提交逻辑要跟着改。'));
+test('quoted-source-not-an-exemption-for-reversal',()=>bad('不要终止 dsh 进程。','2 条 polarity（“终止 dsh 进程”“不要改 profile”）'));
+test('explicit-object-of-following-still-a-requirement',()=>bad('必须遵守安装流程。','不要遵守安装流程。'));
+test('bare-not-lower-preserves-prohibition',()=>ok('不要降低 `auditCoverageThreshold` 或默认关审计。','不降低 `auditCoverageThreshold` 或默认关审计。'));
+test('should-not-lower-preserves-prohibition',()=>ok('不要降低 auditCoverageThreshold。','也不应降低 auditCoverageThreshold。'));
+test('not-lower-does-not-authorize-positive-lower',()=>bad('不降低 auditCoverageThreshold。','降低 auditCoverageThreshold。'));
+test('double-negation-is-not-prohibition',()=>bad('不要降低 auditCoverageThreshold。','不应不降低 auditCoverageThreshold。'));
+test('compared-rejected-paraphrase-remains-diagnostic',()=>ok('如果语义变了，事务提交逻辑要跟着改。','关键限制：review.11 仍会把“如果语义变了，事务提交逻辑要跟着改”与“若语义变了事务提交逻辑要跟着改”判成 polarity 冲突，靠替换争议行兜过去，不是审计判对了。'));
+test('comparison-diagnostic-cannot-hide-trailing-command',()=>bad('不要改 profile。','审计把“不要改 profile”与“改 profile”判成 polarity 冲突，接着改 profile。'));
+test('comparison-diagnostic-cannot-hide-trailing-quoted-command',()=>bad('不要改 profile。','审计把“不要改 profile”与“改 profile”判成 polarity 冲突，执行“改 profile”。'));
+console.log(JSON.stringify({passed:rows.filter(x=>x.pass).length,failed:rows.filter(x=>!x.pass).length,results:rows},null,2));if(rows.some(x=>!x.pass))process.exitCode=1;
