@@ -13,10 +13,15 @@ await test('persistent-permission-error-is-bounded-and-preserves-original-error'
 await test('non-windows-permission-error-is-not-masked',()=>{
  const error=Object.assign(new Error('denied'),{code:'EACCES'});assert.throws(()=>atomicReplaceSync('a','b',{platform:'linux',replace:()=>{throw error;},wait:()=>assert.fail()}),e=>e===error);
 });
-await test('real-state-update-retries-transient-sharing-error-without-losing-old-data',()=>{
- const store=new SessionStateStore(fs.mkdtempSync(join(tmpdir(),'weave-atomic-')));store.update('a',s=>({...s,marker:'before'}));
- const rename=fs.renameSync;let blocked=0;fs.renameSync=(from,to)=>{if(to===store.file('a')&&blocked++<2)throw Object.assign(new Error('sharing violation'),{code:'EPERM'});return rename(from,to);};syncBuiltinESMExports();
- try{store.update('a',s=>({...s,marker:'after'}));assert.equal(store.read('a').marker,'after');assert.equal(blocked,3);assert.ok(!fs.existsSync(store.file('a')+'.lock'));}finally{fs.renameSync=rename;syncBuiltinESMExports();}
+await test('real-state-sharing-error-obeys-platform-policy-and-preserves-data',()=>{
+ const store=new SessionStateStore(fs.mkdtempSync(join(tmpdir(),'weave-atomic-')));store.update('a',s=>({...s,marker:'before'}));const before=fs.readFileSync(store.file('a'));
+ const rename=fs.renameSync,error=Object.assign(new Error('sharing violation'),{code:'EPERM'});let blocked=0;fs.renameSync=(from,to)=>{if(to===store.file('a')&&blocked++<2)throw error;return rename(from,to);};syncBuiltinESMExports();
+ try{
+  // Windows retries temporary sharing violations; other platforms preserve and surface permission errors.
+  if(process.platform==='win32'){store.update('a',s=>({...s,marker:'after'}));assert.equal(store.read('a').marker,'after');assert.equal(blocked,3);}
+  else{assert.throws(()=>store.update('a',s=>({...s,marker:'after'})),e=>e===error);assert.deepEqual(fs.readFileSync(store.file('a')),before);assert.equal(blocked,1);}
+  assert.ok(!fs.existsSync(store.file('a')+'.lock'));
+ }finally{fs.renameSync=rename;syncBuiltinESMExports();}
 });
 await test('real-state-permanent-failure-keeps-prior-record-and-releases-own-lock',()=>{
  const store=new SessionStateStore(fs.mkdtempSync(join(tmpdir(),'weave-atomic-')));store.update('a',s=>({...s,marker:'before'}));const before=fs.readFileSync(store.file('a'));

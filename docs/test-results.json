@@ -1,6 +1,6 @@
 {
   "version": "0.3.2-rc.1",
-  "date": "2026-11-10T20:51:57.091Z",
+  "date": "2026-11-10T21:07:51.665Z",
   "node": "v24.19.0",
   "platform": "win32",
   "hostIntegration": true,
@@ -14,7 +14,7 @@
       "timedOut": false,
       "passed": 29,
       "failed": 0,
-      "milliseconds": 7385,
+      "milliseconds": 7313,
       "log": "host-capacity-regressions.mjs.log"
     },
     {
@@ -23,7 +23,7 @@
       "timedOut": false,
       "passed": 58,
       "failed": 0,
-      "milliseconds": 4507,
+      "milliseconds": 4516,
       "log": "host-independent.mjs.log"
     },
     {
@@ -32,7 +32,7 @@
       "timedOut": false,
       "passed": 4,
       "failed": 0,
-      "milliseconds": 1427,
+      "milliseconds": 1503,
       "log": "host-native-cache-test.mjs.log"
     },
     {
@@ -41,7 +41,7 @@
       "timedOut": false,
       "passed": 1,
       "failed": 0,
-      "milliseconds": 179,
+      "milliseconds": 204,
       "log": "host-native-host.mjs.log"
     },
     {
@@ -50,7 +50,7 @@
       "timedOut": false,
       "passed": 1,
       "failed": 0,
-      "milliseconds": 188,
+      "milliseconds": 192,
       "log": "host-native-proactive.mjs.log"
     },
     {
@@ -59,7 +59,7 @@
       "timedOut": false,
       "passed": 15,
       "failed": 0,
-      "milliseconds": 169,
+      "milliseconds": 199,
       "log": "unit-atomic-replace.mjs.log"
     },
     {
@@ -68,7 +68,7 @@
       "timedOut": false,
       "passed": 106,
       "failed": 0,
-      "milliseconds": 108,
+      "milliseconds": 142,
       "log": "unit-audit-conditions.mjs.log"
     },
     {
@@ -77,7 +77,7 @@
       "timedOut": false,
       "passed": 8,
       "failed": 0,
-      "milliseconds": 223,
+      "milliseconds": 264,
       "log": "unit-audit-diagnostics.mjs.log"
     },
     {
@@ -95,7 +95,7 @@
       "timedOut": false,
       "passed": 57,
       "failed": 0,
-      "milliseconds": 127,
+      "milliseconds": 175,
       "log": "unit-audit-records.mjs.log"
     },
     {
@@ -104,7 +104,7 @@
       "timedOut": false,
       "passed": 12,
       "failed": 0,
-      "milliseconds": 110,
+      "milliseconds": 128,
       "log": "unit-audit-release.mjs.log"
     },
     {
@@ -113,7 +113,7 @@
       "timedOut": false,
       "passed": 68,
       "failed": 0,
-      "milliseconds": 117,
+      "milliseconds": 135,
       "log": "unit-audit-scope.mjs.log"
     },
     {
@@ -122,7 +122,7 @@
       "timedOut": false,
       "passed": 72,
       "failed": 0,
-      "milliseconds": 122,
+      "milliseconds": 137,
       "log": "unit-audit-structure.mjs.log"
     },
     {
@@ -131,7 +131,7 @@
       "timedOut": false,
       "passed": 16,
       "failed": 0,
-      "milliseconds": 215,
+      "milliseconds": 207,
       "log": "unit-automatic-block.mjs.log"
     },
     {
@@ -140,7 +140,7 @@
       "timedOut": false,
       "passed": 11,
       "failed": 0,
-      "milliseconds": 267,
+      "milliseconds": 289,
       "log": "unit-cache-range-budget.mjs.log"
     },
     {
@@ -149,7 +149,7 @@
       "timedOut": false,
       "passed": 24,
       "failed": 0,
-      "milliseconds": 454,
+      "milliseconds": 458,
       "log": "unit-command-heartbeat.mjs.log"
     },
     {
@@ -158,7 +158,7 @@
       "timedOut": false,
       "passed": 12,
       "failed": 0,
-      "milliseconds": 121,
+      "milliseconds": 148,
       "log": "unit-constraint-scope.mjs.log"
     },
     {
@@ -167,7 +167,7 @@
       "timedOut": false,
       "passed": 18,
       "failed": 0,
-      "milliseconds": 107,
+      "milliseconds": 109,
       "log": "unit-continuation-audit-regressions.mjs.log"
     },
     {
@@ -176,7 +176,7 @@
       "timedOut": false,
       "passed": 10,
       "failed": 0,
-      "milliseconds": 2801,
+      "milliseconds": 3151,
       "log": "unit-continuation-budget-failures.mjs.log"
     },
     {
@@ -185,7 +185,7 @@
       "timedOut": false,
       "passed": 8,
       "failed": 0,
-      "milliseconds": 3182,
+      "milliseconds": 3175,
       "log": "unit-continuation-preflight.mjs.log"
     },
     {
@@ -194,7 +194,7 @@
       "timedOut": false,
       "passed": 3,
       "failed": 0,
-      "milliseconds": 1607,
+      "milliseconds": 1827,
       "log": "unit-continuation-process-recovery.mjs.log"
     },
     {
@@ -203,7 +203,7 @@
       "timedOut": false,
       "passed": 25,
       "failed": 0,
-      "milliseconds": 6432,
+      "milliseconds": 7014,
       "log": "unit-continuation-progress.mjs.log"
     },
     {
@@ -212,7 +212,7 @@
       "timedOut": false,
       "passed": 15,
       "failed": 0,
-      "milliseconds": 2002,
+      "milliseconds": 2131,
       "log": "unit-continuation-request-accounting.mjs.log"
     },
     {
@@ -221,7 +221,7 @@
       "timedOut": false,
       "passed": 39,
       "failed": 0,
-      "milliseconds": 7016,
+      "milliseconds": 7732,
       "log": "unit-continuation-resume-engine.mjs.log"
     },
     {
@@ -230,7 +230,7 @@
       "timedOut": false,
       "passed": 17,
       "failed": 0,
-      "milliseconds": 375,
+      "milliseconds": 348,
       "log": "unit-continuation-storage.mjs.log"
     },
     {
@@ -239,7 +239,7 @@
       "timedOut": false,
       "passed": 37,
       "failed": 0,
-      "milliseconds": 11512,
+      "milliseconds": 11486,
       "log": "unit-continuation.mjs.log"
     },
     {
@@ -248,7 +248,7 @@
       "timedOut": false,
       "passed": 17,
       "failed": 0,
-      "milliseconds": 411,
+      "milliseconds": 465,
       "log": "unit-failure-diagnostics.mjs.log"
     },
     {
@@ -257,7 +257,7 @@
       "timedOut": false,
       "passed": 15,
       "failed": 0,
-      "milliseconds": 4513,
+      "milliseconds": 4557,
       "log": "unit-memory-engine.mjs.log"
     },
     {
@@ -266,7 +266,7 @@
       "timedOut": false,
       "passed": 49,
       "failed": 0,
-      "milliseconds": 191,
+      "milliseconds": 134,
       "log": "unit-memory-policy.mjs.log"
     },
     {
@@ -275,7 +275,7 @@
       "timedOut": false,
       "passed": 12,
       "failed": 0,
-      "milliseconds": 143,
+      "milliseconds": 101,
       "log": "unit-minimum-reduction.mjs.log"
     },
     {
@@ -284,7 +284,7 @@
       "timedOut": false,
       "passed": 17,
       "failed": 0,
-      "milliseconds": 175,
+      "milliseconds": 143,
       "log": "unit-proactive.mjs.log"
     },
     {
@@ -293,7 +293,7 @@
       "timedOut": false,
       "passed": 6,
       "failed": 0,
-      "milliseconds": 895,
+      "milliseconds": 747,
       "log": "unit-progress-engine.mjs.log"
     },
     {
@@ -302,7 +302,7 @@
       "timedOut": false,
       "passed": 36,
       "failed": 0,
-      "milliseconds": 158,
+      "milliseconds": 127,
       "log": "unit-progress-facts.mjs.log"
     },
     {
@@ -311,7 +311,7 @@
       "timedOut": false,
       "passed": 47,
       "failed": 0,
-      "milliseconds": 115,
+      "milliseconds": 94,
       "log": "unit-progress-release.mjs.log"
     },
     {
@@ -320,7 +320,7 @@
       "timedOut": false,
       "passed": 16,
       "failed": 0,
-      "milliseconds": 114,
+      "milliseconds": 92,
       "log": "unit-progress-source-compatibility.mjs.log"
     },
     {
@@ -329,7 +329,7 @@
       "timedOut": false,
       "passed": 25,
       "failed": 0,
-      "milliseconds": 189,
+      "milliseconds": 157,
       "log": "unit-reconstruct.mjs.log"
     },
     {
@@ -338,7 +338,7 @@
       "timedOut": false,
       "passed": 31,
       "failed": 0,
-      "milliseconds": 135,
+      "milliseconds": 109,
       "log": "unit-requirement-lifecycle.mjs.log"
     },
     {
@@ -347,7 +347,7 @@
       "timedOut": false,
       "passed": 12,
       "failed": 0,
-      "milliseconds": 318,
+      "milliseconds": 297,
       "log": "unit-retry-settings.mjs.log"
     },
     {
@@ -356,7 +356,7 @@
       "timedOut": false,
       "passed": 147,
       "failed": 0,
-      "milliseconds": 47526,
+      "milliseconds": 47283,
       "log": "unit-run.mjs.log"
     },
     {
@@ -365,7 +365,7 @@
       "timedOut": false,
       "passed": 22,
       "failed": 0,
-      "milliseconds": 149,
+      "milliseconds": 135,
       "log": "unit-smoke.mjs.log"
     },
     {
@@ -374,7 +374,7 @@
       "timedOut": false,
       "passed": 46,
       "failed": 0,
-      "milliseconds": 156,
+      "milliseconds": 149,
       "log": "unit-source-cache-regressions.mjs.log"
     },
     {
@@ -383,7 +383,7 @@
       "timedOut": false,
       "passed": 17,
       "failed": 0,
-      "milliseconds": 126,
+      "milliseconds": 114,
       "log": "unit-source-provenance.mjs.log"
     },
     {
@@ -392,7 +392,7 @@
       "timedOut": false,
       "passed": 8,
       "failed": 0,
-      "milliseconds": 146,
+      "milliseconds": 127,
       "log": "unit-source-recovery.mjs.log"
     },
     {
@@ -401,7 +401,7 @@
       "timedOut": false,
       "passed": 9,
       "failed": 0,
-      "milliseconds": 5161,
+      "milliseconds": 5155,
       "log": "unit-summary-dispatch-deadline.mjs.log"
     },
     {
@@ -410,7 +410,7 @@
       "timedOut": false,
       "passed": 35,
       "failed": 0,
-      "milliseconds": 10127,
+      "milliseconds": 10125,
       "log": "unit-summary-progress.mjs.log"
     },
     {
@@ -419,7 +419,7 @@
       "timedOut": false,
       "passed": 4,
       "failed": 0,
-      "milliseconds": 119,
+      "milliseconds": 102,
       "log": "unit-summary-projection-budget.mjs.log"
     },
     {
@@ -428,7 +428,7 @@
       "timedOut": false,
       "passed": 7,
       "failed": 0,
-      "milliseconds": 637,
+      "milliseconds": 597,
       "log": "unit-summary-range-search.mjs.log"
     },
     {
@@ -437,7 +437,7 @@
       "timedOut": false,
       "passed": 40,
       "failed": 0,
-      "milliseconds": 207,
+      "milliseconds": 193,
       "log": "unit-summary-retry.mjs.log"
     },
     {
@@ -446,7 +446,7 @@
       "timedOut": false,
       "passed": 23,
       "failed": 0,
-      "milliseconds": 5149,
+      "milliseconds": 5151,
       "log": "unit-summary-timeout.mjs.log"
     },
     {
@@ -455,7 +455,7 @@
       "timedOut": false,
       "passed": 13,
       "failed": 0,
-      "milliseconds": 112,
+      "milliseconds": 108,
       "log": "unit-work-report.mjs.log"
     }
   ],
@@ -514,7 +514,7 @@
     "scripts/files.mjs": "d7fbe41c2d9ae52776af3302c53b53fafaa867966a1e01a1d2111622be8d7f80",
     "scripts/release.mjs": "38681d6390f1d1f100608aaa5ce5c363675ab424ed3e7f536ed778a414887c90",
     "scripts/test.mjs": "df293f5f2e0525c33b4dd130358e74db7e91a36bcc8674d7c7f2cdd675870931",
-    "test/atomic-replace.mjs": "1490d22b8f8c70a810f08980bdc8864d9ab3e683f4413b68bd7938379ca4f5ce",
+    "test/atomic-replace.mjs": "76fe694752675207898c0ce05225608fe63f97269830d2cd14302d7c1cc340a7",
     "test/audit-conditions.mjs": "1b867d2f4b585c4e8fe4ccd1ffcf785308c39f419c0e6597e7c4e633d4533a6f",
     "test/audit-corpus.json": "287608a0e2e76dfce127779f955aa857f7ca7bdd2fc5cde42c718f3327913ce2",
     "test/audit-diagnostics.mjs": "85a8dca4de783d4dde77339ac31b10ab47d421e66d28a23dea8b3a84e56aad4c",

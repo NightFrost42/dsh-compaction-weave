@@ -17,7 +17,7 @@ A context-compaction plugin for DeepSeek Harness that keeps long conversations f
 
 Incremental compaction · Prefix reuse · Requirement retention · History lookup · Automatic retries
 
-[Install](#installation) · [Quick start](#quick-start) · [Configuration](docs/en/configuration.md) · [Test results](docs/en/testing.md) · [Changelog](CHANGELOG.md)
+[Install](#installation) · [Quick start](#quick-start) · [Configuration](docs/en/configuration.md) · [Test results](docs/en/testing.md) · [Report an issue](https://github.com/NightFrost42/dsh-compaction-weave/issues/new/choose) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -187,7 +187,7 @@ npm run pack:release
 
 Test reports go to `.local/`; release artifacts go to `dist/`. GitHub Actions runs offline tests, project checks, and packaging checks on Windows and Linux.
 
-[Issues](https://github.com/NightFrost42/dsh-compaction-weave/issues) and pull requests are welcome. Include reproduction steps, error codes, and the relevant diagnostic details when reporting a problem.
+Issues and pull requests are welcome to improve compaction and continuity in long conversations.
 
 ## License
 
