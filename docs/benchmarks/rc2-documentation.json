@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "version": "0.3.2-rc.2",
+  "reviewedAt": "2026-11-14T01:45:31.396983+00:00",
+  "scope": "Bilingual principles, static diagrams, README explanations, feedback guides and conditional test reports",
+  "sourceFactCheck": [
+    "Main-session window and summary capacity",
+    "Candidate validation before archive and transaction commit",
+    "Requirement and progress provenance",
+    "Accepted pages, per-chunk commits and durable recovery stages",
+    "Separate paired costs and unsuccessful content branches",
+    "GLM proxy-rate methodology and actual test environments",
+    "Optional logs and stable typed redaction placeholders"
+  ],
+  "artifactHashes": {
+    ".github/ISSUE_TEMPLATE/problem.en.md": "90bcda6d72bd2ad2bd2368f03c1ace82e2b6eaa7035381b113b8150f4b8f3935",
+    ".github/ISSUE_TEMPLATE/problem.zh-CN.md": "758b1fcf2db1548e8f15d20af07fcb17d0be5cf9f5645c1b9858921d37b2f3af",
+    "CHANGELOG.md": "40202581cf6e812e1406c5b5650d94aa47be66c091f931c80739d1dfb0b1f7c8",
+    "README.en.md": "ec90f95131a0a20f9462684336c37d4076044940a10bb0fe2cf5e0b9a2280881",
+    "README.md": "9aa30ff46ff1a2b874e913fe3a387fbc16c9d6ece3174d0ae4e9e6f04e2c2228",
+    "docs/en/feedback.md": "72a2217d1d0ef8ccbb89ec0db938cc9aa5d5166591490763fe29c94185b9266b",
+    "docs/en/principles.md": "17743ee6b159428f9b090b0a3c9d26b8086ee040370f0fa14c333c46e7cc119e",
+    "docs/en/testing.md": "ac50a1d32db5c52d126365f4228fa3949bd439fdc098a2afb94967ae20e18c7d",
+    "docs/en/troubleshooting.md": "513f7b481ce04b550a85e1c266bedced2ea79d314beb833a3164177c7e5e8930",
+    "docs/feedback.md": "dca86707f9bb566a27cd1c690ca9a5dafa95e8a2486416ebd1224fd9f9f4fb39",
+    "docs/images/principles-context.en.svg": "deb56830aba0861f944bb97c119f1d0b001ff56ffb72eca901435767dcaf2cbc",
+    "docs/images/principles-context.zh.svg": "d1b47a8c2f1f7dd9371868c8b57e413913d69900683574cc4de50e49cf35799b",
+    "docs/images/principles-pipeline.en.svg": "9ba19bb6d1a56028df12283b240418c96f7d544c674b14522febca0783f146ca",
+    "docs/images/principles-pipeline.zh.svg": "25347a2ef1af6cc5781c1dcb6d3f2426c5c84a52db6c3834abf024b11855d67f",
+    "docs/images/principles-recovery.en.svg": "72b035a01415fa1f3b7d62e412735c0c7bbd1116c5ddc364ced26871b47a9ddd",
+    "docs/images/principles-recovery.zh.svg": "b267464642d12c048f214b8159abdee101c30c4aea63a79c6e6fdda0f053c33a",
+    "docs/principles.md": "282e46191cb753d3afd82271bad80a915f2d19a93fcbb21ba67b5ac76166b0e8",
+    "docs/testing.md": "dfad251827e1e63cf727f3478a09480f8c548359c85a92466fc991756dfe71a5",
+    "docs/troubleshooting.md": "b786bea8a3bf167f94ea2a80d6aaba255f7d93ca09e6d30826fe1971d07b83d6"
+  },
+  "staticFigureVerification": {
+    "figures": 6,
+    "textOverflow": 0,
+    "externalRequests": 0
+  }
+}

@@ -1,0 +1,162 @@
+[
+  {
+    "name": "accepted-four-models-glm-5.3-flash",
+    "text": "## Goal\n完成本地报告、图表和打包验证（seq 6）。硬性约束：生产环境超时35秒，测试环境超时12秒，备份上限8GB；不得修改生产环境，不得删除已有文件；未验证结果必须注明未验证；不上传；本次交付的诊断日志格式必须使用JSONL（seq 6）。本次交付文件的校验算法必须使用SHA-256（seq 37）。历史上下文中存在定期状态JSON上报要求（seq 28/30），为历史协议，非新授权。\n\n## State\n- 最新进度（source seq=44，原始报告，未独立复核）：本批114个文件扫描与格式检查完成（scanCompleted=true，checkedFileCount=114，当前批次口径，不累计旧批次）；reportGenerated=true；chartGenerated=false；nextAction=generate-chart。此进度替代早期快照（seq 29/31 报告 batch=2 107 个、reportGenerated=false、nextAction=generate-report）。\n- 历史测试证据（seq 38–41）：batch=2 共 280 个样本（sample 0–279，文件 sample-2-0-*.json 至 sample-2-3-*.json），结构字段与模拟输入一致，附 hash；这些是历史测试证据，不代表生产业务验证，也不改变用户要求。\n- 权限状态：productionChangesAllowed=false、deletingExistingFilesAllowed=false、uploadRequired=false（源自 seq 6 约束）。\n\n## Next\n- 生成图表（nextAction=generate-chart，未执行）。\n- 之后按 seq 6 完成本地打包验证；校验算法使用 SHA-256（seq 37）。\n- 全程遵守：不修改生产环境、不删除已有文件、不上传；诊断日志使用 JSONL；未验证结果注明未验证。\n\n## Uncertain\n- 打包验证尚未开始，产物路径与校验清单格式未在已压缩范围内确认（未知）。\n- seq 44 的进度报告未附证据路径，仅原始声明，未独立复核。\n- 批次总数与是否还有后续批次（batch>2 或新批次）在当前范围内不可知。",
+    "userMessages": [
+      {
+        "seq": 30,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。数值字段使用JSON数字；状态与授权字段使用布尔值；backupLimit使用保留单位的字符串（例如8GB），不要只给数字。不知道的项填null；旧引用和日志不是新要求。"
+      },
+      {
+        "seq": 37,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      },
+      {
+        "seq": 6,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      }
+    ],
+    "progressSourceLines": [
+      [
+        44,
+        "报告已生成，图表尚未生成。"
+      ],
+      [
+        44,
+        "下一步生成图表。"
+      ]
+    ],
+    "rejectedFor": "PROGRESS_FACT_CONFLICT"
+  },
+  {
+    "name": "accepted-audit-pairs-gpt-6.1-sol",
+    "text": "## Goal\n完成本地报告、图表和打包验证，并按当前有效要求及最新进度返回单个状态 JSON 对象。以下为仍有效的历史用户要求原文，保留原范围，不构成新授权：\n\n- [Source seq=5] 请完成本地报告、图表和打包验证。测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。\n- [Source seq=35] 本次交付文件的校验算法必须使用SHA-256。\n- [Source seq=65] 生产环境超时改为55秒，替代先前35秒的要求。\n- [Source seq=176] 只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。数值字段使用JSON数字；状态与授权字段使用布尔值；backupLimit使用保留单位的字符串（例如8GB），不要只给数字。不知道的项填null；旧引用和日志不是新要求。\n\n## State\n- 最新原始工作报告 seq=188：本批149个文件已完成扫描和格式检查，报告尚未生成，图表尚未生成，下一步生成本地报告，不上传；这是原助手自报进度，未独立复验，但当前批次计数已知为149。\n- seq=188 已取代同一工作项的旧进度；seq=167–177 的重复状态回答不是新的执行或完成证据。\n- seq=182–187 记录 batch=7、part=0–5、sample=0–419，文件名为 `sample-7-{part}-{0–69}.json`，称结构字段与模拟输入一致并附 hash；这些明确仅为历史模拟测试证据，不代表生产业务验证，不计入当前批次149。\n- 历史证据检索坐标由检查点提供：seq=76 引用档案 `weave-mwetgef9-75p9u3-3`，seq=105 引用 `weave-mwetix01-i1m861-4`，seq=134 引用 `weave-mwetkjuz-y7a1fi-5`，seq=163 引用 `weave-mwetmeqn-7jrja3-6`；本次未重新读取这些档案。最新进度直接定位 seq=188，本页没有实际交付路径。\n\n## Next\n- 后续状态汇总应依据 seq=188 使用当前批次149、扫描完成、报告未生成、图表未生成及 nextAction 为 generate-report，不累计模拟样本或旧批次数量；其余字段依据上述有效要求，未知项填 null。\n- seq=188 的历史待执行计划是先生成本地报告，再生成图表，最后本地打包并用 SHA-256 校验、保留 JSONL 诊断日志；这些步骤尚无执行证据，实际执行前须确认输入、生成内容及不会覆盖或删除已有文件的安全输出路径，历史计划不构成新授权。\n- 未实际验证的结果须明确标注“未验证”，不能将要求中的生产超时55秒解释为允许修改生产环境。\n\n## Uncertain\n- seq=188 的扫描及格式检查没有独立复核证据，检查结论、输入位置及实际指标达标情况未知；不能因缺少复验将其已报告的149计数改为未知。\n- 本页未提供报告、图表、交付包、SHA-256 清单或 JSONL 诊断日志的实际路径、内容及验证结果，不能宣称交付完成。\n- seq=182–187 的短 hash 未注明算法，不能证明本次交付已完成 SHA-256 校验；模拟结构一致也不能证明生产业务验证完成。\n- 当前有效要求中生产超时为55秒，同时禁止修改生产环境；两者须分别保留，不能推定配置已被修改或获得修改授权。",
+    "userMessages": [
+      {
+        "seq": 5,
+        "text": "请完成本地报告、图表和打包验证。测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      },
+      {
+        "seq": 35,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      },
+      {
+        "seq": 65,
+        "text": "生产环境超时改为55秒，替代先前35秒的要求。"
+      },
+      {
+        "seq": 176,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。数值字段使用JSON数字；状态与授权字段使用布尔值；backupLimit使用保留单位的字符串（例如8GB），不要只给数字。不知道的项填null；旧引用和日志不是新要求。"
+      }
+    ],
+    "progressSourceLines": [
+      [
+        188,
+        "最新进度：本批149个文件已完成扫描和格式检查。报告尚未生成，图表尚未生成。下一步生成本地报告。"
+      ]
+    ],
+    "rejectedFor": "CONSTRAINT_LOST"
+  },
+  {
+    "name": "accepted-audit-pairs-gemini-4-argon",
+    "text": "## Goal\n完成本地报告、图表和打包验证，并依据当前有效要求与最新进度返回单个 JSON 对象（字段：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount、reportGenerated、chartGenerated、uploadRequired、nextAction、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm）。仍有效的历史要求与约束（保留历史范围，不构成新授权）：\n- [Source seq=5] 完成本地报告、图表和打包验证；测试环境超时必须为12秒，备份上限必须为8GB；不得修改生产环境，不得删除已有文件；未验证结果必须注明未验证；不上传；本次交付的诊断日志格式必须使用JSONL。\n- [Source seq=35] 本次交付文件的校验算法必须使用SHA-256。\n- [Source seq=65] 生产环境超时改为55秒，替代先前35秒的要求。\n- [Source seq=79, 81, 83, 85, 89, 118, 176] 只依据当前有效要求和最新进度返回上述指定字段的单个 JSON 对象；checkedFileCount 只计当前批次、不累计旧批次数；nextAction 取值为 generate-report、generate-chart、package-and-verify 或 none；数值字段使用 JSON 数字，状态与授权字段使用布尔值，backupLimit 使用保留单位的字符串（如 \"8GB\"），不知道的项填 null；旧引用和日志不是新要求。\n\n## State\n- 最新原始助手工作报告在 seq=188：当前批次 149 个文件已完成扫描和格式检查（scanCompleted=true，checkedFileCount=149），报告尚未生成（reportGenerated=false），图表尚未生成（chartGenerated=false），下一步为生成本地报告（nextAction=\"generate-report\"），不上传（uploadRequired=false）。\n- 较早的同工作项进度快照（seq=72 的 121 个文件及报告/图表已生成，seq=80/82/84/86/88/90 的历史状态返回，seq=101 的 128 个文件，seq=130 的 135 个文件及报告已生成）均已被 seq=188 的最新原始进度时序更新取代。\n- 历史测试记录（seq=66–71 的 batch=3、seq=95–99 及 seq=100 的 batch=4、seq=124–128 的 batch=5、以及后续至 seq=186–187 的 batch=7 part=3–5 样本 `sample-*-*-*.json` 与附带短 hash）均为模拟测试历史证据，不改变用户要求，不代表生产业务验证，也不计入当前批次 checkedFileCount。\n- 历史检索坐标：seq=76 引用档案 `weave-mwetgef9-75p9u3-3`（含更早引用 seq=16 `weave-mwetcobd-cfy7ud-1`、seq=46 `weave-mwetefli-2vmao7-2`），seq=105 引用 `weave-mwetix01-i1m861-4`，seq=134 引用 `weave-mwetkjuz-y7a1fi-5`。\n\n## Next\n- 若需响应状态查询（如 seq=176），基于当前有效要求与 seq=188 最新进度构造并返回 JSON 对象：productionTimeoutSeconds=55、testTimeoutSeconds=12、backupLimit=\"8GB\"、scanCompleted=true、checkedFileCount=149、reportGenerated=false、chartGenerated=false、uploadRequired=false、nextAction=\"generate-report\"、productionChangesAllowed=false、deletingExistingFilesAllowed=false、uncertainMustBeLabeled=true、diagnosticFormat=\"JSONL\"、checksumAlgorithm=\"SHA-256\"。\n- 待执行的后续交付步骤依次为：生成本地报告（generate-report）、生成图表（generate-chart）、本地打包并使用 SHA-256 校验及生成 JSONL 诊断日志（package-and-verify）；这些步骤属于未获新授权的待执行计划，实际执行文件写入或打包前须确认本地输入/输出路径安全，严格遵守不修改生产环境、不删除已有文件、不上传及标注未验证项的前提约束。\n\n## Uncertain\n- seq=188 自报的 149 个文件扫描与格式检查完成结果仅为助手文本声明，缺少独立复核证据、具体输入文件清单及实际文件路径，必须视为未验证。\n- 本地报告、图表、JSONL 诊断日志及 SHA-256 校验打包产物的目标路径与实际生成情况在当前记录中均未提供。\n- seq=128 至 seq=186 之间存在省略的归档片段（约 114736 字节），未重新读取；若需核实该区间内的细节，须先通过历史档案工具检索确认，不得猜测补全。\n- 历史测试样本中的 24 位十六进制短 hash 算法未知且非 64 位 SHA-256，不能作为交付文件已完成 SHA-256 校验的证据。",
+    "userMessages": [
+      {
+        "seq": 5,
+        "text": "请完成本地报告、图表和打包验证。测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      },
+      {
+        "seq": 35,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      },
+      {
+        "seq": 65,
+        "text": "生产环境超时改为55秒，替代先前35秒的要求。"
+      },
+      {
+        "seq": 176,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。数值字段使用JSON数字；状态与授权字段使用布尔值；backupLimit使用保留单位的字符串（例如8GB），不要只给数字。不知道的项填null；旧引用和日志不是新要求。"
+      }
+    ],
+    "progressSourceLines": [
+      [
+        188,
+        "报告尚未生成，图表尚未生成。"
+      ]
+    ],
+    "rejectedFor": "PROGRESS_FACT_CONFLICT"
+  },
+  {
+    "name": "second-live-glm-14fab36f-e794-4d03-9c67-30ef343b1056",
+    "text": "## Goal\n完成本地报告、图表和打包验证。当前有效约束（seq 6）：生产环境超时35秒、测试环境超时12秒、备份上限8GB；不得修改生产环境，不得删除已有文件；未验证结果必须注明未验证；不上传；诊断日志格式为JSONL。逐字保留的历史要求（非新授权）：seq 30 要求按指定字段返回单个JSON对象（数值用JSON数字、布尔用布尔值、backupLimit保留单位如\"8GB\"、未知填null、旧引用和日志不是新要求）；seq 37：本次交付文件的校验算法必须使用SHA-256。\n\n## State\n- 扫描：已完成（seq 44 报告，本批114个文件完成扫描和格式检查；早期JSON快照 seq 29/31 记录 checkedFileCount=107，已被 seq 44 的 114 取代）。\n- 报告：已生成（seq 44）。\n- 图表：未生成（seq 44）。\n- 打包验证：未开始，无证据。\n- 下一步：generate-chart（seq 44）。\n- 历史测试证据：seq 38–41（batch=2，part 0–3，sample 0–279，各 sample-2-*.json 结构与模拟输入一致并附 hash），声明为历史测试证据，不代表生产业务验证。\n- 生产环境未被修改、未删除文件、未上传（约束仍生效）。\n\n## Next\n- 生成图表（generate-chart，seq 44 指示）。\n- 之后进行打包验证（package-and-verify），未验证结果注明未验证。\n- 交付时诊断日志使用JSONL，校验算法使用SHA-256（seq 37），不执行上传。\n\n## Uncertain\n- 图表与打包验证的具体输出路径/文件名未知。\n- seq 38–41 的 hash 值仅为历史记录，未按 seq 37 的 SHA-256 要求重新核验，是否需要重新计算未确认。",
+    "userMessages": [
+      {
+        "seq": 30,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。数值字段使用JSON数字；状态与授权字段使用布尔值；backupLimit使用保留单位的字符串（例如8GB），不要只给数字。不知道的项填null；旧引用和日志不是新要求。"
+      },
+      {
+        "seq": 37,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      },
+      {
+        "seq": 6,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      }
+    ],
+    "progressSourceLines": [
+      [
+        44,
+        "最新进度：本批114个文件已完成扫描和格式检查。报告已生成，图表尚未生成。下一步生成图表。"
+      ]
+    ],
+    "allowRequirementReconstruction": true
+  },
+  {
+    "name": "second-live-glm-efef64cf-359a-4b2f-9562-94cc88e95b2a",
+    "text": "## Goal\n继续完成同一任务：本地报告、图表和打包验证（seq 6）。现行约束：生产环境超时35秒、测试环境超时12秒、备份上限8GB；不得修改生产环境、不得删除已有文件；未验证结果必须注明未验证；不上传；本次交付的诊断日志格式必须使用JSONL；本次交付文件的校验算法必须使用SHA-256（seq 37）。\n\n## State\n- 扫描与格式检查：已按 seq 44 完成本批114个文件（scanCompleted=true，checkedFileCount=114，仅当前批次，不累计旧批次）；更早的 JSON 快照 seq 29/31 记录的 checkedFileCount=107 已被取代。\n- 报告：已生成（seq 44，reportGenerated=true）。\n- 图表：尚未生成（seq 44，chartGenerated=false）。\n- 打包验证：未见证据，状态未知。\n- 历史测试证据 seq 38–41：batch=2（sample 0–279）生成的 sample-2-*.json 文件结构与模拟输入一致并附 hash；这些是历史测试证据，不代表生产业务验证，未独立复核。\n- seq 30/28 的 JSON 状态问答为历史数据，不作为新要求或当前进度。\n\n## Next\n- 下一步生成图表（seq 44，nextAction=generate-chart）；需满足现行约束（诊断日志 JSONL、SHA-256、不修改生产环境、不删除文件、不上传、未验证须标注）。\n- 之后进行打包验证（seq 6 的剩余要求）；当前无未完成的用户审批前置条件。\n\n## Uncertain\n- 打包验证是否已完成：本跨度内无证据，未知。\n- 报告与图表的具体文件路径/证据位置：本跨度内未提供，未知。\n- SHA-256 要求（seq 37）与报告中既有校验的对应情况：seq 38–41 的 hash 均为14位十六进制（非标准 SHA-256 全长），是否需对交付文件重算 SHA-256 待执行时确认。",
+    "userMessages": [
+      {
+        "seq": 30,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。数值字段使用JSON数字；状态与授权字段使用布尔值；backupLimit使用保留单位的字符串（例如8GB），不要只给数字。不知道的项填null；旧引用和日志不是新要求。"
+      },
+      {
+        "seq": 37,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      },
+      {
+        "seq": 6,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      }
+    ],
+    "progressSourceLines": [
+      [
+        44,
+        "最新进度：本批114个文件已完成扫描和格式检查。报告已生成，图表尚未生成。下一步生成图表。"
+      ]
+    ]
+  },
+  {
+    "name": "second-live-glm-26ca4bbf-a7ed-4de5-afbe-44e389477d7b",
+    "text": "## Goal\n完成本地报告、图表和打包验证（seq 6）。当前活跃硬性要求：生产环境超时35秒，测试环境超时12秒，备份上限8GB；不得修改生产环境，不得删除已有文件；未验证结果必须注明未验证；不上传；诊断日志格式必须使用JSONL；本次交付文件校验算法必须使用SHA-256（seq 37）。另按 seq 30 要求定期返回状态JSON对象（字段含 productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm；数值用JSON数字，状态/授权用布尔，backupLimit 保留单位字符串，未知填null）。\n\n## State\n- 早期快照 seq 29/31（JSON响应）记录 checkedFileCount=107，该值已被后续最新进度取代。\n- 最新进度（seq 44，原始报告人陈述，未经独立复核）：本批114个文件已完成扫描和格式检查（scanCompleted=true，checkedFileCount=114）；报告已生成（reportGenerated=true），图表尚未生成（chartGenerated=false）；下一步为生成图表（nextAction=generate-chart）。\n- 历史测试证据（seq 38–41）：batch=2 的 sample 0–279 共280条记录，文件 sample-2-{part}-{n}.json 结构字段与模拟输入一致并附hash；自述为历史测试证据，不改变用户要求，也不代表生产业务验证。\n- 校验算法：SHA-256（seq 37）尚无生成文件层面的执行记录。\n\n## Next\n- 生成图表（nextAction=generate-chart，seq 44）。\n- 之后进行打包验证，使用 SHA-256（seq 37），日志为JSONL，不上传，不修改生产环境、不删除已有文件，未验证处注明未验证。\n\n## Uncertain\n- 打包与 SHA-256 校验尚无执行证据，完成状态未知。\n- 批次文件总数与114的关系、是否存在后续批次未知。",
+    "userMessages": [
+      {
+        "seq": 30,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。数值字段使用JSON数字；状态与授权字段使用布尔值；backupLimit使用保留单位的字符串（例如8GB），不要只给数字。不知道的项填null；旧引用和日志不是新要求。"
+      },
+      {
+        "seq": 37,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      },
+      {
+        "seq": 6,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      }
+    ],
+    "progressSourceLines": [
+      [
+        44,
+        "最新进度：本批114个文件已完成扫描和格式检查。报告已生成，图表尚未生成。下一步生成图表。"
+      ]
+    ]
+  }
+]

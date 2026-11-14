@@ -2,6 +2,8 @@
 
 [简体中文](../architecture.md) · [English](architecture.md)
 
+For the user-facing explanation, worked examples, static diagrams, and guarantee boundaries, read [Compaction principles](principles.md). This page provides code navigation.
+
 ## From history to the next step
 
 Weave runs during DSH session maintenance:
@@ -9,9 +11,11 @@ Weave runs during DSH session maintenance:
 1. Measure the visible messages and select a history range with balanced tool calls and results.
 2. Prefer a range that preserves existing checkpoints and stable prefixes while meeting the space-saving target.
 3. Recover active requirements, recent verbatim messages, and the latest work report from original sources.
-4. Archive the selected messages and attachments, then request a summary. Large histories are handled in pages.
-5. Validate summary structure, requirements, progress, and reduction. Retry rejected attempts with feedback.
-6. Persist the transaction, publish the checkpoint, and replace the selected range.
+4. Request a candidate summary. Large histories may use chunks; eligible capacity failures can enter backend paged continuation.
+5. Validate the complete candidate's structure, requirements, progress, and size with finite retries. Archive the selected originals and attachments after acceptance.
+6. Verify transaction conditions, back up and durably write the replacement, persist the success decision, then publish the checkpoint.
+
+Ordinary chunks commit individually, so earlier chunks may remain committed when a later one fails. Continuation saves accepted pages for recovery but replaces main history only after the complete candidate passes.
 
 ## Prefix preservation
 
@@ -45,13 +49,13 @@ A complete summary request includes source messages, instructions, quote indexes
 
 Accepted pages persist their source identity and progress. Later attempts reuse matching completed pages and resume unfinished work. Request allowance, actual dispatch, and unknown usage are tracked separately.
 
-`summary-retry.js` handles timeouts, stream interruption, empty output, malformed summaries, and validation failures. `summary-timeout.js` checks deadlines during dispatch and reading.
+`summary-retry.js` handles timeouts, stream interruption, empty output, malformed summaries, and validation failures. Regular and continuation requests use `singleTarget: true`, requesting only the selected first summary target. Cancellation stops the current operation. `summary-timeout.js` checks deadlines during dispatch and reading.
 
 ## Archives and transactions
 
 Archives preserve original events, message blocks, tool relationships, and SHA-256-checked attachments. History tools read these records in pages.
 
-The transaction adapter checks fingerprints of the DSH `0.2.2-rc.1` host methods. It backs up the original state, commits the replacement, persists the decision, and cleans up. Startup recovery inspects the journal and backup before completing or restoring a transaction.
+The transaction adapter checks fingerprints of the DSH `0.2.2-rc.1` host methods. It backs up the original state, durably writes the replacement, persists a success decision, then publishes. A failure before that decision can restore a verified backup. A publication failure after durable success quarantines the writer and requires a cold reopen, preserving the successfully committed history.
 
 ## Entry points
 

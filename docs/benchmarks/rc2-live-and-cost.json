@@ -1,0 +1,746 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-14",
+  "releaseVersion": "0.3.2-rc.2",
+  "testedInternalVersion": "0.3.2-rc.1",
+  "verificationScope": "Four-model live switching on internal 0.3.2-rc.1 runtime; final 0.3.2-rc.2 Windows-host and Linux-offline regressions cover command removal and diagnostic metadata additions.",
+  "runtimeCodeHashes": {
+    "lib/abort.js": "7e732b187b8e6a957260c000d9e2d36586eb9833dd4de2dc93e095e2358df348",
+    "lib/atomic-replace.js": "2ac4c0b72289ba877a1c350d87462f4a6c318f884b1586a2301961df96acaf2d",
+    "lib/attachments.js": "1d0d8e254f1f56a8b9aace16bc9edaac7bc21e096168cec96b78c0f16af51f9d",
+    "lib/audit-reject.js": "bd28d9c393234fa38d7f58c232dae23aa747fa5b5c599950f1b6c1d31538eb0a",
+    "lib/audit.js": "eb87d09107d5605bab9e61a8973fb86e3f61ebb9e16337e10047f3378c578526",
+    "lib/cache-policy.js": "cc0a021a1eacc291971c40bca06094241816886a30c5a674781360513ec577e0",
+    "lib/client.js": "2d30e32400cf25ea4935aa2f1558794e198229e31a5b96612b4160198d37c0b9",
+    "lib/command-compact.js": "61c0cd563d4d9f44a628b8d2dd234a9e954036a10c606844515be9ca5e92f1dc",
+    "lib/command-heartbeat.js": "73a433f258c9fe6514edb1fe5c8a4ebb3007ca2e8206fd0174ccec6df5879620",
+    "lib/config.js": "d13fd8b9e513f0c9dcc0beaac48a4de2fcc934c5bebdb84c6a99ba71e3cc386b",
+    "lib/constraint-scope.js": "c4db318556b5b1e218347acc8068188ab8c141ff9401fc8db9728a681838b736",
+    "lib/continuation-budget.js": "bd4c628d7274f181eabe921ccb773149116f0255f22a57fbdb7c1e15fb76700e",
+    "lib/continuation-pending.js": "f6ccadc2fe454fc2b5a7df986c988f1c32a61345ebb74784a502a533b9df74d4",
+    "lib/continuation-progress.js": "28ef336cfef9825f2de2ac5bb701cc55079651de7087cf40ff1b0eb97e058df5",
+    "lib/continuation.js": "2c84f3d428f89f3ac08e6201b45633c075bc890a74a0f50bb777610c43652070",
+    "lib/engine-entry.js": "3d7944d8379b13a7a29858a8e6a95bacd68462f3d58c7b23ed0e5845a52db292",
+    "lib/engine.js": "8eac26b7f68f535ca06d3acddf2d9b15b5e6142146bd1739a34f213c7d1012bd",
+    "lib/failure-diagnostics.js": "9e938372299a8aeb471f4429751ba9563c2d80bd74f914e332ecb151cf6783ad",
+    "lib/history.js": "77a56ac6b85105d483d2e340298ffea7411522d90c8d7cff21fe004e4a532a94",
+    "lib/index.js": "a839082e65480781513e53c6377c51a462906e7ae5efb5ceb2537cd1dac62019",
+    "lib/journal.js": "d4f72c87b49b8b0570e2f9bb2dadd7c7cbf2a589a089a5e40f319e92aa3dc5c1",
+    "lib/manual-error.js": "1b674f207c71957f81a0b50f29f19595dbdb360e7a6815b150d571c1f117bb4d",
+    "lib/memory-policy.js": "adbcbffccd0a3a65564d2f4989af97450a440e034749211dac83b62682cfcc7e",
+    "lib/meter.js": "7d371f8cab4409c8f030d05bc6c7a54c79ad6bd093011250d738da30777f779f",
+    "lib/proactive.js": "d03d355d05ba2f595403d15e53463e5b9510d3507af9aab9dd5e9ba5f18580ee",
+    "lib/progress-facts.js": "e4bc3f7ccc9352bc1529cc3aa23c0b59565ce8aea5379556450e3a85035c8c9b",
+    "lib/prompt.js": "5a6809f230056c5ba6f376c1c348ad7006710ed0f0f1461a462a51c53a033316",
+    "lib/reconstruct.js": "0a0471881c454c213c5cf78a1976d7a8267cb0f407770399c458aeb8ec2b641f",
+    "lib/reference-input.js": "8672c2740429ecdb2f01f89fccff300856156ba7afb904fd3c017363b1daf498",
+    "lib/region.js": "e680e1bd910d9ef88a166dc337f24c249cc3cb3bcad99d1d1e2eef27e53e07a8",
+    "lib/source-provenance.js": "d09fb8b8e3d870c7c718f363d4f7c67f9efc5595bbfc4f5897fac639c0ac01f6",
+    "lib/source-recovery.js": "7e5df3caf817e325bdd88b06ece7cc5b0c28ca9da55b5fd1a44d3ae3f76f63cc",
+    "lib/source-refs.js": "6d759bde29f6c765fd38ff6140eac07de6e9d0d411c4038c5a1683ea0f04b558",
+    "lib/state.js": "d74aaa1d55c35af485007af62738facf5427819a20df8b2746a3682bc5245fd1",
+    "lib/storage-path.js": "7658c4abae200bc25a7b9f4e6bce4b54c6b1ae6f47dc21a2a835d57d1beba3de",
+    "lib/summary-budget.js": "0f6bea132f98fc2e05cc5a4c56601171818b5cb2879bdd404bf6693fa4ef41f6",
+    "lib/summary-config.js": "f03828a5d5f234bddd597ca1819380b20f896c2de5c8b2ce47469c822ec49cf3",
+    "lib/summary-progress.js": "4395407e07f49dc925f64e77ff5fdf540e70a6198a33c3e6ed3313dbf3db62b3",
+    "lib/summary-retry.js": "14f3b7cd761768be6598429d2202fb6b2e0ff2534c548aa66cb724bafb759f20",
+    "lib/summary-timeout.js": "a4fbf6c7e685c2361810b9302ced2bced27882bdf048189d091cd644b372cd2c",
+    "lib/summary.js": "33660bb5718fc81cac5f536a491f3f7219246c2c18cf0f6cb36799a51886dfe1",
+    "lib/tools.js": "67360bfc3f290d992219d8912d243edac29d460232b1275adae1dc77971fcea1",
+    "lib/transaction-host.js": "ddbbad91a2c3a1b9231e35dc8aa929e016f21709e1fb7744ce79e6c927cb71a3",
+    "lib/transaction.js": "a300ce9aea5a122c94f7d6868592724dc07708d64b68139fb5c081dfe77091dc",
+    "lib/validate.js": "ce644787370d46ff324cfdeafcb1f27be85026efd08a82ed17fe9c5c8e0848c8",
+    "lib/version.js": "68b16ab3053eed1b6630aafc305ef278f2a8c80d64afbf50f712225fece34747",
+    "lib/window.js": "7658990a8cfca6dca1f4011b9e68a3348393913d504fce5f86891652fb0e6f67",
+    "lib/work-report.js": "b833e5a14825fc86b3a25a588eb65cdedd39d65babf082af512f167bdaca5332"
+  },
+  "sequence": [
+    "auto/gemini-4-argon",
+    "auto/glm-5.3-flash",
+    "deepseek/deepseek-flash",
+    "auto/gpt-6.1-sol"
+  ],
+  "result": {
+    "calls": 60,
+    "httpRequests": 60,
+    "successfulCompactions": 4,
+    "recallCorrect": 728,
+    "recallChecked": 728,
+    "checksPassed": 77,
+    "checksFailed": 0,
+    "serviceRetryCalls": 0,
+    "switches": 24,
+    "inputTokens": 863939,
+    "outputTokens": 9514,
+    "knownUsageCalls": 60,
+    "knownCacheCalls": 60
+  },
+  "models": [
+    {
+      "model": "Gemini",
+      "summaryCalls": 1,
+      "summaryUsd": "0.0728540",
+      "sixRepliesUsd": "0.0394122",
+      "totalUsd": "0.1122662",
+      "fieldsCorrect": 182,
+      "fieldsChecked": 182,
+      "costBasis": "recorded-gateway-rate-estimate"
+    },
+    {
+      "model": "GLM",
+      "summaryCalls": 1,
+      "summaryUsd": "0.003272250",
+      "sixRepliesUsd": "0.002908884",
+      "totalUsd": "0.006181134",
+      "fieldsCorrect": 182,
+      "fieldsChecked": 182,
+      "costBasis": "deepseek-proxy-rate-scenario"
+    },
+    {
+      "model": "DeepSeek",
+      "summaryCalls": 1,
+      "summaryUsd": "0.006891270",
+      "sixRepliesUsd": "0.001003368",
+      "totalUsd": "0.007894638",
+      "fieldsCorrect": 182,
+      "fieldsChecked": 182,
+      "costBasis": "recorded-gateway-rate-estimate"
+    },
+    {
+      "model": "GPT",
+      "summaryCalls": 1,
+      "summaryUsd": "0.02737425",
+      "sixRepliesUsd": "0.02300100",
+      "totalUsd": "0.05037525",
+      "fieldsCorrect": 182,
+      "fieldsChecked": 182,
+      "costBasis": "recorded-gateway-rate-estimate"
+    }
+  ],
+  "postCompactionPrewarm": false,
+  "pricingBasis": "Returned usage and recorded gateway price rates. GLM uses a DeepSeek proxy-rate cost scenario with free token quota; applicable GLM rates and account invoices were not verified.",
+  "costIncludes": [
+    "All content, format, semantic and false-rejection regenerations, including final failed generations",
+    "Summary calls and six actual continuation replies"
+  ],
+  "costExcludes": [
+    "Network, provider, rate-limit, timeout and interrupted-stream request failures"
+  ],
+  "costFormula": "noncached_input * prompt_rate + cache_read * read_rate + cache_write * write_rate + output * completion_rate; cached read/write components are counted once under the gateway price contract",
+  "policyComparison": [
+    {
+      "model": "DeepSeek",
+      "matchedPairs": 3,
+      "arms": {
+        "baseline": {
+          "summary": {
+            "httpAttempts": 3,
+            "unknownCosts": 0,
+            "costUsd": "0.028614900",
+            "knownSubtotalUsd": "0.028614900",
+            "inputTokens": 161102,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 7416
+          },
+          "sixReplies": {
+            "httpAttempts": 18,
+            "unknownCosts": 0,
+            "costUsd": "0.003076932",
+            "knownSubtotalUsd": "0.003076932",
+            "inputTokens": 41382,
+            "cacheReadTokens": 31744,
+            "cacheWriteTokens": 0,
+            "outputTokens": 2560
+          },
+          "matchedTotal": {
+            "httpAttempts": 21,
+            "unknownCosts": 0,
+            "costUsd": "0.031691832",
+            "knownSubtotalUsd": "0.031691832",
+            "inputTokens": 202484,
+            "cacheReadTokens": 31744,
+            "cacheWriteTokens": 0,
+            "outputTokens": 9976
+          },
+          "allAttempts": {
+            "httpAttempts": 21,
+            "unknownCosts": 0,
+            "costUsd": "0.031691832",
+            "knownSubtotalUsd": "0.031691832",
+            "inputTokens": 202484,
+            "cacheReadTokens": 31744,
+            "cacheWriteTokens": 0,
+            "outputTokens": 9976
+          },
+          "completedBranches": 3,
+          "contentFailedSpend": {
+            "httpAttempts": 0,
+            "unknownCosts": 0,
+            "costUsd": "0",
+            "knownSubtotalUsd": "0",
+            "inputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 0
+          }
+        },
+        "candidate": {
+          "summary": {
+            "httpAttempts": 4,
+            "unknownCosts": 0,
+            "costUsd": "0.027003546",
+            "knownSubtotalUsd": "0.027003546",
+            "inputTokens": 204031,
+            "cacheReadTokens": 50432,
+            "cacheWriteTokens": 0,
+            "outputTokens": 6354
+          },
+          "sixReplies": {
+            "httpAttempts": 18,
+            "unknownCosts": 0,
+            "costUsd": "0.003305784",
+            "knownSubtotalUsd": "0.003305784",
+            "inputTokens": 86544,
+            "cacheReadTokens": 76928,
+            "cacheWriteTokens": 0,
+            "outputTokens": 2721
+          },
+          "matchedTotal": {
+            "httpAttempts": 22,
+            "unknownCosts": 0,
+            "costUsd": "0.030309330",
+            "knownSubtotalUsd": "0.030309330",
+            "inputTokens": 290575,
+            "cacheReadTokens": 127360,
+            "cacheWriteTokens": 0,
+            "outputTokens": 9075
+          },
+          "allAttempts": {
+            "httpAttempts": 22,
+            "unknownCosts": 0,
+            "costUsd": "0.030309330",
+            "knownSubtotalUsd": "0.030309330",
+            "inputTokens": 290575,
+            "cacheReadTokens": 127360,
+            "cacheWriteTokens": 0,
+            "outputTokens": 9075
+          },
+          "completedBranches": 3,
+          "contentFailedSpend": {
+            "httpAttempts": 0,
+            "unknownCosts": 0,
+            "costUsd": "0",
+            "knownSubtotalUsd": "0",
+            "inputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 0
+          }
+        }
+      },
+      "deltaPercent": "-4.362329069521761947999724350",
+      "costBasis": "recorded-gateway-rate-estimate"
+    },
+    {
+      "model": "GLM",
+      "matchedPairs": 2,
+      "arms": {
+        "baseline": {
+          "summary": {
+            "httpAttempts": 2,
+            "unknownCosts": 0,
+            "costUsd": "0.017680518",
+            "knownSubtotalUsd": "0.017680518",
+            "inputTokens": 110433,
+            "cacheReadTokens": 256,
+            "cacheWriteTokens": 0,
+            "outputTokens": 1922
+          },
+          "sixReplies": {
+            "httpAttempts": 12,
+            "unknownCosts": 0,
+            "costUsd": "0.003858030",
+            "knownSubtotalUsd": "0.003858030",
+            "inputTokens": 42941,
+            "cacheReadTokens": 26560,
+            "cacheWriteTokens": 0,
+            "outputTokens": 2202
+          },
+          "matchedTotal": {
+            "httpAttempts": 14,
+            "unknownCosts": 0,
+            "costUsd": "0.021538548",
+            "knownSubtotalUsd": "0.021538548",
+            "inputTokens": 153374,
+            "cacheReadTokens": 26816,
+            "cacheWriteTokens": 0,
+            "outputTokens": 4124
+          },
+          "allAttempts": {
+            "httpAttempts": 22,
+            "unknownCosts": 0,
+            "costUsd": "0.040645980",
+            "knownSubtotalUsd": "0.040645980",
+            "inputTokens": 286402,
+            "cacheReadTokens": 44160,
+            "cacheWriteTokens": 0,
+            "outputTokens": 6962
+          },
+          "completedBranches": 3,
+          "contentFailedSpend": {
+            "httpAttempts": 0,
+            "unknownCosts": 0,
+            "costUsd": "0",
+            "knownSubtotalUsd": "0",
+            "inputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 0
+          }
+        },
+        "candidate": {
+          "summary": {
+            "httpAttempts": 3,
+            "unknownCosts": 0,
+            "costUsd": "0.025145022",
+            "knownSubtotalUsd": "0.025145022",
+            "inputTokens": 159269,
+            "cacheReadTokens": 1024,
+            "cacheWriteTokens": 0,
+            "outputTokens": 2342
+          },
+          "sixReplies": {
+            "httpAttempts": 12,
+            "unknownCosts": 0,
+            "costUsd": "0.003258960",
+            "knownSubtotalUsd": "0.003258960",
+            "inputTokens": 70672,
+            "cacheReadTokens": 56320,
+            "cacheWriteTokens": 0,
+            "outputTokens": 1562
+          },
+          "matchedTotal": {
+            "httpAttempts": 15,
+            "unknownCosts": 0,
+            "costUsd": "0.028403982",
+            "knownSubtotalUsd": "0.028403982",
+            "inputTokens": 229941,
+            "cacheReadTokens": 57344,
+            "cacheWriteTokens": 0,
+            "outputTokens": 3904
+          },
+          "allAttempts": {
+            "httpAttempts": 18,
+            "unknownCosts": 0,
+            "costUsd": "0.045987042",
+            "knownSubtotalUsd": "0.045987042",
+            "inputTokens": 389303,
+            "cacheReadTokens": 110464,
+            "cacheWriteTokens": 0,
+            "outputTokens": 6383
+          },
+          "completedBranches": 2,
+          "contentFailedSpend": {
+            "httpAttempts": 3,
+            "unknownCosts": 0,
+            "costUsd": "0.017583060",
+            "knownSubtotalUsd": "0.017583060",
+            "inputTokens": 159362,
+            "cacheReadTokens": 53120,
+            "cacheWriteTokens": 0,
+            "outputTokens": 2479
+          }
+        }
+      },
+      "deltaPercent": "31.87510132995037548492126770",
+      "costBasis": "deepseek-proxy-rate-scenario",
+      "actualGlmPaidCostEstablished": false
+    },
+    {
+      "model": "GPT",
+      "matchedPairs": 3,
+      "arms": {
+        "baseline": {
+          "summary": {
+            "httpAttempts": 3,
+            "unknownCosts": 0,
+            "costUsd": "0.21601400",
+            "knownSubtotalUsd": "0.21601400",
+            "inputTokens": 161361,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 161352,
+            "outputTokens": 2863
+          },
+          "sixReplies": {
+            "httpAttempts": 18,
+            "unknownCosts": 0,
+            "costUsd": "0.02569050",
+            "knownSubtotalUsd": "0.02569050",
+            "inputTokens": 46728,
+            "cacheReadTokens": 36855,
+            "cacheWriteTokens": 9819,
+            "outputTokens": 2304
+          },
+          "matchedTotal": {
+            "httpAttempts": 21,
+            "unknownCosts": 0,
+            "costUsd": "0.24170450",
+            "knownSubtotalUsd": "0.24170450",
+            "inputTokens": 208089,
+            "cacheReadTokens": 36855,
+            "cacheWriteTokens": 171171,
+            "outputTokens": 5167
+          },
+          "allAttempts": {
+            "httpAttempts": 21,
+            "unknownCosts": 0,
+            "costUsd": "0.24170450",
+            "knownSubtotalUsd": "0.24170450",
+            "inputTokens": 208089,
+            "cacheReadTokens": 36855,
+            "cacheWriteTokens": 171171,
+            "outputTokens": 5167
+          },
+          "completedBranches": 3,
+          "contentFailedSpend": {
+            "httpAttempts": 0,
+            "unknownCosts": 0,
+            "costUsd": "0",
+            "knownSubtotalUsd": "0",
+            "inputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 0
+          }
+        },
+        "candidate": {
+          "summary": {
+            "httpAttempts": 3,
+            "unknownCosts": 0,
+            "costUsd": "0.20204525",
+            "knownSubtotalUsd": "0.20204525",
+            "inputTokens": 152946,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 152937,
+            "outputTokens": 2173
+          },
+          "sixReplies": {
+            "httpAttempts": 18,
+            "unknownCosts": 0,
+            "costUsd": "0.03657750",
+            "knownSubtotalUsd": "0.03657750",
+            "inputTokens": 90276,
+            "cacheReadTokens": 73145,
+            "cacheWriteTokens": 17077,
+            "outputTokens": 2304
+          },
+          "matchedTotal": {
+            "httpAttempts": 21,
+            "unknownCosts": 0,
+            "costUsd": "0.23862275",
+            "knownSubtotalUsd": "0.23862275",
+            "inputTokens": 243222,
+            "cacheReadTokens": 73145,
+            "cacheWriteTokens": 170014,
+            "outputTokens": 4477
+          },
+          "allAttempts": {
+            "httpAttempts": 21,
+            "unknownCosts": 0,
+            "costUsd": "0.23862275",
+            "knownSubtotalUsd": "0.23862275",
+            "inputTokens": 243222,
+            "cacheReadTokens": 73145,
+            "cacheWriteTokens": 170014,
+            "outputTokens": 4477
+          },
+          "completedBranches": 3,
+          "contentFailedSpend": {
+            "httpAttempts": 0,
+            "unknownCosts": 0,
+            "costUsd": "0",
+            "knownSubtotalUsd": "0",
+            "inputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 0
+          }
+        }
+      },
+      "deltaPercent": "-1.275007291961879071345382480",
+      "costBasis": "recorded-gateway-rate-estimate"
+    },
+    {
+      "model": "Gemini",
+      "matchedPairs": 2,
+      "arms": {
+        "baseline": {
+          "summary": {
+            "httpAttempts": 2,
+            "unknownCosts": 0,
+            "costUsd": "0.1337640",
+            "knownSubtotalUsd": "0.1337640",
+            "inputTokens": 54427,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 2491
+          },
+          "sixReplies": {
+            "httpAttempts": 12,
+            "unknownCosts": 0,
+            "costUsd": "0.0847846",
+            "knownSubtotalUsd": "0.0847846",
+            "inputTokens": 54993,
+            "cacheReadTokens": 22706,
+            "cacheWriteTokens": 0,
+            "outputTokens": 1794
+          },
+          "matchedTotal": {
+            "httpAttempts": 14,
+            "unknownCosts": 0,
+            "costUsd": "0.2185486",
+            "knownSubtotalUsd": "0.2185486",
+            "inputTokens": 109420,
+            "cacheReadTokens": 22706,
+            "cacheWriteTokens": 0,
+            "outputTokens": 4285
+          },
+          "allAttempts": {
+            "httpAttempts": 22,
+            "unknownCosts": 0,
+            "costUsd": "0.3931174",
+            "knownSubtotalUsd": "0.3931174",
+            "inputTokens": 191030,
+            "cacheReadTokens": 33654,
+            "cacheWriteTokens": 0,
+            "outputTokens": 7500
+          },
+          "completedBranches": 3,
+          "contentFailedSpend": {
+            "httpAttempts": 0,
+            "unknownCosts": 0,
+            "costUsd": "0",
+            "knownSubtotalUsd": "0",
+            "inputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 0
+          }
+        },
+        "candidate": {
+          "summary": {
+            "httpAttempts": 3,
+            "unknownCosts": 0,
+            "costUsd": "0.1888180",
+            "knownSubtotalUsd": "0.1888180",
+            "inputTokens": 84469,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 1988
+          },
+          "sixReplies": {
+            "httpAttempts": 12,
+            "unknownCosts": 0,
+            "costUsd": "0.0935390",
+            "knownSubtotalUsd": "0.0935390",
+            "inputTokens": 80766,
+            "cacheReadTokens": 45070,
+            "cacheWriteTokens": 0,
+            "outputTokens": 1764
+          },
+          "matchedTotal": {
+            "httpAttempts": 15,
+            "unknownCosts": 0,
+            "costUsd": "0.2823570",
+            "knownSubtotalUsd": "0.2823570",
+            "inputTokens": 165235,
+            "cacheReadTokens": 45070,
+            "cacheWriteTokens": 0,
+            "outputTokens": 3752
+          },
+          "allAttempts": {
+            "httpAttempts": 18,
+            "unknownCosts": 0,
+            "costUsd": "0.4735530",
+            "knownSubtotalUsd": "0.4735530",
+            "inputTokens": 249613,
+            "cacheReadTokens": 45070,
+            "cacheWriteTokens": 0,
+            "outputTokens": 5996
+          },
+          "completedBranches": 2,
+          "contentFailedSpend": {
+            "httpAttempts": 3,
+            "unknownCosts": 0,
+            "costUsd": "0.1911960",
+            "knownSubtotalUsd": "0.1911960",
+            "inputTokens": 84378,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 2244
+          }
+        }
+      },
+      "deltaPercent": "29.19643502635111824097706410",
+      "costBasis": "recorded-gateway-rate-estimate"
+    }
+  ],
+  "policyDecision": "Retain the existing incremental/full-consolidation policy: partial consolidation has mixed costs and additional content failures.",
+  "independentCostAudit": {
+    "httpAttempts": 678,
+    "usageRecords": 677,
+    "amountOrCategoryDifferences": 0
+  },
+  "limitations": [
+    "Costs use returned usage and recorded rates; account invoices were not verified.",
+    "GLM used free quota and a DeepSeek proxy-rate scenario; its applicable pricing was not verified.",
+    "The comparison covers the existing and partial-consolidation policies with six continuation replies; it has no uncompressed six-reply control.",
+    "Samples contain two or three completed matched pairs per model; unmatched content-failure spending is listed separately.",
+    "Live acceptance used Gemini 4 Argon.",
+    "Indirect Chinese denial of snapshot replacement and unsupported paraphrases can still require manual review or sentence reconstruction."
+  ],
+  "sourceAcceptanceSummarySha256": "953987755d8cf8cb612eedb1069134d7f638d90381ff2cf81088ac13f6f346d8",
+  "runtimeChangesAfterLiveAcceptance": {
+    "scope": "Standalone command registration/import/guidance removal and support diagnostic metadata. Existing selection, prompts, audits, shrinkage, continuation, and transaction strategy retained.",
+    "unchangedRuntimeFiles": 42,
+    "changedRuntimeFiles": [
+      "lib/continuation-budget.js",
+      "lib/continuation-pending.js",
+      "lib/engine-entry.js",
+      "lib/engine.js",
+      "lib/failure-diagnostics.js",
+      "lib/summary.js"
+    ],
+    "commandRemovalVerification": {
+      "changedRuntimeFiles": [
+        "lib/continuation-budget.js",
+        "lib/continuation-pending.js",
+        "lib/engine-entry.js",
+        "lib/engine.js"
+      ],
+      "exactAllowedDiffVerified": true
+    },
+    "supportDiagnostics": {
+      "verifiedAt": "2026-11-14T00:14:27.920271+00:00",
+      "changedRuntimeFiles": [
+        "lib/engine.js",
+        "lib/failure-diagnostics.js",
+        "lib/summary.js"
+      ],
+      "unchangedRuntimeFilesSinceCommandRemoval": 45,
+      "scope": "Diagnostic context, numeric measurements, retry-delay metadata, failure category, optional sharing/privacy guidance, and a correlated report for accepted reconstruction. Summary selection, prompts, audit verdicts, compression sizes, continuation, and transactions are unchanged.",
+      "manualReviewRequiredForPatch": false,
+      "patchSha256": "8c5e1e85249786712b7d489df1b3ccd583d65e80ea0541ee12267cb26f55fd0d",
+      "runtimeCodeHashes": {
+        "lib/abort.js": "7e732b187b8e6a957260c000d9e2d36586eb9833dd4de2dc93e095e2358df348",
+        "lib/atomic-replace.js": "2ac4c0b72289ba877a1c350d87462f4a6c318f884b1586a2301961df96acaf2d",
+        "lib/attachments.js": "1d0d8e254f1f56a8b9aace16bc9edaac7bc21e096168cec96b78c0f16af51f9d",
+        "lib/audit-reject.js": "bd28d9c393234fa38d7f58c232dae23aa747fa5b5c599950f1b6c1d31538eb0a",
+        "lib/audit.js": "eb87d09107d5605bab9e61a8973fb86e3f61ebb9e16337e10047f3378c578526",
+        "lib/cache-policy.js": "cc0a021a1eacc291971c40bca06094241816886a30c5a674781360513ec577e0",
+        "lib/client.js": "2d30e32400cf25ea4935aa2f1558794e198229e31a5b96612b4160198d37c0b9",
+        "lib/command-compact.js": "61c0cd563d4d9f44a628b8d2dd234a9e954036a10c606844515be9ca5e92f1dc",
+        "lib/command-heartbeat.js": "73a433f258c9fe6514edb1fe5c8a4ebb3007ca2e8206fd0174ccec6df5879620",
+        "lib/config.js": "d13fd8b9e513f0c9dcc0beaac48a4de2fcc934c5bebdb84c6a99ba71e3cc386b",
+        "lib/constraint-scope.js": "c4db318556b5b1e218347acc8068188ab8c141ff9401fc8db9728a681838b736",
+        "lib/continuation-budget.js": "8091e5a755245b38f7da593646d30b5e64322719a470c76443f71e0171c6dce5",
+        "lib/continuation-pending.js": "692ba8514fe9da71b8303c56f93e41004288e536d8bef2d119f76ced4559d04b",
+        "lib/continuation-progress.js": "28ef336cfef9825f2de2ac5bb701cc55079651de7087cf40ff1b0eb97e058df5",
+        "lib/continuation.js": "2c84f3d428f89f3ac08e6201b45633c075bc890a74a0f50bb777610c43652070",
+        "lib/engine-entry.js": "6e7e6a1da79ccb08e8317da9b2678a637c81be7371bf2064f072abd4ce7624e1",
+        "lib/engine.js": "9f3fa828365939a9ad7a28e00de831abab6ce65fca668074d4daa566b66a8287",
+        "lib/failure-diagnostics.js": "0ff702a92866082d1919e42efc9d296f06fd6c36a2be988d5e65d6054571ad13",
+        "lib/history.js": "77a56ac6b85105d483d2e340298ffea7411522d90c8d7cff21fe004e4a532a94",
+        "lib/index.js": "a839082e65480781513e53c6377c51a462906e7ae5efb5ceb2537cd1dac62019",
+        "lib/journal.js": "d4f72c87b49b8b0570e2f9bb2dadd7c7cbf2a589a089a5e40f319e92aa3dc5c1",
+        "lib/manual-error.js": "1b674f207c71957f81a0b50f29f19595dbdb360e7a6815b150d571c1f117bb4d",
+        "lib/memory-policy.js": "adbcbffccd0a3a65564d2f4989af97450a440e034749211dac83b62682cfcc7e",
+        "lib/meter.js": "7d371f8cab4409c8f030d05bc6c7a54c79ad6bd093011250d738da30777f779f",
+        "lib/proactive.js": "d03d355d05ba2f595403d15e53463e5b9510d3507af9aab9dd5e9ba5f18580ee",
+        "lib/progress-facts.js": "e4bc3f7ccc9352bc1529cc3aa23c0b59565ce8aea5379556450e3a85035c8c9b",
+        "lib/prompt.js": "5a6809f230056c5ba6f376c1c348ad7006710ed0f0f1461a462a51c53a033316",
+        "lib/reconstruct.js": "0a0471881c454c213c5cf78a1976d7a8267cb0f407770399c458aeb8ec2b641f",
+        "lib/reference-input.js": "8672c2740429ecdb2f01f89fccff300856156ba7afb904fd3c017363b1daf498",
+        "lib/region.js": "e680e1bd910d9ef88a166dc337f24c249cc3cb3bcad99d1d1e2eef27e53e07a8",
+        "lib/source-provenance.js": "d09fb8b8e3d870c7c718f363d4f7c67f9efc5595bbfc4f5897fac639c0ac01f6",
+        "lib/source-recovery.js": "7e5df3caf817e325bdd88b06ece7cc5b0c28ca9da55b5fd1a44d3ae3f76f63cc",
+        "lib/source-refs.js": "6d759bde29f6c765fd38ff6140eac07de6e9d0d411c4038c5a1683ea0f04b558",
+        "lib/state.js": "d74aaa1d55c35af485007af62738facf5427819a20df8b2746a3682bc5245fd1",
+        "lib/storage-path.js": "7658c4abae200bc25a7b9f4e6bce4b54c6b1ae6f47dc21a2a835d57d1beba3de",
+        "lib/summary-budget.js": "0f6bea132f98fc2e05cc5a4c56601171818b5cb2879bdd404bf6693fa4ef41f6",
+        "lib/summary-config.js": "f03828a5d5f234bddd597ca1819380b20f896c2de5c8b2ce47469c822ec49cf3",
+        "lib/summary-progress.js": "4395407e07f49dc925f64e77ff5fdf540e70a6198a33c3e6ed3313dbf3db62b3",
+        "lib/summary-retry.js": "14f3b7cd761768be6598429d2202fb6b2e0ff2534c548aa66cb724bafb759f20",
+        "lib/summary-timeout.js": "a4fbf6c7e685c2361810b9302ced2bced27882bdf048189d091cd644b372cd2c",
+        "lib/summary.js": "f0b512677a44a4c5c71701c7d6705e87d864a7c53e41fb83c277cd3aa8f6550b",
+        "lib/tools.js": "67360bfc3f290d992219d8912d243edac29d460232b1275adae1dc77971fcea1",
+        "lib/transaction-host.js": "ddbbad91a2c3a1b9231e35dc8aa929e016f21709e1fb7744ce79e6c927cb71a3",
+        "lib/transaction.js": "a300ce9aea5a122c94f7d6868592724dc07708d64b68139fb5c081dfe77091dc",
+        "lib/validate.js": "ce644787370d46ff324cfdeafcb1f27be85026efd08a82ed17fe9c5c8e0848c8",
+        "lib/version.js": "68b16ab3053eed1b6630aafc305ef278f2a8c80d64afbf50f712225fece34747",
+        "lib/window.js": "7658990a8cfca6dca1f4011b9e68a3348393913d504fce5f86891652fb0e6f67",
+        "lib/work-report.js": "b833e5a14825fc86b3a25a588eb65cdedd39d65babf082af512f167bdaca5332"
+      },
+      "reviewed": true
+    },
+    "releaseRuntimeCodeHashes": {
+      "lib/abort.js": "7e732b187b8e6a957260c000d9e2d36586eb9833dd4de2dc93e095e2358df348",
+      "lib/atomic-replace.js": "2ac4c0b72289ba877a1c350d87462f4a6c318f884b1586a2301961df96acaf2d",
+      "lib/attachments.js": "1d0d8e254f1f56a8b9aace16bc9edaac7bc21e096168cec96b78c0f16af51f9d",
+      "lib/audit-reject.js": "bd28d9c393234fa38d7f58c232dae23aa747fa5b5c599950f1b6c1d31538eb0a",
+      "lib/audit.js": "eb87d09107d5605bab9e61a8973fb86e3f61ebb9e16337e10047f3378c578526",
+      "lib/cache-policy.js": "cc0a021a1eacc291971c40bca06094241816886a30c5a674781360513ec577e0",
+      "lib/client.js": "2d30e32400cf25ea4935aa2f1558794e198229e31a5b96612b4160198d37c0b9",
+      "lib/command-compact.js": "61c0cd563d4d9f44a628b8d2dd234a9e954036a10c606844515be9ca5e92f1dc",
+      "lib/command-heartbeat.js": "73a433f258c9fe6514edb1fe5c8a4ebb3007ca2e8206fd0174ccec6df5879620",
+      "lib/config.js": "d13fd8b9e513f0c9dcc0beaac48a4de2fcc934c5bebdb84c6a99ba71e3cc386b",
+      "lib/constraint-scope.js": "c4db318556b5b1e218347acc8068188ab8c141ff9401fc8db9728a681838b736",
+      "lib/continuation-budget.js": "8091e5a755245b38f7da593646d30b5e64322719a470c76443f71e0171c6dce5",
+      "lib/continuation-pending.js": "692ba8514fe9da71b8303c56f93e41004288e536d8bef2d119f76ced4559d04b",
+      "lib/continuation-progress.js": "28ef336cfef9825f2de2ac5bb701cc55079651de7087cf40ff1b0eb97e058df5",
+      "lib/continuation.js": "2c84f3d428f89f3ac08e6201b45633c075bc890a74a0f50bb777610c43652070",
+      "lib/engine-entry.js": "6e7e6a1da79ccb08e8317da9b2678a637c81be7371bf2064f072abd4ce7624e1",
+      "lib/engine.js": "9f3fa828365939a9ad7a28e00de831abab6ce65fca668074d4daa566b66a8287",
+      "lib/failure-diagnostics.js": "0ff702a92866082d1919e42efc9d296f06fd6c36a2be988d5e65d6054571ad13",
+      "lib/history.js": "77a56ac6b85105d483d2e340298ffea7411522d90c8d7cff21fe004e4a532a94",
+      "lib/index.js": "a839082e65480781513e53c6377c51a462906e7ae5efb5ceb2537cd1dac62019",
+      "lib/journal.js": "d4f72c87b49b8b0570e2f9bb2dadd7c7cbf2a589a089a5e40f319e92aa3dc5c1",
+      "lib/manual-error.js": "1b674f207c71957f81a0b50f29f19595dbdb360e7a6815b150d571c1f117bb4d",
+      "lib/memory-policy.js": "adbcbffccd0a3a65564d2f4989af97450a440e034749211dac83b62682cfcc7e",
+      "lib/meter.js": "7d371f8cab4409c8f030d05bc6c7a54c79ad6bd093011250d738da30777f779f",
+      "lib/proactive.js": "d03d355d05ba2f595403d15e53463e5b9510d3507af9aab9dd5e9ba5f18580ee",
+      "lib/progress-facts.js": "e4bc3f7ccc9352bc1529cc3aa23c0b59565ce8aea5379556450e3a85035c8c9b",
+      "lib/prompt.js": "5a6809f230056c5ba6f376c1c348ad7006710ed0f0f1461a462a51c53a033316",
+      "lib/reconstruct.js": "0a0471881c454c213c5cf78a1976d7a8267cb0f407770399c458aeb8ec2b641f",
+      "lib/reference-input.js": "8672c2740429ecdb2f01f89fccff300856156ba7afb904fd3c017363b1daf498",
+      "lib/region.js": "e680e1bd910d9ef88a166dc337f24c249cc3cb3bcad99d1d1e2eef27e53e07a8",
+      "lib/source-provenance.js": "d09fb8b8e3d870c7c718f363d4f7c67f9efc5595bbfc4f5897fac639c0ac01f6",
+      "lib/source-recovery.js": "7e5df3caf817e325bdd88b06ece7cc5b0c28ca9da55b5fd1a44d3ae3f76f63cc",
+      "lib/source-refs.js": "6d759bde29f6c765fd38ff6140eac07de6e9d0d411c4038c5a1683ea0f04b558",
+      "lib/state.js": "d74aaa1d55c35af485007af62738facf5427819a20df8b2746a3682bc5245fd1",
+      "lib/storage-path.js": "7658c4abae200bc25a7b9f4e6bce4b54c6b1ae6f47dc21a2a835d57d1beba3de",
+      "lib/summary-budget.js": "0f6bea132f98fc2e05cc5a4c56601171818b5cb2879bdd404bf6693fa4ef41f6",
+      "lib/summary-config.js": "f03828a5d5f234bddd597ca1819380b20f896c2de5c8b2ce47469c822ec49cf3",
+      "lib/summary-progress.js": "4395407e07f49dc925f64e77ff5fdf540e70a6198a33c3e6ed3313dbf3db62b3",
+      "lib/summary-retry.js": "14f3b7cd761768be6598429d2202fb6b2e0ff2534c548aa66cb724bafb759f20",
+      "lib/summary-timeout.js": "a4fbf6c7e685c2361810b9302ced2bced27882bdf048189d091cd644b372cd2c",
+      "lib/summary.js": "f0b512677a44a4c5c71701c7d6705e87d864a7c53e41fb83c277cd3aa8f6550b",
+      "lib/tools.js": "67360bfc3f290d992219d8912d243edac29d460232b1275adae1dc77971fcea1",
+      "lib/transaction-host.js": "ddbbad91a2c3a1b9231e35dc8aa929e016f21709e1fb7744ce79e6c927cb71a3",
+      "lib/transaction.js": "a300ce9aea5a122c94f7d6868592724dc07708d64b68139fb5c081dfe77091dc",
+      "lib/validate.js": "ce644787370d46ff324cfdeafcb1f27be85026efd08a82ed17fe9c5c8e0848c8",
+      "lib/version.js": "68b16ab3053eed1b6630aafc305ef278f2a8c80d64afbf50f712225fece34747",
+      "lib/window.js": "7658990a8cfca6dca1f4011b9e68a3348393913d504fce5f86891652fb0e6f67",
+      "lib/work-report.js": "b833e5a14825fc86b3a25a588eb65cdedd39d65babf082af512f167bdaca5332"
+    }
+  },
+  "glmPricingMethodology": {
+    "measurement": "Returned token usage",
+    "priceScenario": "DeepSeek gateway rates applied to GLM usage",
+    "billingCondition": "GLM free token quota",
+    "applicableGlmRatesVerified": false,
+    "actualGlmPaidCostEstablished": false,
+    "interpretation": "Proxy-rate cost scenario; amounts and relative changes are not GLM invoices or GLM official-price estimates."
+  }
+}

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="780" viewBox="0 0 1440 780" font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+  <title>Failure recovery: candidates, pages, partial commits, durable success</title>
+  <desc>Shows recovery behavior across four failure positions: A. Uncommitted candidate or pre-decision failure restores intact span; B. Paused backend continuation saves accepted pages and ledger while main history stays unchanged; C. Multi-chunk partial commit keeps earlier committed chunks; D. Post-decision live publication failure quarantines writer and requires cold reopen.</desc>
+  <rect x="0" y="0" width="1440" height="780" fill="#F8FAFC" />
+  <text x="720" y="52" text-anchor="middle" font-size="30" font-weight="bold" fill="#0F172A">Failure recovery: candidates, pages, partial commits, durable success</text>
+  <rect x="45" y="100" width="655" height="305" rx="12" fill="#FFFFFF" stroke="#0284C7" stroke-width="2.5" />
+  <rect x="45" y="100" width="655" height="52" rx="12" fill="#E0F2FE" stroke="#0284C7" stroke-width="2" />
+  <text x="70" y="134" font-size="22" font-weight="bold" fill="#0C4A6E">A. Current span has not reached durable success</text>
+  <text x="70" y="186" font-size="20" fill="#1E293B">
+    <tspan x="70" dy="0">• Timeout, rejected candidate, archive error,</tspan>
+    <tspan x="70" dy="32">  or failure before the durable success decision.</tspan>
+    <tspan x="70" dy="32">• Discard candidate, or attempt verified backup restore.</tspan>
+    <tspan x="70" dy="32">  If restore fails, quarantine and retain recovery data.</tspan>
+    <tspan x="70" dy="32" font-weight="bold" fill="#0369A1">• Report known attempts; missing usage stays unknown.</tspan>
+  </text>
+  <rect x="740" y="100" width="655" height="305" rx="12" fill="#FFFFFF" stroke="#D97706" stroke-width="2.5" />
+  <rect x="740" y="100" width="655" height="52" rx="12" fill="#FEF3C7" stroke="#D97706" stroke-width="2" />
+  <text x="765" y="134" font-size="22" font-weight="bold" fill="#92400E">B. Continuation interrupted or budget exhausted</text>
+  <text x="765" y="186" font-size="20" fill="#1E293B">
+    <tspan x="765" dy="0">• A page fails or the finite call budget is exhausted.</tspan>
+    <tspan x="765" dy="32">• Accepted pages saved ≠ main history replaced.</tspan>
+    <tspan x="765" dy="32">• Preserve source identity, accepted pages, and usage.</tspan>
+    <tspan x="765" dy="32">  New /compact can renew an exhausted finite allowance.</tspan>
+    <tspan x="765" dy="32" font-weight="bold" fill="#B45309">• Source edits may require redo; earlier chunks can remain.</tspan>
+  </text>
+  <rect x="45" y="435" width="655" height="305" rx="12" fill="#FFFFFF" stroke="#4F46E5" stroke-width="2.5" />
+  <rect x="45" y="435" width="655" height="52" rx="12" fill="#E0E7FF" stroke="#4F46E5" stroke-width="2" />
+  <text x="70" y="469" font-size="22" font-weight="bold" fill="#312E81">C. Later chunk fails after earlier commits</text>
+  <text x="70" y="521" font-size="20" fill="#1E293B">
+    <tspan x="70" dy="0">• Earlier chunks commit; a later chunk fails.</tspan>
+    <tspan x="70" dy="32">• Each accepted chunk is committed independently.</tspan>
+    <tspan x="70" dy="32">  Preserve the successfully committed checkpoints.</tspan>
+    <tspan x="70" dy="32">• Only uncommitted spans keep original visible messages.</tspan>
+    <tspan x="70" dy="32" font-weight="bold" fill="#4338CA">• Missing request usage remains unknown.</tspan>
+  </text>
+  <rect x="740" y="435" width="655" height="305" rx="12" fill="#FFFFFF" stroke="#DC2626" stroke-width="2.5" />
+  <rect x="740" y="435" width="655" height="52" rx="12" fill="#FEE2E2" stroke="#DC2626" stroke-width="2" />
+  <text x="765" y="469" font-size="22" font-weight="bold" fill="#991B1B">D. Publication failure after durable success</text>
+  <text x="765" y="521" font-size="20" fill="#1E293B">
+    <tspan x="765" dy="0">• Replacement and success decision are durable,</tspan>
+    <tspan x="765" dy="32">  then publication to the live in-memory session fails.</tspan>
+    <tspan x="765" dy="32">• Quarantine the writer; preserve committed disk history.</tspan>
+    <tspan x="765" dy="32">  Reopen the session from its durable log.</tspan>
+    <tspan x="765" dy="32" font-weight="bold" fill="#B91C1C">• Recovery must verify evidence before allowing work.</tspan>
+  </text>
+</svg>

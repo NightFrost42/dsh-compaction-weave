@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+  <title>上下文结构对照：选区替换、前后保留与按需归档回查</title>
+  <desc>展示 DSH Compaction Weave 压缩前后可见上下文的三段结构（保留前缀、选定平衡跨度替换为检查点、保留近期尾部），以及有效要求独立审计和磁盘归档按需工具回查机制。</desc>
+  <defs>
+    <marker id="arrow-dark" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#334155" />
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#0369A1" />
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1400" height="760" fill="#F8FAFC" />
+  <text x="700" y="50" text-anchor="middle" font-size="30" font-weight="bold" fill="#0F172A">上下文结构对照：选区替换、前后保留与按需归档回查</text>
+  <text x="60" y="92" font-size="22" font-weight="bold" fill="#334155">压缩前：当前可见消息表面（Visible Context Surface）</text>
+  <rect x="60" y="108" width="380" height="155" rx="12" fill="#FFFFFF" stroke="#64748B" stroke-width="2.5" />
+  <text x="84" y="145" font-size="22" font-weight="bold" fill="#0F172A">1. 保留前缀（Prefix）</text>
+  <text x="84" y="182" font-size="20" fill="#334155">
+    <tspan x="84" dy="0">系统提示词与指令框架</tspan>
+    <tspan x="84" dy="30">及已接受的旧检查点</tspan>
+    <tspan x="84" dy="30">优先在最新检查点后增量选区</tspan>
+  </text>
+  <rect x="470" y="108" width="460" height="155" rx="12" fill="#FFFBEB" stroke="#D97706" stroke-width="2.5" stroke-dasharray="8 5" />
+  <text x="494" y="145" font-size="22" font-weight="bold" fill="#92400E">2. 选定压缩跨度（Selected Span）</text>
+  <text x="494" y="182" font-size="20" fill="#78350F">
+    <tspan x="494" dy="0">完整配对的 tool/call 与 result</tspan>
+    <tspan x="494" dy="30">绝不拆散单组工具调用与结果</tspan>
+    <tspan x="494" dy="30">达上限/修订旧要求/空间不足才合并</tspan>
+  </text>
+  <rect x="960" y="108" width="380" height="155" rx="12" fill="#FFFFFF" stroke="#64748B" stroke-width="2.5" />
+  <text x="984" y="145" font-size="22" font-weight="bold" fill="#0F172A">3. 近期尾部（Recent Tail）</text>
+  <text x="984" y="182" font-size="20" fill="#334155">
+    <tspan x="984" dy="0">自动路径默认保留预算的 16%</tspan>
+    <tspan x="984" dy="30">（例：M=191808 时为 30689t）</tspan>
+    <tspan x="984" dy="30">原样保留以维持当前步骤连贯</tspan>
+  </text>
+  <line x1="250" y1="320" x2="250" y2="332" stroke="#334155" stroke-width="2.5" marker-end="url(#arrow-dark)" />
+  <line x1="700" y1="320" x2="700" y2="332" stroke="#0369A1" stroke-width="3" marker-end="url(#arrow-blue)" />
+  <line x1="1150" y1="320" x2="1150" y2="332" stroke="#334155" stroke-width="2.5" marker-end="url(#arrow-dark)" />
+  <text x="60" y="322" font-size="22" font-weight="bold" fill="#334155">压缩后：主模型实际读取的当前请求消息列表</text>
+  <rect x="60" y="338" width="380" height="172" rx="12" fill="#F1F5F9" stroke="#475569" stroke-width="2.5" />
+  <text x="84" y="375" font-size="22" font-weight="bold" fill="#0F172A">1. 保留前缀（逐字节不变）</text>
+  <text x="84" y="412" font-size="20" fill="#334155">
+    <tspan x="84" dy="0">未触发合并时原样保留</tspan>
+    <tspan x="84" dy="30">有助于提示词缓存前缀稳定</tspan>
+    <tspan x="84" dy="30">（缓存命中不等于总费用必降）</tspan>
+  </text>
+  <rect x="470" y="338" width="460" height="172" rx="12" fill="#E0F2FE" stroke="#0284C7" stroke-width="3" />
+  <text x="494" y="375" font-size="22" font-weight="bold" fill="#0C4A6E">2. 已提交检查点（Checkpoint）</text>
+  <text x="494" y="412" font-size="20" fill="#0369A1">
+    <tspan x="494" dy="0">常规九节摘要 + 预算内近期原话</tspan>
+    <tspan x="494" dy="30">+ 来源序号/SHA256 + 最新工作报告</tspan>
+    <tspan x="494" dy="30">Tokens与UTF-8字节均严格小于源跨度</tspan>
+  </text>
+  <rect x="960" y="338" width="380" height="172" rx="12" fill="#F1F5F9" stroke="#475569" stroke-width="2.5" />
+  <text x="984" y="375" font-size="22" font-weight="bold" fill="#0F172A">3. 近期尾部 + 后续新消息</text>
+  <text x="984" y="412" font-size="20" fill="#334155">
+    <tspan x="984" dy="0">模型仅读取当前可见消息列表</tspan>
+    <tspan x="984" dy="30">不会每轮自动重读磁盘全部归档</tspan>
+    <tspan x="984" dy="30">有损摘要 + 按需工具回查</tspan>
+  </text>
+  <line x1="1120" y1="568" x2="1120" y2="515" stroke="#0369A1" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#arrow-blue)" />
+  <rect x="60" y="572" width="460" height="155" rx="12" fill="#FFFFFF" stroke="#475569" stroke-width="2.5" />
+  <text x="84" y="609" font-size="22" font-weight="bold" fill="#0F172A">第六节原话预算与有效要求独立审计</text>
+  <text x="84" y="646" font-size="20" fill="#334155">
+    <tspan x="84" dy="0">“全部用户消息”为历史标题，仅确定性</tspan>
+    <tspan x="84" dy="30">填入预算内近期原话（≤32条 / 4096t）</tspan>
+    <tspan x="84" dy="30">更早的有效要求与否定约束独立审计</tspan>
+  </text>
+  <path d="M 918 250 L 946 250 L 946 553 L 946 568" fill="none" stroke="#0369A1" stroke-width="2.5" marker-end="url(#arrow-blue)" />
+  <rect x="550" y="572" width="790" height="155" rx="12" fill="#F0FDF4" stroke="#15803D" stroke-width="2.5" />
+  <text x="574" y="609" font-size="22" font-weight="bold" fill="#14532D">磁盘原文归档（校验通过后、事务替换前写入）</text>
+  <text x="574" y="646" font-size="20" fill="#166534">
+    <tspan x="574" dy="0">完整保存被替换跨度的原始事件、代码、日志与附件（含 SHA-256 校验）</tspan>
+    <tspan x="574" dy="30">通过 history_list / history_search / history_read 按需回查历史原文</tspan>
+    <tspan x="574" dy="30">外部文件后续可能改变，需区分归档历史快照与当前磁盘文件</tspan>
+  </text>
+</svg>

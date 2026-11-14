@@ -84,7 +84,7 @@ Older quotes leave the budget first; active requirements remain independently ch
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `archiveEnabled` | `true` | Archive originals and attachments before compaction |
+| `archiveEnabled` | `true` | Archive originals and attachments before replacing the selected history |
 | `archiveDir` | Automatic | Custom archive directory |
 | `auditEnabled` | `true` | Check requirement retention |
 | `auditBlockOnLoss` | `true` | Retry and prevent submission of summaries losing requirements |

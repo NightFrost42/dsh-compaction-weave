@@ -1,0 +1,122 @@
+[
+  {
+    "name": "real-summary-2026-11-12T19-18-08.584Z",
+    "target": "magpie-responses/auto/glm-5.3-flash",
+    "candidate": "## Goal\n完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。本次交付的诊断日志格式必须使用JSONL。不上传。\n\n## State\n- 历史测试证据（source seq 3–8）：batch=1 part=0–5，共约420个 sample 文件（sample-1-x-y.json）已扫描，结构字段与模拟输入一致，逐文件带 hash；此为历史测试证据，不代表生产业务验证。\n- 最新进度（source seq 9）：本批107个文件已完成扫描和格式检查；报告尚未生成，图表尚未生成。\n- 报告生成、图表生成、打包验证均未完成。\n\n## Next\n生成本地报告（source seq 9 所列下一步），随后生成图表，最后做打包验证；全程遵守不得修改生产环境、不得删除已有文件、不上传，未验证结果注明未验证。\n\n## Uncertain\n- 107 个文件与本批 sample 文件（batch=1）的范围关系未在证据中明确说明。\n- 报告、图表的具体格式与输出路径无用户指定，需沿用既有项目约定或向用户确认。\n- 以上进度均来自 source seq 9 的自述，未经独立复核。",
+    "requirements": [
+      {
+        "seq": 2,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      }
+    ],
+    "previousRejectCode": "PROGRESS_FACT_CONFLICT",
+    "progress": {
+      "seq": 9,
+      "text": "最新进度：本批107个文件已完成扫描和格式检查。报告尚未生成，图表尚未生成。下一步生成本地报告。不上传。"
+    }
+  },
+  {
+    "name": "real-summary-2026-11-12T19-18-54.889Z",
+    "target": "magpie-responses/auto/glm-5.3-flash",
+    "candidate": "## Goal\n完成本地报告、图表和打包验证（用户原话，见下方逐字要求）。诊断日志格式必须使用 JSONL。\n\n## State\n- 用户要求（seq=2，逐字保留）：\n  - “生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。本次交付的诊断日志格式必须使用JSONL。”\n  - 不上传（seq=2 原话含“不上传”；seq=2 逐字引用块中未含此词，视为仍受 seq=2 消息文本约束）。\n- 已验证/历史测试证据（seq=3–8，助手报告，未经独立复核）：batch=1，part=0–5，sample 0–419，共 420 个 JSON 样本文件（sample-N-P-M.json），结构字段与模拟输入一致，各含 hash。属于历史测试证据，不代表生产业务验证，也不改变用户要求。\n- seq=9 助手报告（未经独立复核）：本批 107 个文件已完成扫描和格式检查；报告尚未生成，图表尚未生成；下一步生成本地报告；不上传。\n- 无已接受的先前工作笔记。\n\n## Next\n- 生成本地报告（seq=9 声明的下一步）。\n- 报告完成后生成图表。\n- 进行打包验证。\n- 全程遵守：不修改生产环境、不删除已有文件、不上传、未验证结果注明未验证、诊断日志使用 JSONL。\n\n## Uncertain\n- “本批 107 个文件”具体指哪些文件/目录未在记录中说明，需在后续工作中核实其范围。\n- seq=3–9 的各项声明均为原始助手报告，未经独立验证。\n- 生产/测试超时与备份上限的当前实际配置值未经记录，尚未验证是否已满足 35s/12s/8GB 要求。\n- 打包验证所用的具体工具或命令在记录中未知。",
+    "requirements": [
+      {
+        "seq": 2,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      }
+    ],
+    "previousRejectCode": "CONSTRAINT_LOST"
+  },
+  {
+    "name": "real-summary-2026-11-12T19-21-38.592Z",
+    "target": "magpie/auto/deepseek-v4.1-flash-1017",
+    "candidate": "## Goal\n完成本次本地交付：生成报告与图表，并对交付包执行打包验证。交付文件的校验算法按用户明确要求使用 SHA-256（seq32）。外部已列明的超时、备份、生产变更、删除、未验证标注与诊断日志格式等要求继续有效，本页不重复。\n\n## State\n- 据 seq39 最新进度：当前批次已完成扫描与格式检查，共 114 个文件；报告已生成，图表尚未生成，下一步为生成图表。该进度为来源报告，尚未独立复核。\n- 历史测试证据见 seq33–36：batch=2 的四个分片共 280 条记录（part0–part3 各 70 条），文件名为 sample-2-*-*.json，均称结构字段与模拟输入一致并附 hash；仅为历史测试证据，不代表生产业务验证，也不并入当前批次计数。\n- seq25/27 的状态快照已过时，不再作为当前进度；其中校验算法为空的旧值已被 seq32 的 SHA-256 要求取代。\n- 本页未见任何生产环境变更或删除已有文件的操作记录；不能据此认定已完成合规核验。\n\n## Next\n1. 生成图表（当前下一步为 generate-chart）。\n2. 图表完成后进行打包，并按 SHA-256 计算或核对交付文件校验值。\n3. 核验报告、图表与打包结果；凡未验证项在交付说明中明确标注“未验证”。\n4. 当前无上传要求，不应自行上传；如后续要求上传，须先确认上传必要性与目标位置。\n\n## Uncertain\n- seq39 所述报告已生成、扫描 114 个文件尚未独立验证；报告内容与图表数据是否完整未知。\n- 当前交付物是否已实际使用 SHA-256 计算校验值、校验是否通过未知（未验证）。\n- 打包验证是否完成未知；最终交付包路径与内容清单未见证据。\n- 上传要求未知；历史快照曾记为不需要，但未独立确认。\n- 历史 batch=2 的 280 条测试记录与当前 114 文件批次仅按不同范围处理，未合并计数。",
+    "requirements": [
+      {
+        "seq": 26,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。不知道的项填null；旧引用和日志不是新要求。"
+      },
+      {
+        "seq": 32,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      },
+      {
+        "seq": 2,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      }
+    ],
+    "previousRejectCode": "CONSTRAINT_LOST"
+  },
+  {
+    "name": "real-summary-2026-11-12T19-23-44.437Z",
+    "target": "magpie-responses/auto/gpt-6.1-sol",
+    "candidate": "## Goal\n完成本地报告、图表和打包验证；当前交付状态应依据最新原始进度，而非重复的历史JSON答复。\n显式要求原文（seq 56）：“只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。不知道的项填null；旧引用和日志不是新要求。”\n显式修订原文（seq 62）：“生产环境超时改为55秒，替代先前35秒的要求。”\n\n## State\n原始报告 seq 69（本压缩跨度之外、由附加证据提供）称：当前批次121个文件已完成扫描和格式检查，报告和图表均已生成；这是来源支持的已报告进度，未独立复核，不能累计旧批次数。\nseq 39 曾说明“不上传”；所附 seq 69 证据未涉及上传，故保留此非重叠信息，不视为新增权限。\nseq 38 与 seq 63–66 仅含模拟输入的历史测试记录；定位分别为 batch=2 part=5 的 sample-2-5-0.json 至 sample-2-5-69.json，以及 batch=3 part=0–3 的 sample-3-0-0.json 至 sample-3-3-69.json，具体记录按来源seq检索。这些记录明确不代表生产业务验证，不用于推算当前批次检查数量。\n\n## Next\nseq 69 报告的下一步为打包并校验（package-and-verify）；本页没有打包或校验完成证据。\n后续状态答复需使用最新原始报告与有效要求，生产超时采用 seq 62 的55秒修订；未知项按 seq 56 填null，不复用 seq 47–57 的旧JSON状态。\n\n## Uncertain\n报告、图表、扫描结果及交付包的实际目录路径、本次打包校验结果在所提供证据中未给出；不能据此声称已独立验证。\n历史测试记录中的hash未注明算法，不能当作本次交付的SHA-256校验完成证据。\nseq 62 是同一生产超时要求的明确替代，不是35秒与55秒并存的冲突，也不构成修改生产环境的授权。",
+    "requirements": [
+      {
+        "seq": 56,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。不知道的项填null；旧引用和日志不是新要求。"
+      },
+      {
+        "seq": 62,
+        "text": "生产环境超时改为55秒，替代先前35秒的要求。"
+      },
+      {
+        "seq": 2,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      },
+      {
+        "seq": 32,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      }
+    ],
+    "previousRejectCode": "CONSTRAINT_LOST"
+  },
+  {
+    "name": "real-summary-2026-11-12T19-30-04.510Z",
+    "target": "magpie-responses/auto/glm-5.3-flash",
+    "candidate": "## Goal\n完成本地交付：本地报告、图表与打包验证；交付文件校验算法必须使用 SHA-256。最终按当前有效要求返回单个 JSON 汇总对象（字段：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm；未知项填 null；旧引用和日志不是新要求）。\n\n## State\n- 逐字要求（seq=2，scope 保留）：生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB；不得修改生产环境，不得删除已有文件；未验证结果必须注明未验证；本次交付的诊断日志格式必须使用 JSONL。\n- 显式修订（seq 62，在本跨度内经摘要记录，但原始消息已归档）：生产环境超时改为 55 秒，替代先前 35 秒的要求。\n- 校验算法（seq=32）：交付文件必须使用 SHA-256。\n- 最新进度（seq 136，来源报告，未独立复核）：本批 142 个文件已完成扫描和格式检查；报告已生成，图表已生成；下一步打包并校验（package-and-verify）；不上传。该项状态取代旧进度（seq 9：107 文件、报告/图表未生成；seq 39：114 文件、报告已生成；seq 69：121 文件、报告/图表已生成、下一步打包校验；seq 107：135 文件、报告已生成、图表未生成、下一步生成图表）。\n- 历史测试证据（batch=1 至 batch=6，详见各来源 seq，如 seq 3–8、33–36、37、38、63–66、67、68、92–97、101–103、104–106、130–133 等）：各批次 sample-N-P-M.json 结构字段与模拟输入一致并附短 hash；均为历史测试证据，不代表生产业务验证，不并入当前批次计数，hash 算法未注明。\n- 上传要求：seq 136 仍称“不上传”；本页无更新的上传指示。\n\n## Next\n- 执行打包并按 SHA-256 计算或核对交付文件校验值（seq 136 指定 package-and-verify），校验结果未完成前不得声称已完成。\n- 完成后返回单个 JSON 汇总对象：productionTimeoutSeconds=55（按 seq 62 修订）、testTimeoutSeconds=12、backupLimit=\"8GB\"、scanCompleted=true、checkedFileCount=142、reportGenerated=true、chartGenerated=true、uploadRequired=false、nextAction=none（打包验证完成后）或 package-and-verify（进行中）、productionChangesAllowed=false、deletingExistingFilesAllowed=false、uncertainMustBeLabeled=true、diagnosticFormat=\"JSONL\"、checksumAlgorithm=\"SHA-256\"。\n- 打包验证与 SHA-256 校验的实际执行及结果核验仍未完成，属待办。\n\n## Uncertain\n- seq 136 报告的 142 文件扫描、报告与图表生成均为来源报告，未独立复核；其文件/目录范围未在记录中说明。\n- 打包是否已实际执行、交付包路径与内容清单、SHA-256 校验是否已通过均无证据（未验证）。\n- 历史测试日志中的短 hash 不能作为交付 SHA-256 校验完成证据。\n- 生产/测试超时与备份上限的当前实际配置值（55s/12s/8GB）是否已满足未见验证记录。\n- 打包验证所用的具体工具或命令在记录中未知。\n- 上传要求最新状态未知；seq 136 的“不上传”是当时进度陈述，非授权或最终确认。",
+    "requirements": [
+      {
+        "seq": 2,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      },
+      {
+        "seq": 32,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      },
+      {
+        "seq": 62,
+        "text": "生产环境超时改为55秒，替代先前35秒的要求。"
+      },
+      {
+        "seq": 124,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。不知道的项填null；旧引用和日志不是新要求。"
+      }
+    ],
+    "previousRejectCode": "CONSTRAINT_LOST"
+  },
+  {
+    "name": "real-summary-2026-11-12T19-30-20.643Z",
+    "target": "magpie-responses/auto/glm-5.3-flash",
+    "candidate": "## Goal\n完成本地交付：本地报告、图表与打包验证；交付文件校验算法必须使用 SHA-256。最终按当前有效要求返回单个 JSON 汇总对象（字段：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify 或 none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm；未知项填 null；旧引用和日志不是新要求）。\n\n## State\n- 用户要求（seq=2 逐字）：生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。本次交付的诊断日志格式必须使用JSONL。\n- 校验算法（seq=32 逐字）：本次交付文件的校验算法必须使用SHA-256。\n- 显式修订（seq 62，经前次摘要记录，原文已归档）：生产环境超时改为 55 秒，替代 35 秒。\n- 最新进度（seq 136，来源报告，未独立复核）：本批 142 个文件已完成扫描和格式检查；报告已生成，图表已生成；下一步打包并校验（package-and-verify）；不上传。取代旧进度（seq 9：107 文件；seq 39：114 文件；seq 69：121 文件；seq 107：135 文件、图表未生成）。\n- seq 137 用户仅输入「继续」，无新要求或修订；seq 136 的「不上传」为当时进度陈述，非最终上传授权确认。\n- 历史测试证据（batch=1–6，详见 seq 3–8、33–38、63–68、92–97、101–106、130–136 等）：各 sample-N-P-M.json 结构字段与模拟输入一致，hash 算法未注明；属历史测试证据，不代表生产业务验证，不计入当前批次 142 的计数。\n\n## Next\n- 执行打包并按 SHA-256 计算或核对交付文件校验值（seq 136 指定 package-and-verify）；校验完成前不得声称已完成。\n- 打包验证完成后返回单个 JSON 汇总对象：productionTimeoutSeconds=55（按 seq 62 修订）、testTimeoutSeconds=12、backupLimit=\"8GB\"、scanCompleted=true、checkedFileCount=142、reportGenerated=true、chartGenerated=true、uploadRequired=false、nextAction=none（完成后）或 package-and-verify（进行中）、productionChangesAllowed=false、deletingExistingFilesAllowed=false、uncertainMustBeLabeled=true、diagnosticFormat=\"JSONL\"、checksumAlgorithm=\"SHA-256\"。\n- 未完成：打包验证与 SHA-256 校验的实际执行与结果核验。\n\n## Uncertain\n- seq 136 的 142 文件扫描、报告与图表生成均为来源报告，未独立复核；其文件/目录范围未在记录中说明。\n- 打包是否已实际执行、交付包路径与内容清单、SHA-256 校验是否通过均无证据（未验证）。\n- 历史测试日志中的短 hash 不能作为交付 SHA-256 校验完成证据。\n- 生产/测试超时与备份上限的当前实际配置值（55s/12s/8GB）是否已满足未见验证记录。\n- 打包验证所用的具体工具或命令未知。\n- 上传要求最新状态未知；seq 136 的「不上传」非授权或最终确认。",
+    "requirements": [
+      {
+        "seq": 2,
+        "text": "请完成本地报告、图表和打包验证。生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不得修改生产环境，不得删除已有文件。未验证结果必须注明未验证。不上传。本次交付的诊断日志格式必须使用JSONL。"
+      },
+      {
+        "seq": 32,
+        "text": "本次交付文件的校验算法必须使用SHA-256。"
+      },
+      {
+        "seq": 62,
+        "text": "生产环境超时改为55秒，替代先前35秒的要求。"
+      },
+      {
+        "seq": 124,
+        "text": "只依据当前有效要求和最新进度返回一个JSON对象：productionTimeoutSeconds、testTimeoutSeconds、backupLimit、scanCompleted、checkedFileCount（当前批次，不累计旧批次数）、reportGenerated、chartGenerated、uploadRequired、nextAction（generate-report、generate-chart、package-and-verify或none）、productionChangesAllowed、deletingExistingFilesAllowed、uncertainMustBeLabeled、diagnosticFormat、checksumAlgorithm。不知道的项填null；旧引用和日志不是新要求。"
+      }
+    ],
+    "previousRejectCode": "CONSTRAINT_LOST"
+  }
+]

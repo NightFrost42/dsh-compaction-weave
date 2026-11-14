@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="780" viewBox="0 0 1440 780" font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+  <title>故障与恢复：候选、分页、部分提交与持久成功</title>
+  <desc>展示四种不同故障阶段的恢复边界：A. 候选未提交或持久成功决定前失败可恢复原状；B. 后台容量分页接续保存已接受页与费用账本但主历史未替换；C. 常规多块压缩前块保留、后块未提交（partial）；D. 持久成功决定后发布失败必须隔离写入器并冷重开。</desc>
+  <rect x="0" y="0" width="1440" height="780" fill="#F8FAFC" />
+  <text x="720" y="52" text-anchor="middle" font-size="30" font-weight="bold" fill="#0F172A">故障与恢复：候选、分页、部分提交与持久成功</text>
+  <rect x="45" y="100" width="655" height="305" rx="12" fill="#FFFFFF" stroke="#0284C7" stroke-width="2.5" />
+  <rect x="45" y="100" width="655" height="52" rx="12" fill="#E0F2FE" stroke="#0284C7" stroke-width="2" />
+  <text x="70" y="134" font-size="22" font-weight="bold" fill="#0C4A6E">A. 当前选区尚未持久成功</text>
+  <text x="70" y="186" font-size="20" fill="#1E293B">
+    <tspan x="70" dy="0">• 位置：模型超时、结构/要求/进度校验被拒、未严格缩小、</tspan>
+    <tspan x="70" dy="32">  归档写入或回读失败，或事务写入 decided=true 前发生异常</tspan>
+    <tspan x="70" dy="32">• 恢复：未进事务则直接丢弃候选；已进事务则校验并从</tspan>
+    <tspan x="70" dy="32">  .rollback 原子恢复原文件（若备份恢复本身失败则隔离）</tspan>
+    <tspan x="70" dy="32" font-weight="bold" fill="#0369A1">• 状态：替换未成功；恢复失败时隔离，缺失用量仍未知</tspan>
+  </text>
+  <rect x="740" y="100" width="655" height="305" rx="12" fill="#FFFFFF" stroke="#D97706" stroke-width="2.5" />
+  <rect x="740" y="100" width="655" height="52" rx="12" fill="#FEF3C7" stroke="#D97706" stroke-width="2" />
+  <text x="765" y="134" font-size="22" font-weight="bold" fill="#92400E">B. 后台分页中断或预算耗尽</text>
+  <text x="765" y="186" font-size="20" fill="#1E293B">
+    <tspan x="765" dy="0">• 位置：分页处理中途报错，或额外调用额度（默认 4 次）耗尽</tspan>
+    <tspan x="765" dy="32">• 关键边界：已接受页保存在磁盘 ≠ 主对话表面（surface）已替换</tspan>
+    <tspan x="765" dy="32">• 恢复：磁盘持久化已接受页（含源 SHA-256）与累计调用账本；</tspan>
+    <tspan x="765" dy="32">  用户显式执行 /compact 可续批有限额度并从首个未完成页继续</tspan>
+    <tspan x="765" dy="32" font-weight="bold" fill="#B45309">• 选区尚未替换；旧成功块可保留，来源变化可能需重算</tspan>
+  </text>
+  <rect x="45" y="435" width="655" height="305" rx="12" fill="#FFFFFF" stroke="#4F46E5" stroke-width="2.5" />
+  <rect x="45" y="435" width="655" height="52" rx="12" fill="#E0E7FF" stroke="#4F46E5" stroke-width="2" />
+  <text x="70" y="469" font-size="22" font-weight="bold" fill="#312E81">C. 多块处理：后续块失败</text>
+  <text x="70" y="521" font-size="20" fill="#1E293B">
+    <tspan x="70" dy="0">• 位置：长跨度分块推进（上限 32 块），前序分块已完成归档</tspan>
+    <tspan x="70" dy="32">  与事务提交，后续某块在生成、校验或容量检查时失败</tspan>
+    <tspan x="70" dy="32">• 恢复：每一成功分块独立持久化提交，绝不回滚已提交的前序分块</tspan>
+    <tspan x="70" dy="32">• 诊断记录已采集的尝试；缺失用量仍为未知</tspan>
+    <tspan x="70" dy="32" font-weight="bold" fill="#4338CA">• 状态：前序分块保留为检查点，仅剩余未提交跨度保留原始消息</tspan>
+  </text>
+  <rect x="740" y="435" width="655" height="305" rx="12" fill="#FFFFFF" stroke="#DC2626" stroke-width="2.5" />
+  <rect x="740" y="435" width="655" height="52" rx="12" fill="#FEE2E2" stroke="#DC2626" stroke-width="2" />
+  <text x="765" y="469" font-size="22" font-weight="bold" fill="#991B1B">D. 持久成功后发布故障</text>
+  <text x="765" y="521" font-size="20" fill="#1E293B">
+    <tspan x="765" dy="0">• 位置：替换事件已追加写入会话 JSONL 并完成 fsync，且事务</tspan>
+    <tspan x="765" dy="32">  日志已同步记录 phase: committed，随后内存事件路由发布异常</tspan>
+    <tspan x="765" dy="32">• 恢复：严禁回滚磁盘上已提交的新历史！立即隔离（quarantine）</tspan>
+    <tspan x="765" dy="32">  当前写入器，阻断陈旧内存继续写入，要求冷重开（cold reopen）</tspan>
+    <tspan x="765" dy="32" font-weight="bold" fill="#B91C1C">• 状态：从持久日志重开，核验恢复结果后继续工作</tspan>
+  </text>
+</svg>

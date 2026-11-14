@@ -84,7 +84,7 @@
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `archiveEnabled` | `true` | 压缩前归档原文与附件 |
+| `archiveEnabled` | `true` | 替换选区历史前归档原文与附件 |
 | `archiveDir` | 自动 | 自定义历史归档目录 |
 | `auditEnabled` | `true` | 检查要求是否保留 |
 | `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交 |

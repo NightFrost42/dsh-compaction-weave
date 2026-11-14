@@ -1,6 +1,6 @@
 {
   "name": "dsh-compaction-weave",
-  "version": "0.3.2-rc.1",
+  "version": "0.3.2-rc.2",
   "type": "module",
   "main": "lib/index.js",
   "description": "面向 DeepSeek Harness 的上下文压缩插件：缓存友好的增量摘要、要求与进度保留、历史回查和失败重试。",

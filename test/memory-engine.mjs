@@ -75,6 +75,21 @@ await test('chinese-parameter-revision-survives-three-generations',async()=>{
   assert.equal((active.match(/测试环境/g)||[]).length,1);
  }
 });
+await test('explicit-parameter-list-revision-survives-five-real-continuation-generations',async()=>{
+ const f=await empty({},NOTES),old='生产环境超时必须为35秒，测试环境超时必须为12秒，备份上限必须为8GB。不上传。',revision='生产环境超时改为55秒，替代先前35秒的要求。';
+ const original=f.add(old);
+ f.add('evidence '.repeat(2000),'assistant');
+ const run=()=>f.engine._compactRegionCore(f.surface.nodes[1],f.surface.nodes.at(-1),f.agent,new AbortController().signal,{manual:true,policy:f.engine.config,continuation:true,continuationBudgetTokens:10000});
+ await run();const correction=f.add(revision);
+ for(let i=0;i<5;i++){
+  f.add('evidence '.repeat(2000),'assistant');await run();
+  const cp=f.request().at(-1),text=cp.content[0].text,active=collectInstructionMessages(f.session,f.surface.nodes).map(m=>m.text).join('\n');
+  assert.match(text,/生产环境超时改为55秒/);assert.match(text,/测试环境超时必须为12秒/);assert.match(text,/备份上限必须为8GB/);assert.match(text,/不上传/);assert.doesNotMatch(text,/生产环境超时必须为35秒/);
+  assert.match(active,/生产环境超时改为55秒/);assert.ok(cp.source.memorySources.some(ref=>ref.seq===correction.seq));
+  assert.equal(f.events[original.seq].data.content[0].text,old);
+ }
+});
+
 await test('partial-task-cancellation-survives-three-generations-and-archive',async()=>{
  const f=await empty();const original=f.add('请生成报告并上传到测试站点。');f.add('evidence '.repeat(2000),'assistant');await compact(f);
  f.add('取消上传，保留生成本地报告。');

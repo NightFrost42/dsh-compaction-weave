@@ -75,7 +75,7 @@ GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、�
 5. 如发布到 npm，发布已验证的 tarball：
 
 ```bash
-npm publish dist/dsh-compaction-weave-0.3.2-rc.1.tgz --tag next --access public
+npm publish dist/dsh-compaction-weave-0.3.2-rc.2.tgz --tag next --access public
 ```
 
 当前为候选版本，默认发布标签为 `next`。正式版同时更新版本号和 `publishConfig.tag`。
