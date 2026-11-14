@@ -1,0 +1,2314 @@
+{
+  "schemaVersion": 1,
+  "version": "0.3.2-rc.3",
+  "checkedAt": "2026-11-14T03:31:14.127432+00:00",
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+  },
+  "officialDshDistTags": {
+    "alpha": "0.2.2-alpha.3",
+    "latest": "0.2.2-rc.1",
+    "next": "0.2.2-rc.3"
+  },
+  "regressions": [
+    {
+      "version": "0.3.2-rc.3",
+      "date": "2026-11-14T03:27:01.755Z",
+      "node": "v24.21.0",
+      "platform": "win32",
+      "hostIntegration": true,
+      "hostVersion": "0.2.2-rc.1",
+      "suites": 56,
+      "passed": 1698,
+      "failedSuites": 0,
+      "results": [
+        {
+          "name": "host/capacity-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 29,
+          "failed": 0,
+          "milliseconds": 19960,
+          "log": "host-capacity-regressions.mjs.log"
+        },
+        {
+          "name": "host/independent.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 58,
+          "failed": 0,
+          "milliseconds": 6702,
+          "log": "host-independent.mjs.log"
+        },
+        {
+          "name": "host/native-cache-test.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 4,
+          "failed": 0,
+          "milliseconds": 2833,
+          "log": "host-native-cache-test.mjs.log"
+        },
+        {
+          "name": "host/native-host.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 1,
+          "failed": 0,
+          "milliseconds": 333,
+          "log": "host-native-host.mjs.log"
+        },
+        {
+          "name": "host/native-proactive.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 1,
+          "failed": 0,
+          "milliseconds": 417,
+          "log": "host-native-proactive.mjs.log"
+        },
+        {
+          "name": "host/native-transaction.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 2331,
+          "log": "host-native-transaction.mjs.log"
+        },
+        {
+          "name": "unit/atomic-replace.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 15,
+          "failed": 0,
+          "milliseconds": 268,
+          "log": "unit-atomic-replace.mjs.log"
+        },
+        {
+          "name": "unit/audit-conditions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 106,
+          "failed": 0,
+          "milliseconds": 259,
+          "log": "unit-audit-conditions.mjs.log"
+        },
+        {
+          "name": "unit/audit-diagnostics.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 563,
+          "log": "unit-audit-diagnostics.mjs.log"
+        },
+        {
+          "name": "unit/audit-evidence.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 39,
+          "failed": 0,
+          "milliseconds": 275,
+          "log": "unit-audit-evidence.mjs.log"
+        },
+        {
+          "name": "unit/audit-records.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 57,
+          "failed": 0,
+          "milliseconds": 283,
+          "log": "unit-audit-records.mjs.log"
+        },
+        {
+          "name": "unit/audit-release.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 331,
+          "log": "unit-audit-release.mjs.log"
+        },
+        {
+          "name": "unit/audit-scope.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 68,
+          "failed": 0,
+          "milliseconds": 323,
+          "log": "unit-audit-scope.mjs.log"
+        },
+        {
+          "name": "unit/audit-structure.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 72,
+          "failed": 0,
+          "milliseconds": 399,
+          "log": "unit-audit-structure.mjs.log"
+        },
+        {
+          "name": "unit/automatic-block.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 475,
+          "log": "unit-automatic-block.mjs.log"
+        },
+        {
+          "name": "unit/cache-range-budget.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 11,
+          "failed": 0,
+          "milliseconds": 538,
+          "log": "unit-cache-range-budget.mjs.log"
+        },
+        {
+          "name": "unit/command-heartbeat.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 24,
+          "failed": 0,
+          "milliseconds": 649,
+          "log": "unit-command-heartbeat.mjs.log"
+        },
+        {
+          "name": "unit/constraint-scope.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 259,
+          "log": "unit-constraint-scope.mjs.log"
+        },
+        {
+          "name": "unit/continuation-audit-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 18,
+          "failed": 0,
+          "milliseconds": 311,
+          "log": "unit-continuation-audit-regressions.mjs.log"
+        },
+        {
+          "name": "unit/continuation-budget-failures.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 10,
+          "failed": 0,
+          "milliseconds": 8125,
+          "log": "unit-continuation-budget-failures.mjs.log"
+        },
+        {
+          "name": "unit/continuation-preflight.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 5056,
+          "log": "unit-continuation-preflight.mjs.log"
+        },
+        {
+          "name": "unit/continuation-process-recovery.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 3,
+          "failed": 0,
+          "milliseconds": 3728,
+          "log": "unit-continuation-process-recovery.mjs.log"
+        },
+        {
+          "name": "unit/continuation-progress.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 24195,
+          "log": "unit-continuation-progress.mjs.log"
+        },
+        {
+          "name": "unit/continuation-request-accounting.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 15,
+          "failed": 0,
+          "milliseconds": 6305,
+          "log": "unit-continuation-request-accounting.mjs.log"
+        },
+        {
+          "name": "unit/continuation-resume-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 39,
+          "failed": 0,
+          "milliseconds": 23219,
+          "log": "unit-continuation-resume-engine.mjs.log"
+        },
+        {
+          "name": "unit/continuation-storage.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 789,
+          "log": "unit-continuation-storage.mjs.log"
+        },
+        {
+          "name": "unit/continuation.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 37,
+          "failed": 0,
+          "milliseconds": 21468,
+          "log": "unit-continuation.mjs.log"
+        },
+        {
+          "name": "unit/cost-audit-replay.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 271,
+          "log": "unit-cost-audit-replay.mjs.log"
+        },
+        {
+          "name": "unit/failure-diagnostics.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 23,
+          "failed": 0,
+          "milliseconds": 1105,
+          "log": "unit-failure-diagnostics.mjs.log"
+        },
+        {
+          "name": "unit/live-cost-followup.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 34,
+          "failed": 0,
+          "milliseconds": 263,
+          "log": "unit-live-cost-followup.mjs.log"
+        },
+        {
+          "name": "unit/magpie-summary-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 136,
+          "failed": 0,
+          "milliseconds": 457,
+          "log": "unit-magpie-summary-regressions.mjs.log"
+        },
+        {
+          "name": "unit/memory-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 6727,
+          "log": "unit-memory-engine.mjs.log"
+        },
+        {
+          "name": "unit/memory-policy.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 49,
+          "failed": 0,
+          "milliseconds": 233,
+          "log": "unit-memory-policy.mjs.log"
+        },
+        {
+          "name": "unit/minimum-reduction.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 197,
+          "log": "unit-minimum-reduction.mjs.log"
+        },
+        {
+          "name": "unit/prefix-chronology.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 51,
+          "failed": 0,
+          "milliseconds": 202,
+          "log": "unit-prefix-chronology.mjs.log"
+        },
+        {
+          "name": "unit/proactive.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 261,
+          "log": "unit-proactive.mjs.log"
+        },
+        {
+          "name": "unit/progress-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 6,
+          "failed": 0,
+          "milliseconds": 1522,
+          "log": "unit-progress-engine.mjs.log"
+        },
+        {
+          "name": "unit/progress-facts.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 36,
+          "failed": 0,
+          "milliseconds": 322,
+          "log": "unit-progress-facts.mjs.log"
+        },
+        {
+          "name": "unit/progress-release.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 47,
+          "failed": 0,
+          "milliseconds": 210,
+          "log": "unit-progress-release.mjs.log"
+        },
+        {
+          "name": "unit/progress-source-compatibility.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 191,
+          "log": "unit-progress-source-compatibility.mjs.log"
+        },
+        {
+          "name": "unit/reconstruct.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 334,
+          "log": "unit-reconstruct.mjs.log"
+        },
+        {
+          "name": "unit/requirement-lifecycle.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 31,
+          "failed": 0,
+          "milliseconds": 227,
+          "log": "unit-requirement-lifecycle.mjs.log"
+        },
+        {
+          "name": "unit/residual-audit-boundaries.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 78,
+          "failed": 0,
+          "milliseconds": 386,
+          "log": "unit-residual-audit-boundaries.mjs.log"
+        },
+        {
+          "name": "unit/retry-settings.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 389,
+          "log": "unit-retry-settings.mjs.log"
+        },
+        {
+          "name": "unit/run.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 147,
+          "failed": 0,
+          "milliseconds": 49064,
+          "log": "unit-run.mjs.log"
+        },
+        {
+          "name": "unit/smoke.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 22,
+          "failed": 0,
+          "milliseconds": 237,
+          "log": "unit-smoke.mjs.log"
+        },
+        {
+          "name": "unit/source-cache-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 46,
+          "failed": 0,
+          "milliseconds": 618,
+          "log": "unit-source-cache-regressions.mjs.log"
+        },
+        {
+          "name": "unit/source-provenance.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 220,
+          "log": "unit-source-provenance.mjs.log"
+        },
+        {
+          "name": "unit/source-recovery.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 233,
+          "log": "unit-source-recovery.mjs.log"
+        },
+        {
+          "name": "unit/summary-dispatch-deadline.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 9,
+          "failed": 0,
+          "milliseconds": 5215,
+          "log": "unit-summary-dispatch-deadline.mjs.log"
+        },
+        {
+          "name": "unit/summary-progress.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 35,
+          "failed": 0,
+          "milliseconds": 10205,
+          "log": "unit-summary-progress.mjs.log"
+        },
+        {
+          "name": "unit/summary-projection-budget.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 4,
+          "failed": 0,
+          "milliseconds": 123,
+          "log": "unit-summary-projection-budget.mjs.log"
+        },
+        {
+          "name": "unit/summary-range-search.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 7,
+          "failed": 0,
+          "milliseconds": 645,
+          "log": "unit-summary-range-search.mjs.log"
+        },
+        {
+          "name": "unit/summary-retry.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 40,
+          "failed": 0,
+          "milliseconds": 192,
+          "log": "unit-summary-retry.mjs.log"
+        },
+        {
+          "name": "unit/summary-timeout.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 23,
+          "failed": 0,
+          "milliseconds": 5148,
+          "log": "unit-summary-timeout.mjs.log"
+        },
+        {
+          "name": "unit/work-report.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 13,
+          "failed": 0,
+          "milliseconds": 181,
+          "log": "unit-work-report.mjs.log"
+        }
+      ],
+      "sourceRuntimeHashes": {
+        "lib/abort.js": "7e732b187b8e6a957260c000d9e2d36586eb9833dd4de2dc93e095e2358df348",
+        "lib/atomic-replace.js": "2ac4c0b72289ba877a1c350d87462f4a6c318f884b1586a2301961df96acaf2d",
+        "lib/attachments.js": "1d0d8e254f1f56a8b9aace16bc9edaac7bc21e096168cec96b78c0f16af51f9d",
+        "lib/audit-reject.js": "bd28d9c393234fa38d7f58c232dae23aa747fa5b5c599950f1b6c1d31538eb0a",
+        "lib/audit.js": "eb87d09107d5605bab9e61a8973fb86e3f61ebb9e16337e10047f3378c578526",
+        "lib/cache-policy.js": "cc0a021a1eacc291971c40bca06094241816886a30c5a674781360513ec577e0",
+        "lib/client.js": "2d30e32400cf25ea4935aa2f1558794e198229e31a5b96612b4160198d37c0b9",
+        "lib/command-compact.js": "61c0cd563d4d9f44a628b8d2dd234a9e954036a10c606844515be9ca5e92f1dc",
+        "lib/command-heartbeat.js": "73a433f258c9fe6514edb1fe5c8a4ebb3007ca2e8206fd0174ccec6df5879620",
+        "lib/config.js": "d13fd8b9e513f0c9dcc0beaac48a4de2fcc934c5bebdb84c6a99ba71e3cc386b",
+        "lib/constraint-scope.js": "c4db318556b5b1e218347acc8068188ab8c141ff9401fc8db9728a681838b736",
+        "lib/continuation-budget.js": "8091e5a755245b38f7da593646d30b5e64322719a470c76443f71e0171c6dce5",
+        "lib/continuation-pending.js": "692ba8514fe9da71b8303c56f93e41004288e536d8bef2d119f76ced4559d04b",
+        "lib/continuation-progress.js": "28ef336cfef9825f2de2ac5bb701cc55079651de7087cf40ff1b0eb97e058df5",
+        "lib/continuation.js": "2c84f3d428f89f3ac08e6201b45633c075bc890a74a0f50bb777610c43652070",
+        "lib/engine-entry.js": "6e7e6a1da79ccb08e8317da9b2678a637c81be7371bf2064f072abd4ce7624e1",
+        "lib/engine.js": "9f3fa828365939a9ad7a28e00de831abab6ce65fca668074d4daa566b66a8287",
+        "lib/failure-diagnostics.js": "0ff702a92866082d1919e42efc9d296f06fd6c36a2be988d5e65d6054571ad13",
+        "lib/history.js": "77a56ac6b85105d483d2e340298ffea7411522d90c8d7cff21fe004e4a532a94",
+        "lib/index.js": "a839082e65480781513e53c6377c51a462906e7ae5efb5ceb2537cd1dac62019",
+        "lib/journal.js": "d4f72c87b49b8b0570e2f9bb2dadd7c7cbf2a589a089a5e40f319e92aa3dc5c1",
+        "lib/manual-error.js": "1b674f207c71957f81a0b50f29f19595dbdb360e7a6815b150d571c1f117bb4d",
+        "lib/memory-policy.js": "adbcbffccd0a3a65564d2f4989af97450a440e034749211dac83b62682cfcc7e",
+        "lib/meter.js": "7d371f8cab4409c8f030d05bc6c7a54c79ad6bd093011250d738da30777f779f",
+        "lib/proactive.js": "d03d355d05ba2f595403d15e53463e5b9510d3507af9aab9dd5e9ba5f18580ee",
+        "lib/progress-facts.js": "e4bc3f7ccc9352bc1529cc3aa23c0b59565ce8aea5379556450e3a85035c8c9b",
+        "lib/prompt.js": "5a6809f230056c5ba6f376c1c348ad7006710ed0f0f1461a462a51c53a033316",
+        "lib/reconstruct.js": "0a0471881c454c213c5cf78a1976d7a8267cb0f407770399c458aeb8ec2b641f",
+        "lib/reference-input.js": "8672c2740429ecdb2f01f89fccff300856156ba7afb904fd3c017363b1daf498",
+        "lib/region.js": "e680e1bd910d9ef88a166dc337f24c249cc3cb3bcad99d1d1e2eef27e53e07a8",
+        "lib/source-provenance.js": "d09fb8b8e3d870c7c718f363d4f7c67f9efc5595bbfc4f5897fac639c0ac01f6",
+        "lib/source-recovery.js": "7e5df3caf817e325bdd88b06ece7cc5b0c28ca9da55b5fd1a44d3ae3f76f63cc",
+        "lib/source-refs.js": "6d759bde29f6c765fd38ff6140eac07de6e9d0d411c4038c5a1683ea0f04b558",
+        "lib/state.js": "d74aaa1d55c35af485007af62738facf5427819a20df8b2746a3682bc5245fd1",
+        "lib/storage-path.js": "7658c4abae200bc25a7b9f4e6bce4b54c6b1ae6f47dc21a2a835d57d1beba3de",
+        "lib/summary-budget.js": "0f6bea132f98fc2e05cc5a4c56601171818b5cb2879bdd404bf6693fa4ef41f6",
+        "lib/summary-config.js": "f03828a5d5f234bddd597ca1819380b20f896c2de5c8b2ce47469c822ec49cf3",
+        "lib/summary-progress.js": "4395407e07f49dc925f64e77ff5fdf540e70a6198a33c3e6ed3313dbf3db62b3",
+        "lib/summary-retry.js": "14f3b7cd761768be6598429d2202fb6b2e0ff2534c548aa66cb724bafb759f20",
+        "lib/summary-timeout.js": "a4fbf6c7e685c2361810b9302ced2bced27882bdf048189d091cd644b372cd2c",
+        "lib/summary.js": "f0b512677a44a4c5c71701c7d6705e87d864a7c53e41fb83c277cd3aa8f6550b",
+        "lib/tools.js": "67360bfc3f290d992219d8912d243edac29d460232b1275adae1dc77971fcea1",
+        "lib/transaction-host.js": "11df33040adb952db01d677aec70616835eccce6a3ba08c869d98e825a941d7a",
+        "lib/transaction.js": "99a8d928b5bcd99959ff67382c891fcdee6fcbf09db9ff852d7792d74218c6d3",
+        "lib/validate.js": "ce644787370d46ff324cfdeafcb1f27be85026efd08a82ed17fe9c5c8e0848c8",
+        "lib/version.js": "68b16ab3053eed1b6630aafc305ef278f2a8c80d64afbf50f712225fece34747",
+        "lib/window.js": "7658990a8cfca6dca1f4011b9e68a3348393913d504fce5f86891652fb0e6f67",
+        "lib/work-report.js": "b833e5a14825fc86b3a25a588eb65cdedd39d65babf082af512f167bdaca5332"
+      }
+    },
+    {
+      "version": "0.3.2-rc.3",
+      "date": "2026-11-14T03:27:01.366Z",
+      "node": "v24.21.0",
+      "platform": "win32",
+      "hostIntegration": true,
+      "hostVersion": "0.2.2-rc.3",
+      "suites": 56,
+      "passed": 1698,
+      "failedSuites": 0,
+      "results": [
+        {
+          "name": "host/capacity-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 29,
+          "failed": 0,
+          "milliseconds": 19997,
+          "log": "host-capacity-regressions.mjs.log"
+        },
+        {
+          "name": "host/independent.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 58,
+          "failed": 0,
+          "milliseconds": 6698,
+          "log": "host-independent.mjs.log"
+        },
+        {
+          "name": "host/native-cache-test.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 4,
+          "failed": 0,
+          "milliseconds": 2781,
+          "log": "host-native-cache-test.mjs.log"
+        },
+        {
+          "name": "host/native-host.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 1,
+          "failed": 0,
+          "milliseconds": 352,
+          "log": "host-native-host.mjs.log"
+        },
+        {
+          "name": "host/native-proactive.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 1,
+          "failed": 0,
+          "milliseconds": 373,
+          "log": "host-native-proactive.mjs.log"
+        },
+        {
+          "name": "host/native-transaction.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 2309,
+          "log": "host-native-transaction.mjs.log"
+        },
+        {
+          "name": "unit/atomic-replace.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 15,
+          "failed": 0,
+          "milliseconds": 353,
+          "log": "unit-atomic-replace.mjs.log"
+        },
+        {
+          "name": "unit/audit-conditions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 106,
+          "failed": 0,
+          "milliseconds": 278,
+          "log": "unit-audit-conditions.mjs.log"
+        },
+        {
+          "name": "unit/audit-diagnostics.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 807,
+          "log": "unit-audit-diagnostics.mjs.log"
+        },
+        {
+          "name": "unit/audit-evidence.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 39,
+          "failed": 0,
+          "milliseconds": 394,
+          "log": "unit-audit-evidence.mjs.log"
+        },
+        {
+          "name": "unit/audit-records.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 57,
+          "failed": 0,
+          "milliseconds": 319,
+          "log": "unit-audit-records.mjs.log"
+        },
+        {
+          "name": "unit/audit-release.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 301,
+          "log": "unit-audit-release.mjs.log"
+        },
+        {
+          "name": "unit/audit-scope.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 68,
+          "failed": 0,
+          "milliseconds": 312,
+          "log": "unit-audit-scope.mjs.log"
+        },
+        {
+          "name": "unit/audit-structure.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 72,
+          "failed": 0,
+          "milliseconds": 227,
+          "log": "unit-audit-structure.mjs.log"
+        },
+        {
+          "name": "unit/automatic-block.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 426,
+          "log": "unit-automatic-block.mjs.log"
+        },
+        {
+          "name": "unit/cache-range-budget.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 11,
+          "failed": 0,
+          "milliseconds": 586,
+          "log": "unit-cache-range-budget.mjs.log"
+        },
+        {
+          "name": "unit/command-heartbeat.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 24,
+          "failed": 0,
+          "milliseconds": 633,
+          "log": "unit-command-heartbeat.mjs.log"
+        },
+        {
+          "name": "unit/constraint-scope.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 250,
+          "log": "unit-constraint-scope.mjs.log"
+        },
+        {
+          "name": "unit/continuation-audit-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 18,
+          "failed": 0,
+          "milliseconds": 264,
+          "log": "unit-continuation-audit-regressions.mjs.log"
+        },
+        {
+          "name": "unit/continuation-budget-failures.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 10,
+          "failed": 0,
+          "milliseconds": 7780,
+          "log": "unit-continuation-budget-failures.mjs.log"
+        },
+        {
+          "name": "unit/continuation-preflight.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 4989,
+          "log": "unit-continuation-preflight.mjs.log"
+        },
+        {
+          "name": "unit/continuation-process-recovery.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 3,
+          "failed": 0,
+          "milliseconds": 3762,
+          "log": "unit-continuation-process-recovery.mjs.log"
+        },
+        {
+          "name": "unit/continuation-progress.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 23893,
+          "log": "unit-continuation-progress.mjs.log"
+        },
+        {
+          "name": "unit/continuation-request-accounting.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 15,
+          "failed": 0,
+          "milliseconds": 5835,
+          "log": "unit-continuation-request-accounting.mjs.log"
+        },
+        {
+          "name": "unit/continuation-resume-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 39,
+          "failed": 0,
+          "milliseconds": 23363,
+          "log": "unit-continuation-resume-engine.mjs.log"
+        },
+        {
+          "name": "unit/continuation-storage.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 770,
+          "log": "unit-continuation-storage.mjs.log"
+        },
+        {
+          "name": "unit/continuation.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 37,
+          "failed": 0,
+          "milliseconds": 21625,
+          "log": "unit-continuation.mjs.log"
+        },
+        {
+          "name": "unit/cost-audit-replay.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 265,
+          "log": "unit-cost-audit-replay.mjs.log"
+        },
+        {
+          "name": "unit/failure-diagnostics.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 23,
+          "failed": 0,
+          "milliseconds": 902,
+          "log": "unit-failure-diagnostics.mjs.log"
+        },
+        {
+          "name": "unit/live-cost-followup.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 34,
+          "failed": 0,
+          "milliseconds": 245,
+          "log": "unit-live-cost-followup.mjs.log"
+        },
+        {
+          "name": "unit/magpie-summary-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 136,
+          "failed": 0,
+          "milliseconds": 542,
+          "log": "unit-magpie-summary-regressions.mjs.log"
+        },
+        {
+          "name": "unit/memory-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 6829,
+          "log": "unit-memory-engine.mjs.log"
+        },
+        {
+          "name": "unit/memory-policy.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 49,
+          "failed": 0,
+          "milliseconds": 241,
+          "log": "unit-memory-policy.mjs.log"
+        },
+        {
+          "name": "unit/minimum-reduction.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 194,
+          "log": "unit-minimum-reduction.mjs.log"
+        },
+        {
+          "name": "unit/prefix-chronology.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 51,
+          "failed": 0,
+          "milliseconds": 222,
+          "log": "unit-prefix-chronology.mjs.log"
+        },
+        {
+          "name": "unit/proactive.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 268,
+          "log": "unit-proactive.mjs.log"
+        },
+        {
+          "name": "unit/progress-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 6,
+          "failed": 0,
+          "milliseconds": 1482,
+          "log": "unit-progress-engine.mjs.log"
+        },
+        {
+          "name": "unit/progress-facts.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 36,
+          "failed": 0,
+          "milliseconds": 280,
+          "log": "unit-progress-facts.mjs.log"
+        },
+        {
+          "name": "unit/progress-release.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 47,
+          "failed": 0,
+          "milliseconds": 249,
+          "log": "unit-progress-release.mjs.log"
+        },
+        {
+          "name": "unit/progress-source-compatibility.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 166,
+          "log": "unit-progress-source-compatibility.mjs.log"
+        },
+        {
+          "name": "unit/reconstruct.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 369,
+          "log": "unit-reconstruct.mjs.log"
+        },
+        {
+          "name": "unit/requirement-lifecycle.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 31,
+          "failed": 0,
+          "milliseconds": 241,
+          "log": "unit-requirement-lifecycle.mjs.log"
+        },
+        {
+          "name": "unit/residual-audit-boundaries.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 78,
+          "failed": 0,
+          "milliseconds": 389,
+          "log": "unit-residual-audit-boundaries.mjs.log"
+        },
+        {
+          "name": "unit/retry-settings.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 377,
+          "log": "unit-retry-settings.mjs.log"
+        },
+        {
+          "name": "unit/run.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 147,
+          "failed": 0,
+          "milliseconds": 48836,
+          "log": "unit-run.mjs.log"
+        },
+        {
+          "name": "unit/smoke.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 22,
+          "failed": 0,
+          "milliseconds": 233,
+          "log": "unit-smoke.mjs.log"
+        },
+        {
+          "name": "unit/source-cache-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 46,
+          "failed": 0,
+          "milliseconds": 480,
+          "log": "unit-source-cache-regressions.mjs.log"
+        },
+        {
+          "name": "unit/source-provenance.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 333,
+          "log": "unit-source-provenance.mjs.log"
+        },
+        {
+          "name": "unit/source-recovery.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 222,
+          "log": "unit-source-recovery.mjs.log"
+        },
+        {
+          "name": "unit/summary-dispatch-deadline.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 9,
+          "failed": 0,
+          "milliseconds": 5243,
+          "log": "unit-summary-dispatch-deadline.mjs.log"
+        },
+        {
+          "name": "unit/summary-progress.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 35,
+          "failed": 0,
+          "milliseconds": 10227,
+          "log": "unit-summary-progress.mjs.log"
+        },
+        {
+          "name": "unit/summary-projection-budget.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 4,
+          "failed": 0,
+          "milliseconds": 132,
+          "log": "unit-summary-projection-budget.mjs.log"
+        },
+        {
+          "name": "unit/summary-range-search.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 7,
+          "failed": 0,
+          "milliseconds": 649,
+          "log": "unit-summary-range-search.mjs.log"
+        },
+        {
+          "name": "unit/summary-retry.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 40,
+          "failed": 0,
+          "milliseconds": 190,
+          "log": "unit-summary-retry.mjs.log"
+        },
+        {
+          "name": "unit/summary-timeout.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 23,
+          "failed": 0,
+          "milliseconds": 5147,
+          "log": "unit-summary-timeout.mjs.log"
+        },
+        {
+          "name": "unit/work-report.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 13,
+          "failed": 0,
+          "milliseconds": 184,
+          "log": "unit-work-report.mjs.log"
+        }
+      ],
+      "sourceRuntimeHashes": {
+        "lib/abort.js": "7e732b187b8e6a957260c000d9e2d36586eb9833dd4de2dc93e095e2358df348",
+        "lib/atomic-replace.js": "2ac4c0b72289ba877a1c350d87462f4a6c318f884b1586a2301961df96acaf2d",
+        "lib/attachments.js": "1d0d8e254f1f56a8b9aace16bc9edaac7bc21e096168cec96b78c0f16af51f9d",
+        "lib/audit-reject.js": "bd28d9c393234fa38d7f58c232dae23aa747fa5b5c599950f1b6c1d31538eb0a",
+        "lib/audit.js": "eb87d09107d5605bab9e61a8973fb86e3f61ebb9e16337e10047f3378c578526",
+        "lib/cache-policy.js": "cc0a021a1eacc291971c40bca06094241816886a30c5a674781360513ec577e0",
+        "lib/client.js": "2d30e32400cf25ea4935aa2f1558794e198229e31a5b96612b4160198d37c0b9",
+        "lib/command-compact.js": "61c0cd563d4d9f44a628b8d2dd234a9e954036a10c606844515be9ca5e92f1dc",
+        "lib/command-heartbeat.js": "73a433f258c9fe6514edb1fe5c8a4ebb3007ca2e8206fd0174ccec6df5879620",
+        "lib/config.js": "d13fd8b9e513f0c9dcc0beaac48a4de2fcc934c5bebdb84c6a99ba71e3cc386b",
+        "lib/constraint-scope.js": "c4db318556b5b1e218347acc8068188ab8c141ff9401fc8db9728a681838b736",
+        "lib/continuation-budget.js": "8091e5a755245b38f7da593646d30b5e64322719a470c76443f71e0171c6dce5",
+        "lib/continuation-pending.js": "692ba8514fe9da71b8303c56f93e41004288e536d8bef2d119f76ced4559d04b",
+        "lib/continuation-progress.js": "28ef336cfef9825f2de2ac5bb701cc55079651de7087cf40ff1b0eb97e058df5",
+        "lib/continuation.js": "2c84f3d428f89f3ac08e6201b45633c075bc890a74a0f50bb777610c43652070",
+        "lib/engine-entry.js": "6e7e6a1da79ccb08e8317da9b2678a637c81be7371bf2064f072abd4ce7624e1",
+        "lib/engine.js": "9f3fa828365939a9ad7a28e00de831abab6ce65fca668074d4daa566b66a8287",
+        "lib/failure-diagnostics.js": "0ff702a92866082d1919e42efc9d296f06fd6c36a2be988d5e65d6054571ad13",
+        "lib/history.js": "77a56ac6b85105d483d2e340298ffea7411522d90c8d7cff21fe004e4a532a94",
+        "lib/index.js": "a839082e65480781513e53c6377c51a462906e7ae5efb5ceb2537cd1dac62019",
+        "lib/journal.js": "d4f72c87b49b8b0570e2f9bb2dadd7c7cbf2a589a089a5e40f319e92aa3dc5c1",
+        "lib/manual-error.js": "1b674f207c71957f81a0b50f29f19595dbdb360e7a6815b150d571c1f117bb4d",
+        "lib/memory-policy.js": "adbcbffccd0a3a65564d2f4989af97450a440e034749211dac83b62682cfcc7e",
+        "lib/meter.js": "7d371f8cab4409c8f030d05bc6c7a54c79ad6bd093011250d738da30777f779f",
+        "lib/proactive.js": "d03d355d05ba2f595403d15e53463e5b9510d3507af9aab9dd5e9ba5f18580ee",
+        "lib/progress-facts.js": "e4bc3f7ccc9352bc1529cc3aa23c0b59565ce8aea5379556450e3a85035c8c9b",
+        "lib/prompt.js": "5a6809f230056c5ba6f376c1c348ad7006710ed0f0f1461a462a51c53a033316",
+        "lib/reconstruct.js": "0a0471881c454c213c5cf78a1976d7a8267cb0f407770399c458aeb8ec2b641f",
+        "lib/reference-input.js": "8672c2740429ecdb2f01f89fccff300856156ba7afb904fd3c017363b1daf498",
+        "lib/region.js": "e680e1bd910d9ef88a166dc337f24c249cc3cb3bcad99d1d1e2eef27e53e07a8",
+        "lib/source-provenance.js": "d09fb8b8e3d870c7c718f363d4f7c67f9efc5595bbfc4f5897fac639c0ac01f6",
+        "lib/source-recovery.js": "7e5df3caf817e325bdd88b06ece7cc5b0c28ca9da55b5fd1a44d3ae3f76f63cc",
+        "lib/source-refs.js": "6d759bde29f6c765fd38ff6140eac07de6e9d0d411c4038c5a1683ea0f04b558",
+        "lib/state.js": "d74aaa1d55c35af485007af62738facf5427819a20df8b2746a3682bc5245fd1",
+        "lib/storage-path.js": "7658c4abae200bc25a7b9f4e6bce4b54c6b1ae6f47dc21a2a835d57d1beba3de",
+        "lib/summary-budget.js": "0f6bea132f98fc2e05cc5a4c56601171818b5cb2879bdd404bf6693fa4ef41f6",
+        "lib/summary-config.js": "f03828a5d5f234bddd597ca1819380b20f896c2de5c8b2ce47469c822ec49cf3",
+        "lib/summary-progress.js": "4395407e07f49dc925f64e77ff5fdf540e70a6198a33c3e6ed3313dbf3db62b3",
+        "lib/summary-retry.js": "14f3b7cd761768be6598429d2202fb6b2e0ff2534c548aa66cb724bafb759f20",
+        "lib/summary-timeout.js": "a4fbf6c7e685c2361810b9302ced2bced27882bdf048189d091cd644b372cd2c",
+        "lib/summary.js": "f0b512677a44a4c5c71701c7d6705e87d864a7c53e41fb83c277cd3aa8f6550b",
+        "lib/tools.js": "67360bfc3f290d992219d8912d243edac29d460232b1275adae1dc77971fcea1",
+        "lib/transaction-host.js": "11df33040adb952db01d677aec70616835eccce6a3ba08c869d98e825a941d7a",
+        "lib/transaction.js": "99a8d928b5bcd99959ff67382c891fcdee6fcbf09db9ff852d7792d74218c6d3",
+        "lib/validate.js": "ce644787370d46ff324cfdeafcb1f27be85026efd08a82ed17fe9c5c8e0848c8",
+        "lib/version.js": "68b16ab3053eed1b6630aafc305ef278f2a8c80d64afbf50f712225fece34747",
+        "lib/window.js": "7658990a8cfca6dca1f4011b9e68a3348393913d504fce5f86891652fb0e6f67",
+        "lib/work-report.js": "b833e5a14825fc86b3a25a588eb65cdedd39d65babf082af512f167bdaca5332"
+      }
+    },
+    {
+      "version": "0.3.2-rc.3",
+      "date": "2026-11-14T03:27:08.385Z",
+      "node": "v24.9.0",
+      "platform": "linux",
+      "hostIntegration": true,
+      "hostVersion": "0.2.2-rc.2",
+      "suites": 56,
+      "passed": 1698,
+      "failedSuites": 0,
+      "results": [
+        {
+          "name": "host/capacity-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 29,
+          "failed": 0,
+          "milliseconds": 23608,
+          "log": "host-capacity-regressions.mjs.log"
+        },
+        {
+          "name": "host/independent.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 58,
+          "failed": 0,
+          "milliseconds": 6769,
+          "log": "host-independent.mjs.log"
+        },
+        {
+          "name": "host/native-cache-test.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 4,
+          "failed": 0,
+          "milliseconds": 5103,
+          "log": "host-native-cache-test.mjs.log"
+        },
+        {
+          "name": "host/native-host.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 1,
+          "failed": 0,
+          "milliseconds": 1955,
+          "log": "host-native-host.mjs.log"
+        },
+        {
+          "name": "host/native-proactive.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 1,
+          "failed": 0,
+          "milliseconds": 2939,
+          "log": "host-native-proactive.mjs.log"
+        },
+        {
+          "name": "host/native-transaction.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 7133,
+          "log": "host-native-transaction.mjs.log"
+        },
+        {
+          "name": "unit/atomic-replace.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 15,
+          "failed": 0,
+          "milliseconds": 186,
+          "log": "unit-atomic-replace.mjs.log"
+        },
+        {
+          "name": "unit/audit-conditions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 106,
+          "failed": 0,
+          "milliseconds": 239,
+          "log": "unit-audit-conditions.mjs.log"
+        },
+        {
+          "name": "unit/audit-diagnostics.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 401,
+          "log": "unit-audit-diagnostics.mjs.log"
+        },
+        {
+          "name": "unit/audit-evidence.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 39,
+          "failed": 0,
+          "milliseconds": 416,
+          "log": "unit-audit-evidence.mjs.log"
+        },
+        {
+          "name": "unit/audit-records.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 57,
+          "failed": 0,
+          "milliseconds": 207,
+          "log": "unit-audit-records.mjs.log"
+        },
+        {
+          "name": "unit/audit-release.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 135,
+          "log": "unit-audit-release.mjs.log"
+        },
+        {
+          "name": "unit/audit-scope.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 68,
+          "failed": 0,
+          "milliseconds": 194,
+          "log": "unit-audit-scope.mjs.log"
+        },
+        {
+          "name": "unit/audit-structure.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 72,
+          "failed": 0,
+          "milliseconds": 205,
+          "log": "unit-audit-structure.mjs.log"
+        },
+        {
+          "name": "unit/automatic-block.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 792,
+          "log": "unit-automatic-block.mjs.log"
+        },
+        {
+          "name": "unit/cache-range-budget.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 11,
+          "failed": 0,
+          "milliseconds": 917,
+          "log": "unit-cache-range-budget.mjs.log"
+        },
+        {
+          "name": "unit/command-heartbeat.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 24,
+          "failed": 0,
+          "milliseconds": 428,
+          "log": "unit-command-heartbeat.mjs.log"
+        },
+        {
+          "name": "unit/constraint-scope.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 260,
+          "log": "unit-constraint-scope.mjs.log"
+        },
+        {
+          "name": "unit/continuation-audit-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 18,
+          "failed": 0,
+          "milliseconds": 219,
+          "log": "unit-continuation-audit-regressions.mjs.log"
+        },
+        {
+          "name": "unit/continuation-budget-failures.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 10,
+          "failed": 0,
+          "milliseconds": 9135,
+          "log": "unit-continuation-budget-failures.mjs.log"
+        },
+        {
+          "name": "unit/continuation-preflight.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 5540,
+          "log": "unit-continuation-preflight.mjs.log"
+        },
+        {
+          "name": "unit/continuation-process-recovery.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 3,
+          "failed": 0,
+          "milliseconds": 5938,
+          "log": "unit-continuation-process-recovery.mjs.log"
+        },
+        {
+          "name": "unit/continuation-progress.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 21105,
+          "log": "unit-continuation-progress.mjs.log"
+        },
+        {
+          "name": "unit/continuation-request-accounting.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 15,
+          "failed": 0,
+          "milliseconds": 6211,
+          "log": "unit-continuation-request-accounting.mjs.log"
+        },
+        {
+          "name": "unit/continuation-resume-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 39,
+          "failed": 0,
+          "milliseconds": 20082,
+          "log": "unit-continuation-resume-engine.mjs.log"
+        },
+        {
+          "name": "unit/continuation-storage.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 2467,
+          "log": "unit-continuation-storage.mjs.log"
+        },
+        {
+          "name": "unit/continuation.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 37,
+          "failed": 0,
+          "milliseconds": 19888,
+          "log": "unit-continuation.mjs.log"
+        },
+        {
+          "name": "unit/cost-audit-replay.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 251,
+          "log": "unit-cost-audit-replay.mjs.log"
+        },
+        {
+          "name": "unit/failure-diagnostics.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 23,
+          "failed": 0,
+          "milliseconds": 868,
+          "log": "unit-failure-diagnostics.mjs.log"
+        },
+        {
+          "name": "unit/live-cost-followup.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 34,
+          "failed": 0,
+          "milliseconds": 200,
+          "log": "unit-live-cost-followup.mjs.log"
+        },
+        {
+          "name": "unit/magpie-summary-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 136,
+          "failed": 0,
+          "milliseconds": 651,
+          "log": "unit-magpie-summary-regressions.mjs.log"
+        },
+        {
+          "name": "unit/memory-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 5512,
+          "log": "unit-memory-engine.mjs.log"
+        },
+        {
+          "name": "unit/memory-policy.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 49,
+          "failed": 0,
+          "milliseconds": 514,
+          "log": "unit-memory-policy.mjs.log"
+        },
+        {
+          "name": "unit/minimum-reduction.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 289,
+          "log": "unit-minimum-reduction.mjs.log"
+        },
+        {
+          "name": "unit/prefix-chronology.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 51,
+          "failed": 0,
+          "milliseconds": 166,
+          "log": "unit-prefix-chronology.mjs.log"
+        },
+        {
+          "name": "unit/proactive.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 604,
+          "log": "unit-proactive.mjs.log"
+        },
+        {
+          "name": "unit/progress-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 6,
+          "failed": 0,
+          "milliseconds": 1729,
+          "log": "unit-progress-engine.mjs.log"
+        },
+        {
+          "name": "unit/progress-facts.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 36,
+          "failed": 0,
+          "milliseconds": 304,
+          "log": "unit-progress-facts.mjs.log"
+        },
+        {
+          "name": "unit/progress-release.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 47,
+          "failed": 0,
+          "milliseconds": 122,
+          "log": "unit-progress-release.mjs.log"
+        },
+        {
+          "name": "unit/progress-source-compatibility.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 84,
+          "log": "unit-progress-source-compatibility.mjs.log"
+        },
+        {
+          "name": "unit/reconstruct.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 384,
+          "log": "unit-reconstruct.mjs.log"
+        },
+        {
+          "name": "unit/requirement-lifecycle.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 31,
+          "failed": 0,
+          "milliseconds": 147,
+          "log": "unit-requirement-lifecycle.mjs.log"
+        },
+        {
+          "name": "unit/residual-audit-boundaries.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 78,
+          "failed": 0,
+          "milliseconds": 263,
+          "log": "unit-residual-audit-boundaries.mjs.log"
+        },
+        {
+          "name": "unit/retry-settings.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 277,
+          "log": "unit-retry-settings.mjs.log"
+        },
+        {
+          "name": "unit/run.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 147,
+          "failed": 0,
+          "milliseconds": 52193,
+          "log": "unit-run.mjs.log"
+        },
+        {
+          "name": "unit/smoke.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 22,
+          "failed": 0,
+          "milliseconds": 522,
+          "log": "unit-smoke.mjs.log"
+        },
+        {
+          "name": "unit/source-cache-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 46,
+          "failed": 0,
+          "milliseconds": 344,
+          "log": "unit-source-cache-regressions.mjs.log"
+        },
+        {
+          "name": "unit/source-provenance.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 260,
+          "log": "unit-source-provenance.mjs.log"
+        },
+        {
+          "name": "unit/source-recovery.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 385,
+          "log": "unit-source-recovery.mjs.log"
+        },
+        {
+          "name": "unit/summary-dispatch-deadline.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 9,
+          "failed": 0,
+          "milliseconds": 5244,
+          "log": "unit-summary-dispatch-deadline.mjs.log"
+        },
+        {
+          "name": "unit/summary-progress.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 35,
+          "failed": 0,
+          "milliseconds": 10228,
+          "log": "unit-summary-progress.mjs.log"
+        },
+        {
+          "name": "unit/summary-projection-budget.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 4,
+          "failed": 0,
+          "milliseconds": 235,
+          "log": "unit-summary-projection-budget.mjs.log"
+        },
+        {
+          "name": "unit/summary-range-search.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 7,
+          "failed": 0,
+          "milliseconds": 1687,
+          "log": "unit-summary-range-search.mjs.log"
+        },
+        {
+          "name": "unit/summary-retry.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 40,
+          "failed": 0,
+          "milliseconds": 559,
+          "log": "unit-summary-retry.mjs.log"
+        },
+        {
+          "name": "unit/summary-timeout.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 23,
+          "failed": 0,
+          "milliseconds": 7717,
+          "log": "unit-summary-timeout.mjs.log"
+        },
+        {
+          "name": "unit/work-report.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 13,
+          "failed": 0,
+          "milliseconds": 410,
+          "log": "unit-work-report.mjs.log"
+        }
+      ],
+      "sourceRuntimeHashes": {
+        "lib/abort.js": "7e732b187b8e6a957260c000d9e2d36586eb9833dd4de2dc93e095e2358df348",
+        "lib/atomic-replace.js": "2ac4c0b72289ba877a1c350d87462f4a6c318f884b1586a2301961df96acaf2d",
+        "lib/attachments.js": "1d0d8e254f1f56a8b9aace16bc9edaac7bc21e096168cec96b78c0f16af51f9d",
+        "lib/audit-reject.js": "bd28d9c393234fa38d7f58c232dae23aa747fa5b5c599950f1b6c1d31538eb0a",
+        "lib/audit.js": "eb87d09107d5605bab9e61a8973fb86e3f61ebb9e16337e10047f3378c578526",
+        "lib/cache-policy.js": "cc0a021a1eacc291971c40bca06094241816886a30c5a674781360513ec577e0",
+        "lib/client.js": "2d30e32400cf25ea4935aa2f1558794e198229e31a5b96612b4160198d37c0b9",
+        "lib/command-compact.js": "61c0cd563d4d9f44a628b8d2dd234a9e954036a10c606844515be9ca5e92f1dc",
+        "lib/command-heartbeat.js": "73a433f258c9fe6514edb1fe5c8a4ebb3007ca2e8206fd0174ccec6df5879620",
+        "lib/config.js": "d13fd8b9e513f0c9dcc0beaac48a4de2fcc934c5bebdb84c6a99ba71e3cc386b",
+        "lib/constraint-scope.js": "c4db318556b5b1e218347acc8068188ab8c141ff9401fc8db9728a681838b736",
+        "lib/continuation-budget.js": "8091e5a755245b38f7da593646d30b5e64322719a470c76443f71e0171c6dce5",
+        "lib/continuation-pending.js": "692ba8514fe9da71b8303c56f93e41004288e536d8bef2d119f76ced4559d04b",
+        "lib/continuation-progress.js": "28ef336cfef9825f2de2ac5bb701cc55079651de7087cf40ff1b0eb97e058df5",
+        "lib/continuation.js": "2c84f3d428f89f3ac08e6201b45633c075bc890a74a0f50bb777610c43652070",
+        "lib/engine-entry.js": "6e7e6a1da79ccb08e8317da9b2678a637c81be7371bf2064f072abd4ce7624e1",
+        "lib/engine.js": "9f3fa828365939a9ad7a28e00de831abab6ce65fca668074d4daa566b66a8287",
+        "lib/failure-diagnostics.js": "0ff702a92866082d1919e42efc9d296f06fd6c36a2be988d5e65d6054571ad13",
+        "lib/history.js": "77a56ac6b85105d483d2e340298ffea7411522d90c8d7cff21fe004e4a532a94",
+        "lib/index.js": "a839082e65480781513e53c6377c51a462906e7ae5efb5ceb2537cd1dac62019",
+        "lib/journal.js": "d4f72c87b49b8b0570e2f9bb2dadd7c7cbf2a589a089a5e40f319e92aa3dc5c1",
+        "lib/manual-error.js": "1b674f207c71957f81a0b50f29f19595dbdb360e7a6815b150d571c1f117bb4d",
+        "lib/memory-policy.js": "adbcbffccd0a3a65564d2f4989af97450a440e034749211dac83b62682cfcc7e",
+        "lib/meter.js": "7d371f8cab4409c8f030d05bc6c7a54c79ad6bd093011250d738da30777f779f",
+        "lib/proactive.js": "d03d355d05ba2f595403d15e53463e5b9510d3507af9aab9dd5e9ba5f18580ee",
+        "lib/progress-facts.js": "e4bc3f7ccc9352bc1529cc3aa23c0b59565ce8aea5379556450e3a85035c8c9b",
+        "lib/prompt.js": "5a6809f230056c5ba6f376c1c348ad7006710ed0f0f1461a462a51c53a033316",
+        "lib/reconstruct.js": "0a0471881c454c213c5cf78a1976d7a8267cb0f407770399c458aeb8ec2b641f",
+        "lib/reference-input.js": "8672c2740429ecdb2f01f89fccff300856156ba7afb904fd3c017363b1daf498",
+        "lib/region.js": "e680e1bd910d9ef88a166dc337f24c249cc3cb3bcad99d1d1e2eef27e53e07a8",
+        "lib/source-provenance.js": "d09fb8b8e3d870c7c718f363d4f7c67f9efc5595bbfc4f5897fac639c0ac01f6",
+        "lib/source-recovery.js": "7e5df3caf817e325bdd88b06ece7cc5b0c28ca9da55b5fd1a44d3ae3f76f63cc",
+        "lib/source-refs.js": "6d759bde29f6c765fd38ff6140eac07de6e9d0d411c4038c5a1683ea0f04b558",
+        "lib/state.js": "d74aaa1d55c35af485007af62738facf5427819a20df8b2746a3682bc5245fd1",
+        "lib/storage-path.js": "7658c4abae200bc25a7b9f4e6bce4b54c6b1ae6f47dc21a2a835d57d1beba3de",
+        "lib/summary-budget.js": "0f6bea132f98fc2e05cc5a4c56601171818b5cb2879bdd404bf6693fa4ef41f6",
+        "lib/summary-config.js": "f03828a5d5f234bddd597ca1819380b20f896c2de5c8b2ce47469c822ec49cf3",
+        "lib/summary-progress.js": "4395407e07f49dc925f64e77ff5fdf540e70a6198a33c3e6ed3313dbf3db62b3",
+        "lib/summary-retry.js": "14f3b7cd761768be6598429d2202fb6b2e0ff2534c548aa66cb724bafb759f20",
+        "lib/summary-timeout.js": "a4fbf6c7e685c2361810b9302ced2bced27882bdf048189d091cd644b372cd2c",
+        "lib/summary.js": "f0b512677a44a4c5c71701c7d6705e87d864a7c53e41fb83c277cd3aa8f6550b",
+        "lib/tools.js": "67360bfc3f290d992219d8912d243edac29d460232b1275adae1dc77971fcea1",
+        "lib/transaction-host.js": "11df33040adb952db01d677aec70616835eccce6a3ba08c869d98e825a941d7a",
+        "lib/transaction.js": "99a8d928b5bcd99959ff67382c891fcdee6fcbf09db9ff852d7792d74218c6d3",
+        "lib/validate.js": "ce644787370d46ff324cfdeafcb1f27be85026efd08a82ed17fe9c5c8e0848c8",
+        "lib/version.js": "68b16ab3053eed1b6630aafc305ef278f2a8c80d64afbf50f712225fece34747",
+        "lib/window.js": "7658990a8cfca6dca1f4011b9e68a3348393913d504fce5f86891652fb0e6f67",
+        "lib/work-report.js": "b833e5a14825fc86b3a25a588eb65cdedd39d65babf082af512f167bdaca5332"
+      }
+    },
+    {
+      "version": "0.3.2-rc.3",
+      "date": "2026-11-14T03:27:07.919Z",
+      "node": "v24.9.0",
+      "platform": "linux",
+      "hostIntegration": true,
+      "hostVersion": "0.2.2-rc.3",
+      "suites": 56,
+      "passed": 1698,
+      "failedSuites": 0,
+      "results": [
+        {
+          "name": "host/capacity-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 29,
+          "failed": 0,
+          "milliseconds": 22375,
+          "log": "host-capacity-regressions.mjs.log"
+        },
+        {
+          "name": "host/independent.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 58,
+          "failed": 0,
+          "milliseconds": 6977,
+          "log": "host-independent.mjs.log"
+        },
+        {
+          "name": "host/native-cache-test.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 4,
+          "failed": 0,
+          "milliseconds": 5127,
+          "log": "host-native-cache-test.mjs.log"
+        },
+        {
+          "name": "host/native-host.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 1,
+          "failed": 0,
+          "milliseconds": 1830,
+          "log": "host-native-host.mjs.log"
+        },
+        {
+          "name": "host/native-proactive.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 1,
+          "failed": 0,
+          "milliseconds": 2627,
+          "log": "host-native-proactive.mjs.log"
+        },
+        {
+          "name": "host/native-transaction.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 7920,
+          "log": "host-native-transaction.mjs.log"
+        },
+        {
+          "name": "unit/atomic-replace.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 15,
+          "failed": 0,
+          "milliseconds": 182,
+          "log": "unit-atomic-replace.mjs.log"
+        },
+        {
+          "name": "unit/audit-conditions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 106,
+          "failed": 0,
+          "milliseconds": 227,
+          "log": "unit-audit-conditions.mjs.log"
+        },
+        {
+          "name": "unit/audit-diagnostics.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 403,
+          "log": "unit-audit-diagnostics.mjs.log"
+        },
+        {
+          "name": "unit/audit-evidence.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 39,
+          "failed": 0,
+          "milliseconds": 425,
+          "log": "unit-audit-evidence.mjs.log"
+        },
+        {
+          "name": "unit/audit-records.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 57,
+          "failed": 0,
+          "milliseconds": 216,
+          "log": "unit-audit-records.mjs.log"
+        },
+        {
+          "name": "unit/audit-release.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 134,
+          "log": "unit-audit-release.mjs.log"
+        },
+        {
+          "name": "unit/audit-scope.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 68,
+          "failed": 0,
+          "milliseconds": 195,
+          "log": "unit-audit-scope.mjs.log"
+        },
+        {
+          "name": "unit/audit-structure.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 72,
+          "failed": 0,
+          "milliseconds": 190,
+          "log": "unit-audit-structure.mjs.log"
+        },
+        {
+          "name": "unit/automatic-block.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 815,
+          "log": "unit-automatic-block.mjs.log"
+        },
+        {
+          "name": "unit/cache-range-budget.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 11,
+          "failed": 0,
+          "milliseconds": 756,
+          "log": "unit-cache-range-budget.mjs.log"
+        },
+        {
+          "name": "unit/command-heartbeat.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 24,
+          "failed": 0,
+          "milliseconds": 428,
+          "log": "unit-command-heartbeat.mjs.log"
+        },
+        {
+          "name": "unit/constraint-scope.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 217,
+          "log": "unit-constraint-scope.mjs.log"
+        },
+        {
+          "name": "unit/continuation-audit-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 18,
+          "failed": 0,
+          "milliseconds": 183,
+          "log": "unit-continuation-audit-regressions.mjs.log"
+        },
+        {
+          "name": "unit/continuation-budget-failures.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 10,
+          "failed": 0,
+          "milliseconds": 9042,
+          "log": "unit-continuation-budget-failures.mjs.log"
+        },
+        {
+          "name": "unit/continuation-preflight.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 5383,
+          "log": "unit-continuation-preflight.mjs.log"
+        },
+        {
+          "name": "unit/continuation-process-recovery.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 3,
+          "failed": 0,
+          "milliseconds": 5848,
+          "log": "unit-continuation-process-recovery.mjs.log"
+        },
+        {
+          "name": "unit/continuation-progress.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 21649,
+          "log": "unit-continuation-progress.mjs.log"
+        },
+        {
+          "name": "unit/continuation-request-accounting.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 15,
+          "failed": 0,
+          "milliseconds": 6347,
+          "log": "unit-continuation-request-accounting.mjs.log"
+        },
+        {
+          "name": "unit/continuation-resume-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 39,
+          "failed": 0,
+          "milliseconds": 19677,
+          "log": "unit-continuation-resume-engine.mjs.log"
+        },
+        {
+          "name": "unit/continuation-storage.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 2396,
+          "log": "unit-continuation-storage.mjs.log"
+        },
+        {
+          "name": "unit/continuation.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 37,
+          "failed": 0,
+          "milliseconds": 18967,
+          "log": "unit-continuation.mjs.log"
+        },
+        {
+          "name": "unit/cost-audit-replay.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 218,
+          "log": "unit-cost-audit-replay.mjs.log"
+        },
+        {
+          "name": "unit/failure-diagnostics.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 23,
+          "failed": 0,
+          "milliseconds": 915,
+          "log": "unit-failure-diagnostics.mjs.log"
+        },
+        {
+          "name": "unit/live-cost-followup.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 34,
+          "failed": 0,
+          "milliseconds": 169,
+          "log": "unit-live-cost-followup.mjs.log"
+        },
+        {
+          "name": "unit/magpie-summary-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 136,
+          "failed": 0,
+          "milliseconds": 695,
+          "log": "unit-magpie-summary-regressions.mjs.log"
+        },
+        {
+          "name": "unit/memory-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 5529,
+          "log": "unit-memory-engine.mjs.log"
+        },
+        {
+          "name": "unit/memory-policy.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 49,
+          "failed": 0,
+          "milliseconds": 444,
+          "log": "unit-memory-policy.mjs.log"
+        },
+        {
+          "name": "unit/minimum-reduction.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 217,
+          "log": "unit-minimum-reduction.mjs.log"
+        },
+        {
+          "name": "unit/prefix-chronology.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 51,
+          "failed": 0,
+          "milliseconds": 195,
+          "log": "unit-prefix-chronology.mjs.log"
+        },
+        {
+          "name": "unit/proactive.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 662,
+          "log": "unit-proactive.mjs.log"
+        },
+        {
+          "name": "unit/progress-engine.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 6,
+          "failed": 0,
+          "milliseconds": 1672,
+          "log": "unit-progress-engine.mjs.log"
+        },
+        {
+          "name": "unit/progress-facts.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 36,
+          "failed": 0,
+          "milliseconds": 340,
+          "log": "unit-progress-facts.mjs.log"
+        },
+        {
+          "name": "unit/progress-release.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 47,
+          "failed": 0,
+          "milliseconds": 132,
+          "log": "unit-progress-release.mjs.log"
+        },
+        {
+          "name": "unit/progress-source-compatibility.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 16,
+          "failed": 0,
+          "milliseconds": 104,
+          "log": "unit-progress-source-compatibility.mjs.log"
+        },
+        {
+          "name": "unit/reconstruct.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 25,
+          "failed": 0,
+          "milliseconds": 374,
+          "log": "unit-reconstruct.mjs.log"
+        },
+        {
+          "name": "unit/requirement-lifecycle.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 31,
+          "failed": 0,
+          "milliseconds": 137,
+          "log": "unit-requirement-lifecycle.mjs.log"
+        },
+        {
+          "name": "unit/residual-audit-boundaries.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 78,
+          "failed": 0,
+          "milliseconds": 280,
+          "log": "unit-residual-audit-boundaries.mjs.log"
+        },
+        {
+          "name": "unit/retry-settings.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 12,
+          "failed": 0,
+          "milliseconds": 295,
+          "log": "unit-retry-settings.mjs.log"
+        },
+        {
+          "name": "unit/run.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 147,
+          "failed": 0,
+          "milliseconds": 52148,
+          "log": "unit-run.mjs.log"
+        },
+        {
+          "name": "unit/smoke.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 22,
+          "failed": 0,
+          "milliseconds": 445,
+          "log": "unit-smoke.mjs.log"
+        },
+        {
+          "name": "unit/source-cache-regressions.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 46,
+          "failed": 0,
+          "milliseconds": 409,
+          "log": "unit-source-cache-regressions.mjs.log"
+        },
+        {
+          "name": "unit/source-provenance.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 17,
+          "failed": 0,
+          "milliseconds": 311,
+          "log": "unit-source-provenance.mjs.log"
+        },
+        {
+          "name": "unit/source-recovery.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 8,
+          "failed": 0,
+          "milliseconds": 366,
+          "log": "unit-source-recovery.mjs.log"
+        },
+        {
+          "name": "unit/summary-dispatch-deadline.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 9,
+          "failed": 0,
+          "milliseconds": 5269,
+          "log": "unit-summary-dispatch-deadline.mjs.log"
+        },
+        {
+          "name": "unit/summary-progress.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 35,
+          "failed": 0,
+          "milliseconds": 10228,
+          "log": "unit-summary-progress.mjs.log"
+        },
+        {
+          "name": "unit/summary-projection-budget.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 4,
+          "failed": 0,
+          "milliseconds": 205,
+          "log": "unit-summary-projection-budget.mjs.log"
+        },
+        {
+          "name": "unit/summary-range-search.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 7,
+          "failed": 0,
+          "milliseconds": 1419,
+          "log": "unit-summary-range-search.mjs.log"
+        },
+        {
+          "name": "unit/summary-retry.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 40,
+          "failed": 0,
+          "milliseconds": 825,
+          "log": "unit-summary-retry.mjs.log"
+        },
+        {
+          "name": "unit/summary-timeout.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 23,
+          "failed": 0,
+          "milliseconds": 7370,
+          "log": "unit-summary-timeout.mjs.log"
+        },
+        {
+          "name": "unit/work-report.mjs",
+          "exit": 0,
+          "timedOut": false,
+          "passed": 13,
+          "failed": 0,
+          "milliseconds": 462,
+          "log": "unit-work-report.mjs.log"
+        }
+      ],
+      "sourceRuntimeHashes": {
+        "lib/abort.js": "7e732b187b8e6a957260c000d9e2d36586eb9833dd4de2dc93e095e2358df348",
+        "lib/atomic-replace.js": "2ac4c0b72289ba877a1c350d87462f4a6c318f884b1586a2301961df96acaf2d",
+        "lib/attachments.js": "1d0d8e254f1f56a8b9aace16bc9edaac7bc21e096168cec96b78c0f16af51f9d",
+        "lib/audit-reject.js": "bd28d9c393234fa38d7f58c232dae23aa747fa5b5c599950f1b6c1d31538eb0a",
+        "lib/audit.js": "eb87d09107d5605bab9e61a8973fb86e3f61ebb9e16337e10047f3378c578526",
+        "lib/cache-policy.js": "cc0a021a1eacc291971c40bca06094241816886a30c5a674781360513ec577e0",
+        "lib/client.js": "2d30e32400cf25ea4935aa2f1558794e198229e31a5b96612b4160198d37c0b9",
+        "lib/command-compact.js": "61c0cd563d4d9f44a628b8d2dd234a9e954036a10c606844515be9ca5e92f1dc",
+        "lib/command-heartbeat.js": "73a433f258c9fe6514edb1fe5c8a4ebb3007ca2e8206fd0174ccec6df5879620",
+        "lib/config.js": "d13fd8b9e513f0c9dcc0beaac48a4de2fcc934c5bebdb84c6a99ba71e3cc386b",
+        "lib/constraint-scope.js": "c4db318556b5b1e218347acc8068188ab8c141ff9401fc8db9728a681838b736",
+        "lib/continuation-budget.js": "8091e5a755245b38f7da593646d30b5e64322719a470c76443f71e0171c6dce5",
+        "lib/continuation-pending.js": "692ba8514fe9da71b8303c56f93e41004288e536d8bef2d119f76ced4559d04b",
+        "lib/continuation-progress.js": "28ef336cfef9825f2de2ac5bb701cc55079651de7087cf40ff1b0eb97e058df5",
+        "lib/continuation.js": "2c84f3d428f89f3ac08e6201b45633c075bc890a74a0f50bb777610c43652070",
+        "lib/engine-entry.js": "6e7e6a1da79ccb08e8317da9b2678a637c81be7371bf2064f072abd4ce7624e1",
+        "lib/engine.js": "9f3fa828365939a9ad7a28e00de831abab6ce65fca668074d4daa566b66a8287",
+        "lib/failure-diagnostics.js": "0ff702a92866082d1919e42efc9d296f06fd6c36a2be988d5e65d6054571ad13",
+        "lib/history.js": "77a56ac6b85105d483d2e340298ffea7411522d90c8d7cff21fe004e4a532a94",
+        "lib/index.js": "a839082e65480781513e53c6377c51a462906e7ae5efb5ceb2537cd1dac62019",
+        "lib/journal.js": "d4f72c87b49b8b0570e2f9bb2dadd7c7cbf2a589a089a5e40f319e92aa3dc5c1",
+        "lib/manual-error.js": "1b674f207c71957f81a0b50f29f19595dbdb360e7a6815b150d571c1f117bb4d",
+        "lib/memory-policy.js": "adbcbffccd0a3a65564d2f4989af97450a440e034749211dac83b62682cfcc7e",
+        "lib/meter.js": "7d371f8cab4409c8f030d05bc6c7a54c79ad6bd093011250d738da30777f779f",
+        "lib/proactive.js": "d03d355d05ba2f595403d15e53463e5b9510d3507af9aab9dd5e9ba5f18580ee",
+        "lib/progress-facts.js": "e4bc3f7ccc9352bc1529cc3aa23c0b59565ce8aea5379556450e3a85035c8c9b",
+        "lib/prompt.js": "5a6809f230056c5ba6f376c1c348ad7006710ed0f0f1461a462a51c53a033316",
+        "lib/reconstruct.js": "0a0471881c454c213c5cf78a1976d7a8267cb0f407770399c458aeb8ec2b641f",
+        "lib/reference-input.js": "8672c2740429ecdb2f01f89fccff300856156ba7afb904fd3c017363b1daf498",
+        "lib/region.js": "e680e1bd910d9ef88a166dc337f24c249cc3cb3bcad99d1d1e2eef27e53e07a8",
+        "lib/source-provenance.js": "d09fb8b8e3d870c7c718f363d4f7c67f9efc5595bbfc4f5897fac639c0ac01f6",
+        "lib/source-recovery.js": "7e5df3caf817e325bdd88b06ece7cc5b0c28ca9da55b5fd1a44d3ae3f76f63cc",
+        "lib/source-refs.js": "6d759bde29f6c765fd38ff6140eac07de6e9d0d411c4038c5a1683ea0f04b558",
+        "lib/state.js": "d74aaa1d55c35af485007af62738facf5427819a20df8b2746a3682bc5245fd1",
+        "lib/storage-path.js": "7658c4abae200bc25a7b9f4e6bce4b54c6b1ae6f47dc21a2a835d57d1beba3de",
+        "lib/summary-budget.js": "0f6bea132f98fc2e05cc5a4c56601171818b5cb2879bdd404bf6693fa4ef41f6",
+        "lib/summary-config.js": "f03828a5d5f234bddd597ca1819380b20f896c2de5c8b2ce47469c822ec49cf3",
+        "lib/summary-progress.js": "4395407e07f49dc925f64e77ff5fdf540e70a6198a33c3e6ed3313dbf3db62b3",
+        "lib/summary-retry.js": "14f3b7cd761768be6598429d2202fb6b2e0ff2534c548aa66cb724bafb759f20",
+        "lib/summary-timeout.js": "a4fbf6c7e685c2361810b9302ced2bced27882bdf048189d091cd644b372cd2c",
+        "lib/summary.js": "f0b512677a44a4c5c71701c7d6705e87d864a7c53e41fb83c277cd3aa8f6550b",
+        "lib/tools.js": "67360bfc3f290d992219d8912d243edac29d460232b1275adae1dc77971fcea1",
+        "lib/transaction-host.js": "11df33040adb952db01d677aec70616835eccce6a3ba08c869d98e825a941d7a",
+        "lib/transaction.js": "99a8d928b5bcd99959ff67382c891fcdee6fcbf09db9ff852d7792d74218c6d3",
+        "lib/validate.js": "ce644787370d46ff324cfdeafcb1f27be85026efd08a82ed17fe9c5c8e0848c8",
+        "lib/version.js": "68b16ab3053eed1b6630aafc305ef278f2a8c80d64afbf50f712225fece34747",
+        "lib/window.js": "7658990a8cfca6dca1f4011b9e68a3348393913d504fce5f86891652fb0e6f67",
+        "lib/work-report.js": "b833e5a14825fc86b3a25a588eb65cdedd39d65babf082af512f167bdaca5332"
+      }
+    }
+  ],
+  "interfaces": {
+    "changed": "Session.append adds batch input and factors the existing single-event snapshot validation into helpers in rc.2/rc.3.",
+    "unchanged": [
+      "Session.commit",
+      "Session.publicationEntry",
+      "SurfaceManager.validateNext",
+      "SurfaceManager._processDelta",
+      "JSONL backend checked methods",
+      "JSONL handle checked methods",
+      "official /compact command",
+      "token-meter implementation"
+    ],
+    "reviewedSessionAppendHashes": [
+      "f434d8e94303e06be3f3ecddb599f90c7bff421eeb4ca3920611f68925565751",
+      "f90d8979863a27976e0e03bda3254ce5f3a07bc830edeae81e0d60c22127bdaf"
+    ],
+    "unknownImplementations": "Refused before a summary request or transactional history mutation; existing recovery materials are retained.",
+    "rangeAdmission": "DSH uses semver.satisfies with includePrerelease:true; the -0 upper bound excludes 0.3.0 prereleases as well as stable 0.3.0."
+  },
+  "newHostChecks": [
+    "range admits rc1/rc2/rc3, stable 0.2.2 and subsequent 0.2 releases",
+    "range rejects old versions and 0.3 prereleases",
+    "real native durable commit, local archive, readback and reopen",
+    "predecision failure restores original history",
+    "postdecision publication failure preserves durable success and clears decision on cold open",
+    "interrupted physical tail restores verified backup and closes lifecycle before reopening",
+    "unknown append refuses before any summary request",
+    "batch/single append then full compaction and readback"
+  ],
+  "costScope": "No new paid compression or four-model live run for this compatibility patch; existing conditional live and paired-cost evidence remains attributed to its original versions."
+}

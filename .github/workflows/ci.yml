@@ -34,3 +34,22 @@ jobs:
         run: npm test
       - name: Verify release packaging
         run: npm run pack:release
+
+  host-compatibility:
+    name: DSH ${{ matrix.dsh }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        dsh: ['0.2.2-rc.1', '0.2.2-rc.3']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install isolated host dependencies
+        run: npm install --prefix .local/dsh-host --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh-session@${{ matrix.dsh }} @deepseek-ai/dsh-session-persistence-jsonl@${{ matrix.dsh }} @deepseek-ai/dsh-tools@${{ matrix.dsh }} @deepseek-ai/dsh-app-boot@${{ matrix.dsh }}
+      - name: Verify host integration and durable transactions
+        run: node scripts/test.mjs --host-modules .local/dsh-host/node_modules

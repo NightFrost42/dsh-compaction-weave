@@ -1,8 +1,8 @@
 [简体中文](../testing.md) · [English](testing.md)
 
-# DSH Compaction Weave Testing Record (`0.3.2-rc.2`)
+# DSH Compaction Weave Testing Record (`0.3.2-rc.3`)
 
-This document summarizes the offline and host-integration regressions for `0.3.2-rc.2`, the four-model live cross-switch acceptance run and paired strategy cost evaluation conducted during candidate development, and the historical test records and formulas from `0.3.2-rc.1` and `0.3.1-review.35`.
+This document summarizes the multi-host compatibility and offline regressions for `0.3.2-rc.3`, the offline and host-integration regressions for `0.3.2-rc.2`, the four-model live cross-switch acceptance run and paired strategy cost evaluation conducted during `0.3.2-rc.2` candidate development, and the historical test records and formulas from `0.3.2-rc.1` and `0.3.1-review.35`.
 
 ---
 
@@ -12,8 +12,10 @@ Testing across development and release verification covered offline synthetic st
 
 | Test batch | Code or package version | Platform & runtime | Host & model conditions | Scale & outcome | Evidence |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Windows full regression** | `0.3.2-rc.2` | Windows `win32` · Node.js `v24.21.0` | Isolated DSH `0.2.2-rc.1` host + synthetic streams | **55 suites, 1,690 checks** (50 offline suites / 1,597 checks + 5 host suites / 93 checks), **0 failures** | [../test-results.json](../test-results.json) |
-| **Linux offline regression** | `0.3.2-rc.2` | Linux `linux` · Node.js `v24.9.0` | Offline synthetic streams & fault injection | **50 suites, 1,597 checks**, **0 failures** | [../benchmarks/rc2-linux-tests.json](../benchmarks/rc2-linux-tests.json) |
+| **Windows full regression (`rc.3` multi-host)** | `0.3.2-rc.3` | Windows `win32` · Node.js `v24.21.0` | Isolated DSH `0.2.2-rc.1` and `0.2.2-rc.3` hosts + synthetic streams | **56 suites, 1,698 checks per host** (50 offline suites / 1,597 checks + 6 host suites / 101 checks), **0 failures** | [../benchmarks/rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json), [../test-results.json](../test-results.json) |
+| **Linux full regression (`rc.3` multi-host)** | `0.3.2-rc.3` | Linux `linux` · Node.js `v24.9.0` | Isolated DSH `0.2.2-rc.2` and `0.2.2-rc.3` hosts + synthetic streams | **56 suites, 1,698 checks per host** (50 offline suites / 1,597 checks + 6 host suites / 101 checks), **0 failures** | [../benchmarks/rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json) |
+| **Windows full regression (`0.3.2-rc.2`)** | `0.3.2-rc.2` | Windows `win32` · Node.js `v24.21.0` | Isolated DSH `0.2.2-rc.1` host + synthetic streams | **55 suites, 1,690 checks** (50 offline suites / 1,597 checks + 5 host suites / 93 checks), **0 failures** | [../benchmarks/rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json) |
+| **Linux offline regression (`0.3.2-rc.2`)** | `0.3.2-rc.2` | Linux `linux` · Node.js `v24.9.0` | Offline synthetic streams & fault injection | **50 suites, 1,597 checks**, **0 failures** | [../benchmarks/rc2-linux-tests.json](../benchmarks/rc2-linux-tests.json) |
 | **Four-model live cross-switch acceptance** | Internal package `0.3.2-rc.1` (before removing legacy continuation command and adding diagnostic fields) | Windows · live gateway calls | `Gemini 4 Argon` → `GLM` → `DeepSeek` → `GPT` | 4 compactions (1 summary call each), 24 model switches, 60 HTTP requests; **728 / 728** state fields and **77 / 77** structure checks passed | [../benchmarks/rc2-live-and-cost.json](../benchmarks/rc2-live-and-cost.json) |
 | **Four-model paired strategy & cost evaluation** | `0.3.2-rc.2` candidate development branches | Live gateway calls · 10 matched branch pairs | `DeepSeek`, `GLM`, `GPT`, `Gemini` | Baseline vs. experimental partial consolidation across compaction + 6 follow-up replies; independent audit of **678** raw HTTP attempts and **677** `usage` records with **0** discrepancies | [../benchmarks/rc2-live-and-cost.json](../benchmarks/rc2-live-and-cost.json) |
 | **`0.3.2-rc.1` preflight regression (historical)** | `0.3.2-rc.1` | Windows `win32` · Node.js `v24.19.0` | Isolated DSH `0.2.2-rc.1` host + synthetic streams | **50 suites, 1,359 checks** (45 offline suites / 1,266 checks + 5 host suites / 93 checks), **0 failures** | [../benchmarks/published-0.3.2-rc.1-tests.json](../benchmarks/published-0.3.2-rc.1-tests.json) |
@@ -21,17 +23,35 @@ Testing across development and release verification covered offline synthetic st
 
 ---
 
-## 2. `0.3.2-rc.2` Regression Suites and Four-Model Live Acceptance
+## 2. `0.3.2-rc.3` Host Compatibility and `0.3.2-rc.2` Regression Suites
 
-### 2.1 Offline and Host Integration Regression
+### 2.1 `0.3.2-rc.3` Multi-Host Compatibility and Real Transaction Regression
 
-Building on the 50 suites from `0.3.2-rc.1`, `0.3.2-rc.2` adds regression coverage for requirement lifecycles, coordinated negation scope, superseded historical progress snapshots, progress source compatibility, and failure diagnostic whitelisting:
+`0.3.2-rc.3` (November 14, 2026) widens the declared DSH host compatibility range to `>=0.2.2-rc.1 <0.3.0-0` (admitting the `0.2` series from `0.2.2-rc.1` onward, including prereleases, while excluding `0.3.0` prereleases and stable `0.3.0`), adds the reviewed `Session.append` implementation fingerprint introduced in DSH `0.2.2-rc.2` and `0.2.2-rc.3` (`f90d8979863a27976e0e03bda3254ce5f3a07bc830edeae81e0d60c22127bdaf` alongside `f434d8e94303e06be3f3ecddb599f90c7bff421eeb4ca3920611f68925565751`), and updates the host test runner and CI workflow without changing compaction, cache-preservation, cold-read, prewarming, or regeneration policies:
 
-- **Windows full regression**: Executed on Node.js `v24.21.0` with DSH `0.2.2-rc.1`, passing **55 suites and 1,690 checks with 0 failures**. This comprises 50 offline unit suites (1,597 checks) and 5 DSH host integration suites (93 checks: `host/capacity-regressions.mjs` 29, `host/independent.mjs` 58, `host/native-cache-test.mjs` 4, `host/native-host.mjs` 1, and `host/native-proactive.mjs` 1). Suite-level results are recorded in [../test-results.json](../test-results.json).
-- **Linux offline regression**: Executed on Node.js `v24.9.0`, passing **50 suites and 1,597 checks with 0 failures**, recorded in [../benchmarks/rc2-linux-tests.json](../benchmarks/rc2-linux-tests.json).
-- **Replay of historical false-rejection samples**: Candidate summaries that previously triggered false rejections—such as intermediate progress counts (`19/23`) superseded by final completion (`23/23`), or affirmative requirements paired with explicit exclusion clauses—now pass validation without redundant regenerations while genuine polarity flips and progress contradictions remain blocked.
+- **Windows multi-host full regression**: Executed on Windows (`win32`, Node.js `v24.21.0`) against isolated DSH `0.2.2-rc.1` and `0.2.2-rc.3` hosts, passing **56 suites and 1,698 checks with 0 failures** on each host (50 offline suites / 1,597 checks + 6 host suites / 101 checks).
+- **Linux multi-host full regression**: Executed on Linux (`linux`, Node.js `v24.9.0`) against isolated DSH `0.2.2-rc.2` and `0.2.2-rc.3` hosts, passing **56 suites and 1,698 checks with 0 failures** on each host (50 offline suites / 1,597 checks + 6 host suites / 101 checks).
+- **New host transaction and range checks (1 suite / 8 checks)**: Added to the host integration suite (bringing host checks from 5 suites / 93 checks to 6 suites / 101 checks) without calling paid model gateways. The 8 checks verify:
+  1. Semver range admission of `0.2.2-rc.1`, `0.2.2-rc.2`, `0.2.2-rc.3`, stable `0.2.2`, and subsequent `0.2.x` releases;
+  2. Semver range rejection of older versions and `0.3.0` prereleases;
+  3. Real native durable commit, local archive write, readback, and cold reopen;
+  4. Pre-decision failure rollback restoring original session history;
+  5. Post-decision publication failure preserving durable commit state and clearing the pending decision marker on cold open;
+  6. Interrupted physical tail recovery restoring the verified backup and closing the lifecycle before reopening;
+  7. Refusal of unknown `Session.append` implementations before any summary request or transactional history mutation;
+  8. Single and batch `Session.append` ingestion followed by full compaction and archive readback.
+- **CI workflow configuration**: GitHub Actions adds an isolated host compatibility matrix across Windows and Linux against DSH `0.2.2-rc.1` and `0.2.2-rc.3` while retaining the existing offline matrix; cloud workflow runs for the new matrix have not yet been generated at release verification time.
+- **Host support boundary**: Verified DSH host releases are `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3` ([../benchmarks/rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json)). Future `0.2.x` releases pass the installer version range check, but if a future host modifies private persistence methods to an unreviewed implementation fingerprint, Weave refuses compaction before issuing any summary request or mutating history while keeping existing recovery protections intact.
 
-### 2.2 Four-Model Live Cross-Switch Acceptance
+### 2.2 `0.3.2-rc.2` Offline and Host Integration Regression
+
+Building on the 50 suites from `0.3.2-rc.1`, `0.3.2-rc.2` added regression coverage for requirement lifecycles, coordinated negation scope, superseded historical progress snapshots, progress source compatibility, and failure diagnostic whitelisting:
+
+- **Windows full regression (`0.3.2-rc.2`)**: Executed on Node.js `v24.21.0` with DSH `0.2.2-rc.1`, passing **55 suites and 1,690 checks with 0 failures**. This comprises 50 offline unit suites (1,597 checks) and 5 DSH host integration suites (93 checks: `host/capacity-regressions.mjs` 29, `host/independent.mjs` 58, `host/native-cache-test.mjs` 4, `host/native-host.mjs` 1, and `host/native-proactive.mjs` 1).
+- **Linux offline regression (`0.3.2-rc.2`)**: Executed on Node.js `v24.9.0`, passing **50 suites and 1,597 checks with 0 failures**, recorded in [../benchmarks/rc2-linux-tests.json](../benchmarks/rc2-linux-tests.json).
+- **Replay of historical false-rejection samples**: Candidate summaries that previously triggered false rejections—such as intermediate progress counts (`19/23`) superseded by final completion (`23/23`), or affirmative requirements paired with explicit exclusion clauses—pass validation without redundant regenerations while genuine polarity flips and progress contradictions remain blocked.
+
+### 2.3 Four-Model Live Cross-Switch Acceptance
 
 Prior to removing the legacy `/context-continue` command registration and adding the new diagnostic metadata fields, a live cross-provider acceptance run was executed using internal package `0.3.2-rc.1`. A single long session was compacted and continued across **Gemini 4 Argon → GLM → DeepSeek → GPT**, as recorded in [../benchmarks/rc2-live-and-cost.json](../benchmarks/rc2-live-and-cost.json):
 
@@ -64,7 +84,7 @@ Cost accounting followed these rules:
 | **GPT** | 3 | `$0.24170450` | `$0.23862275` | `-1.28%` | `$0` |
 | **Gemini** | 2 | `$0.2185486` | `$0.2823570` | `+29.20%` | `$0.1911960` |
 
-**Conclusion**: Experimental partial consolidation produced only minor matched-pair savings on `DeepSeek` (`-4.36%`) and `GPT` (`-1.28%`), while substantially increasing summary regeneration and follow-up costs on `GLM` (`+31.88%` under the proxy-rate scenario) and `Gemini` (`+29.20%`), alongside 1 uncompleted content-failure branch on both `GLM` (`$0.017583060`) and `Gemini` (`$0.1911960`). Consequently, `0.3.2-rc.2` retains the existing incremental-plus-full-consolidation default policy and does not send post-compaction cache prewarming requests.
+**Conclusion**: Experimental partial consolidation produced only minor matched-pair savings on `DeepSeek` (`-4.36%`) and `GPT` (`-1.28%`), while substantially increasing summary regeneration and follow-up costs on `GLM` (`+31.88%` under the proxy-rate scenario) and `Gemini` (`+29.20%`), alongside 1 uncompleted content-failure branch on both `GLM` (`$0.017583060`) and `Gemini` (`$0.1911960`). Consequently, `0.3.2-rc.2` and `0.3.2-rc.3` retain the existing incremental-plus-full-consolidation default policy and do not send post-compaction cache prewarming requests.
 
 <details>
 <summary>Expand for stage-level costs, completed branch counts, and HTTP attempt breakdown</summary>
@@ -114,7 +134,7 @@ Detailed token counts (`inputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `ou
 
 When interpreting the live acceptance and paired cost datasets, note the following scope boundaries:
 
-- **Version attribution of live runs**: The four-model cross-switch acceptance test ran on internal package `0.3.2-rc.1` prior to removing `/context-continue` and adding the new diagnostic metadata fields, and the paired cost experiment compared candidate development branches. Neither dataset should be read as a post-freeze live package verification of the final `0.3.2-rc.2` tarball.
+- **Version attribution of live runs**: The four-model cross-switch acceptance test ran on internal package `0.3.2-rc.1` prior to removing `/context-continue` and adding the new diagnostic metadata fields, and the paired cost experiment compared `0.3.2-rc.2` candidate development branches. `0.3.2-rc.3` only widens host compatibility without new paid live runs; these datasets remain attributed to their respective builds rather than post-freeze live runs of the final `0.3.2-rc.2` or `0.3.2-rc.3` tarballs.
 - **Invoice and pricing scope**: `DeepSeek`, `GPT`, and `Gemini` costs are gateway-rate estimates derived from returned `usage` without provider invoice reconciliation. `GLM` has its own billing schedule; its dollar figures and the `+31.88%` delta belong strictly to the proxy-rate cost scenario simulated with DeepSeek gateway unit rates, not actual paid invoices or official GLM list prices.
 - **Unmatched branch counts in `allAttempts`**: On `GLM` and `Gemini`, Baseline completed 3 branches while Candidate completed 2; therefore, `allAttempts` totals reflect different numbers of completed branches (3 vs. 2) and cannot be compared directly as equal-output totals.
 - **Control arm scope**: The paired experiment compared two compaction consolidation strategies across compaction plus 6 follow-up replies and did not include an uncompacted 6-reply live control arm.
@@ -126,7 +146,7 @@ When interpreting the live acceptance and paired cost datasets, note the followi
 In test ledgers and failure diagnostics, Weave records missing usage measurements and host versions according to these rules:
 
 - **Missing usage representation**: When a request does not report `usage`, or when a request fails (`streamFailure` or an `error` / `aborted` terminal state) and the adapter returns an all-zero `usage` object, the measurement is treated as unknown and represented in JSON via `usage: null`, omitted fields, or `usageKnown: false` rather than a fixed `"unknown"` string. Successful responses with genuine zero or positive usage preserve their reported values.
-- **Host version fields**: The diagnostic environment block records `supportedDshVersion: "0.2.2-rc.1"` and sets `actualDshVersion: null`, indicating that the running host version was not reliably collected; issue reports still require the user to supply the running DSH version manually.
+- **Host version fields**: The diagnostic environment block records `supportedDshVersion: ">=0.2.2-rc.1 <0.3.0-0"` (the declared host compatibility range; `0.3.2-rc.2` recorded `"0.2.2-rc.1"`) and sets `actualDshVersion: null`, indicating that the running host version is not automatically detected; issue reports still require the user to supply the running DSH version manually.
 
 ---
 

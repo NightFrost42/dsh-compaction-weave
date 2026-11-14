@@ -6,7 +6,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 
 const project=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const args=process.argv.slice(2);
-let host=false,hostModules=process.env.DSH_TEST_NODE_MODULES;
+let host=false,hostModules=process.env.DSH_TEST_NODE_MODULES,hostVersion=null;
 while(args.length) {
   const flag=args.shift();
   if(flag==='--host')host=true;
@@ -17,7 +17,9 @@ if(host&&!hostModules)throw new Error('Set DSH_TEST_NODE_MODULES to the DSH runt
 if(host) {
   const info=JSON.parse(fs.readFileSync(path.join(hostModules,'@deepseek-ai/dsh-session/package.json'),'utf8'));
   const pkg=JSON.parse(fs.readFileSync(path.join(project,'package.json'),'utf8'));
-  if(info.version!==pkg.engines.dsh)throw new Error(`Expected DSH ${pkg.engines.dsh}; found ${info.version}.`);
+  const {evaluatePluginCompatibility}=await import(pathToFileURL(path.join(hostModules,'@deepseek-ai/dsh-app-boot/lib/index.js')));
+  if(evaluatePluginCompatibility(pkg,{},info.version))throw new Error(`Expected DSH ${pkg.engines.dsh}; found ${info.version}.`);
+  hostVersion=info.version;
 }
 const reportDir=path.join(project,'.local','test-results',new Date().toISOString().replace(/[:.]/g,'-'));
 fs.mkdirSync(reportDir,{recursive:true});
@@ -63,7 +65,7 @@ async function worker() {
 await Promise.all([worker(),worker(),worker()]);
 results.sort((a,b)=>a.name.localeCompare(b.name));
 const failedSuites=results.filter(r=>r.exit!==0||r.failed>0||r.passed===0).length;
-const report={version:JSON.parse(fs.readFileSync(path.join(project,'package.json'))).version,date:new Date().toISOString(),node:process.version,platform:process.platform,hostIntegration:host,suites:results.length,passed:results.reduce((n,r)=>n+r.passed,0),failedSuites,results};
+const report={version:JSON.parse(fs.readFileSync(path.join(project,'package.json'))).version,date:new Date().toISOString(),node:process.version,platform:process.platform,hostIntegration:host,hostVersion,suites:results.length,passed:results.reduce((n,r)=>n+r.passed,0),failedSuites,results};
 fs.writeFileSync(path.join(reportDir,'summary.json'),JSON.stringify(report,null,2)+'\n');
 fs.writeFileSync(path.join(project,'.local','latest-tests.json'),JSON.stringify(report,null,2)+'\n');
 // Only remove the scratch directory that this invocation created.

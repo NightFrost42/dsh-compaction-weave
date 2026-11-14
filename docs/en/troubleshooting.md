@@ -16,6 +16,7 @@ If all attempts are exhausted, the conversation displays the failure reason and 
 | Oversized input or tool group | Use the error code, effective settings, and collected input estimates in the diagnostic file to adjust the summary model window or input budgets |
 | Continuation call budget exhausted | Resolve the reported cause, then run `/compact` to grant a fresh call budget for remaining pages |
 | Recovery or write-quarantine notice | Keep the transaction journal and `.rollback` backup in storage, restart DSH, and inspect the recovery outcome |
+| Host compatibility or private method check notice | Verify that your DSH version falls within `>=0.2.2-rc.1 <0.3.0-0` (formally verified against `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`); if a future 0.2.x release changes private persistence methods, Weave refuses compaction before requesting a summary or mutating history while retaining existing recovery materials |
 
 ## False rejections and phrasing boundaries
 
@@ -31,7 +32,7 @@ By default, plugin data is stored under:
 <DSH_HOME>/storages/dsh-compaction-weave/
 ```
 
-- `diagnostics/`: uses an allowlist of metadata fields to record the failure stage, error code, per-attempt outcomes, timing, returned usage, effective settings, input estimates, continuation progress, and linked `auditReports` references, without source sequence numbers, conversation excerpts, or candidate prose. Routing fields under `context` reflect configured session and summary routing rather than the final responder model name; `actualDshVersion` is recorded as `null` when the running host version is not reliably collected, while `supportedDshVersion` records the declared host baseline (`"0.2.2-rc.1"`).
+- `diagnostics/`: uses an allowlist of metadata fields to record the failure stage, error code, per-attempt outcomes, timing, returned usage, effective settings, input estimates, continuation progress, and linked `auditReports` references, without source sequence numbers, conversation excerpts, or candidate prose. Routing fields under `context` reflect configured session and summary routing rather than the final responder model name; `actualDshVersion` is recorded as `null` when the running host version is not reliably collected (you can note your actual version manually when troubleshooting or reporting issues), while `supportedDshVersion` records the declared host compatibility range string (`">=0.2.2-rc.1 <0.3.0-0"`).
 - `audit-reject/`: stores candidate summaries rejected by requirement or progress checks along with the audited text, source sequence numbers, and source excerpts, referenced from `auditReports` in the diagnostic file.
 - `sessions/`: stores archived original history events and attachments organized by session.
 - `summary-config.json`: stores summary model routing and retry configuration.
@@ -51,7 +52,7 @@ To update a local package in Desktop, uninstall the existing Weave package on th
 For a command-line profile, stop the profile before upgrading or removing the package:
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.2.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

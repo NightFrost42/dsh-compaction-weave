@@ -55,7 +55,7 @@ Accepted pages persist their source identity and progress. Later attempts reuse 
 
 Archives preserve original events, message blocks, tool relationships, and SHA-256-checked attachments. History tools read these records in pages.
 
-The transaction adapter checks fingerprints of the DSH `0.2.2-rc.1` host methods. It backs up the original state, durably writes the replacement, persists a success decision, then publishes. A failure before that decision can restore a verified backup. A publication failure after durable success quarantines the writer and requires a cold reopen, preserving the successfully committed history.
+The transaction adapter checks fingerprints of the reviewed DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3` host methods (including single-event and batch `Session.append` implementations). Unrecognized host method implementations are refused before any summary request or transactional history mutation while retaining existing recovery materials. It backs up the original state, durably writes the replacement, persists a success decision, then publishes. A failure before that decision can restore a verified backup. A publication failure after durable success quarantines the writer and requires a cold reopen, preserving the successfully committed history.
 
 ## Entry points
 

@@ -4,7 +4,7 @@
 
 ## Environment
 
-Use Node.js 24.9+ and npm. Host integration requires the DSH `0.2.2-rc.1` runtime dependencies. The plugin uses JavaScript ES modules directly, with no compilation step or additional runtime dependencies.
+Use Node.js 24.9+ and npm. The plugin declares DSH compatibility as `>=0.2.2-rc.1 <0.3.0-0`; host integration uses runtime dependencies from a verified DSH host release (`0.2.2-rc.1`, `0.2.2-rc.2`, or `0.2.2-rc.3`). The plugin uses JavaScript ES modules directly, with no compilation step or additional runtime dependencies.
 
 ```bash
 npm test
@@ -31,7 +31,7 @@ Or supply the directory directly:
 node scripts/test.mjs --host-modules /path/to/dsh/node_modules
 ```
 
-This runs all offline suites plus host session, surface, capacity, proactive-compaction, and multi-generation prefix-preservation tests. Model output is supplied by fixtures and temporary storage is isolated.
+This runs all offline suites (50 suites, 1597 tests) plus host session, surface, capacity, proactive-compaction, multi-generation prefix-preservation, range admission, native durable commit, rollback, post-decision failure, cold recovery, batch `append`, and unknown-method refusal tests (6 suites, 101 tests). Model output is supplied by fixtures without paid model calls, and temporary storage is isolated. See [rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json) for the host compatibility and test records.
 
 ## Layout
 
@@ -48,7 +48,7 @@ docs/                 Chinese guides and test records
 cordis.patch.yml      DSH plugin bundle entry
 ```
 
-`.local/` and `dist/` are ignored by Git. The CI workflow runs offline tests, source checks, and packaging on Windows and Linux using Node.js 24.
+`.local/` and `dist/` are ignored by Git. The CI workflow runs offline tests, source checks, packaging, and an isolated host matrix against DSH `0.2.2-rc.1` and `0.2.2-rc.3` on Windows and Linux using Node.js 24.
 
 ## Artifacts
 
@@ -72,7 +72,7 @@ The runtime package follows `package.json.files`; the source archive uses an exp
 5. If publishing to npm, publish the verified tarball:
 
 ```bash
-npm publish dist/dsh-compaction-weave-0.3.2-rc.2.tgz --tag next --access public
+npm publish dist/dsh-compaction-weave-0.3.2-rc.3.tgz --tag next --access public
 ```
 
 The current release is a candidate and uses the `next` npm tag. A stable release updates both the version and `publishConfig.tag`.

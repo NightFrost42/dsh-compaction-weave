@@ -10,7 +10,7 @@
 
 [![Release](https://img.shields.io/github/v/release/NightFrost42/dsh-compaction-weave?include_prereleases&style=flat-square&color=5865F2)](https://github.com/NightFrost42/dsh-compaction-weave/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/NightFrost42/dsh-compaction-weave/ci.yml?style=flat-square)](https://github.com/NightFrost42/dsh-compaction-weave/actions/workflows/ci.yml)
-[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.1-4D6BFE?style=flat-square)](docs/configuration.md)
+[![DSH](https://img.shields.io/badge/DSH-%E2%89%A50.2.2--rc.1%20%3C0.3.0--0-4D6BFE?style=flat-square)](docs/configuration.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A524.9-339933?style=flat-square&logo=node.js&logoColor=white)](docs/development.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22A06B?style=flat-square)](LICENSE)
 [![Languages](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87%20%7C%20English-0F766E?style=flat-square)](README.en.md)
@@ -35,13 +35,13 @@
 
 ## 安装与升级
 
-适配 **DeepSeek Harness 0.2.2-rc.1**，运行环境需 **Node.js 24.9+**。以下以 `0.3.2-rc.2` 为例，可使用 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases) 提供的安装包或本地打包生成的 `.tgz` 文件。
+支持 **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0-0`**（`0.2.2-rc.1` 起的 `0.2` 系列），已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，运行环境需 **Node.js 24.9+**。以下以 `0.3.2-rc.3` 为例，可使用 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases) 提供的安装包或本地打包生成的 `.tgz` 文件。
 
 ### 桌面端
 
-1. 下载 `dsh-compaction-weave-0.3.2-rc.2.tgz`。
+1. 下载 `dsh-compaction-weave-0.3.2-rc.3.tgz`。
 2. 升级安装时，先在 **插件** 页面卸载旧版 Weave，保留独立存储目录中的历史归档与设置；首次安装可跳过此步。
-3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.3.2-rc.2.tgz`），完成安装并启用。
+3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.3.2-rc.3.tgz`），完成安装并启用。
 4. **重启 DSH**，在插件详情页确认版本号已更新。
 
 ### 命令行
@@ -49,7 +49,7 @@
 停止目标 profile 后执行安装或覆盖升级：
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.2.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
 ```
 
 请将 `web` 替换为实际使用的命令行 profile 名称，完成后重新启动该 profile。桌面端用户请使用上方的插件管理页流程。
@@ -87,7 +87,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.2.tgz
 
 ## 测试与验证
 
-- **离线与宿主回归**：`0.3.2-rc.2` 在 Windows（Node.js 24.21.0、DSH 0.2.2-rc.1）通过 **55 套、1690 项**测试（含宿主集成），在 Linux（Node.js 24.9.0）通过 **50 套、1597 项**离线回归，均为 0 失败。
+- **离线与宿主回归**：`0.3.2-rc.3` 在 Windows（Node.js 24.21.0，分别搭配 DSH `0.2.2-rc.1` 与 `0.2.2-rc.3`）及 Linux（Node.js 24.9.0，分别搭配 DSH `0.2.2-rc.2` 与 `0.2.2-rc.3`）均通过 **56 套、1698 项**测试（其中离线 **50 套、1597 项**，真实宿主集成 **6 套、101 项**，含新增 8 项宿主事务、范围准入与未知实现拒绝检查），全部 0 失败；明细见 [`docs/benchmarks/rc3-host-compatibility.json`](docs/benchmarks/rc3-host-compatibility.json)。
 - **四模型连续切换实测**：在移除旧手动接续命令并补充诊断元数据前的内部版本（`0.3.2-rc.1`）上，联网验收覆盖 **Gemini 4 Argon → GLM → DeepSeek → GPT**，连续完成 4 次压缩（每次 1 次摘要请求）、24 次模型切换与 60 次 HTTP 请求，**728 / 728** 个状态字段和 **77 / 77** 项流程结构检查全部通过。
 - **策略与费用评估**：配对实验对比了既有增量与完整合并策略同实验性局部合并方案，计入内容不合格与误拒重生成及压缩后 6 次接续回答，排除网络和供应商请求失败。实测显示既有策略跨模型表现更稳健，因此保持既有策略且不在压缩后额外预热。
 
@@ -98,7 +98,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.2.tgz
 遇到报错、摘要被拒或压缩后遗漏信息时，可按以下步骤排查与反馈：
 
 1. 在 [GitHub Issues](https://github.com/NightFrost42/dsh-compaction-weave/issues/new/choose) 选择中文或英文模板，描述问题现象、复现步骤与预期表现。
-2. **日志附件完全可选**。附上对应操作的诊断日志通常有助于更快定位问题；诊断文件已自动记录插件版本、适配目标 DSH 版本（实际安装的 DSH 版本仍可在 Issue 中补充）、配置的模型路由、有效设置、尝试记录、错误分类和返回用量，无需手动抄写。
+2. **日志附件完全可选**。附上对应操作的诊断日志通常有助于更快定位问题；诊断文件已自动记录插件版本、支持的 DSH 版本范围 `supportedDshVersion`（`actualDshVersion` 仍为 `null`，可在 Issue 中补充实际安装的 DSH 版本）、配置的模型路由、有效设置、尝试记录、错误分类和返回用量，无需手动抄写。
 3. **隐私提示**：诊断日志与关联审计文件可能包含本地路径、对话原文或业务信息。将原始文件发给云端 AI 本身属于信息分享，AI 脱敏也可能遗漏敏感内容或改动关键证据。提交前请人工复查脱敏副本，拿不准时可不附日志。详细说明与脱敏提示词见 [提交问题与日志脱敏](docs/feedback.md)。
 
 ## 文档与开发

@@ -5,7 +5,7 @@
 ## 环境
 
 - Node.js 24.9+ 与 npm。
-- 宿主集成测试使用 DSH `0.2.2-rc.1` 的运行依赖。
+- 插件兼容声明为 DSH `>=0.2.2-rc.1 <0.3.0-0`；宿主集成测试使用已实测 DSH 宿主版本（`0.2.2-rc.1`、`0.2.2-rc.2` 或 `0.2.2-rc.3`）的运行依赖。
 - 源码使用 JavaScript ES modules，没有构建步骤或额外运行依赖。
 
 ## 常用命令
@@ -35,7 +35,7 @@ npm run test:host
 node scripts/test.mjs --host-modules /path/to/dsh/node_modules
 ```
 
-这会运行全部离线套件，再运行真实 DSH `Session`、消息表、容量、主动压缩和多代缓存保留测试。模型输出由测试提供，每个进程使用独立的临时存储。
+这会运行全部离线套件（50 套 1597 项），再运行真实 DSH `Session`、消息表、容量、主动压缩、多代缓存保留，以及兼容范围准入、原生持久化提交、回滚、决定后异常、冷恢复、批量 `append` 和未知方法拒绝测试（6 套 101 项）。模型输出由测试提供，不调用付费模型，每个进程使用独立的临时存储。宿主兼容与测试记录见 [rc3-host-compatibility.json](benchmarks/rc3-host-compatibility.json)。
 
 ## 目录
 
@@ -53,7 +53,7 @@ cordis.patch.yml   DSH 插件组合包入口
 
 `.local/` 保存本地验证输出，`dist/` 保存生成的交付物，二者已加入 `.gitignore`。
 
-GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、项目检查和发布打包。
+GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、项目检查、发布打包，以及针对 DSH `0.2.2-rc.1` 与 `0.2.2-rc.3` 的隔离宿主测试矩阵。
 
 ## 构建交付物
 
@@ -75,7 +75,7 @@ GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、�
 5. 如发布到 npm，发布已验证的 tarball：
 
 ```bash
-npm publish dist/dsh-compaction-weave-0.3.2-rc.2.tgz --tag next --access public
+npm publish dist/dsh-compaction-weave-0.3.2-rc.3.tgz --tag next --access public
 ```
 
 当前为候选版本，默认发布标签为 `next`。正式版同时更新版本号和 `publishConfig.tag`。

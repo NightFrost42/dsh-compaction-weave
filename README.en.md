@@ -10,7 +10,7 @@ A context-compaction plugin for DeepSeek Harness that keeps long conversations f
 
 [![Release](https://img.shields.io/github/v/release/NightFrost42/dsh-compaction-weave?include_prereleases&style=flat-square&color=5865F2)](https://github.com/NightFrost42/dsh-compaction-weave/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/NightFrost42/dsh-compaction-weave/ci.yml?style=flat-square)](https://github.com/NightFrost42/dsh-compaction-weave/actions/workflows/ci.yml)
-[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.1-4D6BFE?style=flat-square)](docs/en/configuration.md)
+[![DSH](https://img.shields.io/badge/DSH-%E2%89%A50.2.2--rc.1%20%3C0.3.0--0-4D6BFE?style=flat-square)](docs/en/configuration.md)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A524.9-339933?style=flat-square&logo=node.js&logoColor=white)](docs/en/development.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22A06B?style=flat-square)](LICENSE)
 [![Languages](https://img.shields.io/badge/docs-English%20%7C%20%E4%B8%AD%E6%96%87-0F766E?style=flat-square)](README.md)
@@ -35,13 +35,13 @@ When context approaches the trigger threshold or a compaction request is issued,
 
 ## Installation and upgrade
 
-Built for **DeepSeek Harness 0.2.2-rc.1** on **Node.js 24.9+**. The examples below use `0.3.2-rc.2`; download the release asset from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases) or build a local `.tgz` package.
+Supports **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0-0`** (`0.2` series from `0.2.2-rc.1`), verified against **DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`** on **Node.js 24.9+**. The examples below use `0.3.2-rc.3`; download the release asset from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases) or build a local `.tgz` package.
 
 ### Desktop
 
-1. Obtain `dsh-compaction-weave-0.3.2-rc.2.tgz`.
+1. Obtain `dsh-compaction-weave-0.3.2-rc.3.tgz`.
 2. When upgrading, uninstall the existing Weave package on the **Plugins** page first while keeping archives and settings in the independent storage directory. Skip this step for a fresh installation.
-3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.3.2-rc.2.tgz`), then install and enable it.
+3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.3.2-rc.3.tgz`), then install and enable it.
 4. **Restart DSH** and verify the version on the plugin details page.
 
 ### Command line
@@ -49,7 +49,7 @@ Built for **DeepSeek Harness 0.2.2-rc.1** on **Node.js 24.9+**. The examples bel
 Stop the target profile, then install or upgrade the package:
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.2.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
 ```
 
 Replace `web` with your command-line profile name and restart that profile afterwards. Desktop users should follow the plugin manager steps above.
@@ -87,7 +87,7 @@ Retry settings take effect independently of summary model selection. See [Config
 
 ## Tests and verification
 
-- **Offline and host regression**: `0.3.2-rc.2` passed **55 suites with 1,690 checks** (including DSH host integration) on Windows (Node.js 24.21.0, DSH 0.2.2-rc.1) and **50 suites with 1,597 checks** in Linux offline regression (Node.js 24.9.0), with 0 failures.
+- **Offline and host regression**: `0.3.2-rc.3` passed **56 suites with 1,698 checks** (**50 offline suites with 1,597 checks** plus **6 real-host integration suites with 101 checks**, including 8 new checks for native transactional commit/rollback, range admission, and unknown-method refusal) on Windows (Node.js 24.21.0 with DSH `0.2.2-rc.1` and `0.2.2-rc.3`) and on Linux (Node.js 24.9.0 with DSH `0.2.2-rc.2` and `0.2.2-rc.3`), all with 0 failures; see [`docs/benchmarks/rc3-host-compatibility.json`](docs/benchmarks/rc3-host-compatibility.json).
 - **Four-model live cross-switch acceptance**: Live testing on the internal `0.3.2-rc.1` build prior to removing the legacy manual continuation command and adding diagnostic metadata covered **Gemini 4 Argon → GLM → DeepSeek → GPT**, completing 4 compactions (1 summary call each), 24 model switches, and 60 HTTP requests with **728 / 728** state fields and **77 / 77** workflow and structure checks passing.
 - **Strategy and cost evaluation**: Paired experiments compared the existing incremental and full-consolidation policy against an experimental partial-consolidation candidate across compaction and 6 follow-up replies, counting content and false-rejection regenerations while excluding network and provider request failures. The existing policy proved more consistent across models and remains the default, without post-compaction prewarming.
 
@@ -98,7 +98,7 @@ Compaction produces a lossy summary backed by on-demand archive lookup, and inpu
 If you encounter an error, an unexpected summary rejection, or missing context after compaction:
 
 1. Open [GitHub Issues](https://github.com/NightFrost42/dsh-compaction-weave/issues/new/choose), choose the English or Chinese template, and describe the symptom, reproduction steps, and expected behavior.
-2. **Log attachments are optional.** Attaching the diagnostic file for the failed operation usually speeds up troubleshooting; diagnostics already record the plugin version, target DSH version (you can still note your actually installed DSH version in the issue), configured model routes, effective settings, attempts, error categories, and returned usage automatically.
+2. **Log attachments are optional.** Attaching the diagnostic file for the failed operation usually speeds up troubleshooting; diagnostics already record the plugin version, declared DSH version range `supportedDshVersion` (`actualDshVersion` remains `null`, so you can still note your actually installed DSH version in the issue), configured model routes, effective settings, attempts, error categories, and returned usage automatically.
 3. **Privacy notice:** Diagnostic logs and linked audit records may contain local paths, conversation text, or business data. Sending original files to a cloud AI is itself an external disclosure, and AI redaction can miss sensitive details or alter evidence. Always review redacted copies yourself before submitting, and omit attachments if unsure. See [Reporting issues and redacting logs](docs/en/feedback.md) for details and the redaction prompt.
 
 ## Documentation and development

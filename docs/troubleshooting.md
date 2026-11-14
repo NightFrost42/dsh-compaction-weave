@@ -16,6 +16,7 @@
 | 输入或单组工具消息过大 | 根据诊断中的错误码、有效配置与已采集的输入估算，调整摘要模型窗口或输入预算配置 |
 | 后台分页调用额度耗尽 | 排查提示原因后，输入 `/compact` 为剩余未完成页面续批一轮调用额度 |
 | 会话恢复或写隔离提示 | 保留存储目录中的事务日志与 `.rollback` 备份，重启宿主后查看恢复结果 |
+| 宿主兼容或私有方法校验提示 | 核对当前 DSH 版本是否处于 `>=0.2.2-rc.1 <0.3.0-0` 范围（正式实测覆盖 `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`）；若未来 0.2.x 版本改动私有持久化方法，插件会在发起摘要与改写历史前拒绝压缩并保留现有恢复材料 |
 
 ## 审计误拒与自然语言边界
 
@@ -31,7 +32,7 @@
 <DSH_HOME>/storages/dsh-compaction-weave/
 ```
 
-- `diagnostics/`：采用白名单字段记录失败阶段、错误码、每次尝试状态、耗时、返回用量、有效配置、输入估算、分页进度及关联的 `auditReports` 索引，不包含来源事件序号、会话原话或候选摘要正文。其中 `context` 下的模型路由反映会话与摘要配置路由，不代表供应商最终实际响应的模型名；`actualDshVersion` 记为 `null` 表示未可靠采集到实际运行的宿主版本，`supportedDshVersion` 则记录插件声明适配的宿主基线版本（`"0.2.2-rc.1"`）。
+- `diagnostics/`：采用白名单字段记录失败阶段、错误码、每次尝试状态、耗时、返回用量、有效配置、输入估算、分页进度及关联的 `auditReports` 索引，不包含来源事件序号、会话原话或候选摘要正文。其中 `context` 下的模型路由反映会话与摘要配置路由，不代表供应商最终实际响应的模型名；`actualDshVersion` 记为 `null` 表示未可靠采集到实际运行的宿主版本（排查或反馈时可手动补充实际版本），`supportedDshVersion` 则记录插件声明的宿主兼容范围字符串（`">=0.2.2-rc.1 <0.3.0-0"`）。
 - `audit-reject/`：保存未通过要求或进度校验的候选摘要、实际审计文本、来源事件序号及对应源片段，可由诊断文件中的 `auditReports` 字段定位。
 - `sessions/`：按会话保存已归档的原始历史事件与附件。
 - `summary-config.json`：保存摘要模型路由与重试设置。
@@ -51,7 +52,7 @@
 命令行 profile 停止后可执行覆盖升级或卸载：
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.2.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

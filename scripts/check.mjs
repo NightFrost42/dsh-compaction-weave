@@ -8,7 +8,7 @@ const pkg=JSON.parse(fs.readFileSync(path.join(projectRoot,'package.json'),'utf8
 assert.equal(pkg.name,'dsh-compaction-weave');
 assert.equal(pkg.private,undefined,'Release package must be publishable.');
 assert.equal(pkg.license,'MIT');
-assert.equal(pkg.engines.dsh,'0.2.2-rc.1');
+assert.equal(pkg.engines.dsh,'>=0.2.2-rc.1 <0.3.0-0');
 assert.equal(pkg.engines.node,'>=24.9.0');
 assert.match(pkg.version,/^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$/);
 assert.deepEqual(pkg.files,['lib','locale','cordis.patch.yml','README.md','README.en.md','LICENSE','CHANGELOG.md','docs']);
