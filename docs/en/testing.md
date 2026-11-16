@@ -1,6 +1,15 @@
 [简体中文](../testing.md) · [English](testing.md)
 
-# DSH Compaction Weave Testing Record (`0.3.2-rc.3`)
+# DSH Compaction Weave Testing Record (`0.3.2-rc.4`)
+
+## 0.3.2-rc.4 validation (2026-11-17)
+
+On Windows / Node.js 24.21.0 / DSH 0.2.2-rc.3, **67 suites and 2064 checks passed with 0 failures**: 60 offline suites / 1948 checks and 7 native-host suites / 116 checks. [Per-suite results](../benchmarks/rc4-tests.json) identify this candidate and the scope.
+
+Coverage includes instruction/reference boundaries, corrections and task lifecycle, execution states, structured content, pruned-source recovery, per-call parsing caches, idle compaction, and live settings. Added live-setting checks exercise concurrent operation snapshots, clearing overrides back to inherited configuration, the 30-day limit, and updates during native-session compaction.
+
+Historical sections below retain their original version attribution. This release uses injected summary responses and adds no paid calls. Automated checks are not a real development-task success rate and do not establish desktop behavior, actual cache hits, or total task costs. Whole-task cost and waiting benefits still require separate task validation.
+
 
 This document summarizes the multi-host compatibility and offline regressions for `0.3.2-rc.3`, the offline and host-integration regressions for `0.3.2-rc.2`, the four-model live cross-switch acceptance run and paired strategy cost evaluation conducted during `0.3.2-rc.2` candidate development, and the historical test records and formulas from `0.3.2-rc.1` and `0.3.1-review.35`.
 

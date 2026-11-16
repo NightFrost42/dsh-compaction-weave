@@ -35,13 +35,13 @@
 
 ## 安装与升级
 
-支持 **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0-0`**（`0.2.2-rc.1` 起的 `0.2` 系列），已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，运行环境需 **Node.js 24.9+**。以下以 `0.3.2-rc.3` 为例，可使用 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases) 提供的安装包或本地打包生成的 `.tgz` 文件。
+支持 **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0-0`**（`0.2.2-rc.1` 起的 `0.2` 系列），已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，运行环境需 **Node.js 24.9+**。以下以 `0.3.2-rc.4` 为例，可使用 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases) 提供的安装包或本地打包生成的 `.tgz` 文件。
 
 ### 桌面端
 
-1. 下载 `dsh-compaction-weave-0.3.2-rc.3.tgz`。
+1. 下载 `dsh-compaction-weave-0.3.2-rc.4.tgz`。
 2. 升级安装时，先在 **插件** 页面卸载旧版 Weave，保留独立存储目录中的历史归档与设置；首次安装可跳过此步。
-3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.3.2-rc.3.tgz`），完成安装并启用。
+3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.3.2-rc.4.tgz`），完成安装并启用。
 4. **重启 DSH**，在插件详情页确认版本号已更新。
 
 ### 命令行
@@ -49,7 +49,7 @@
 停止目标 profile 后执行安装或覆盖升级：
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.4.tgz
 ```
 
 请将 `web` 替换为实际使用的命令行 profile 名称，完成后重新启动该 profile。桌面端用户请使用上方的插件管理页流程。
@@ -71,7 +71,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
 
 ## 基本设置
 
-在 **设置 → 摘要模型**（或插件详情页）中修改常用项，**保存后重启 DSH 生效**。
+在 **设置 → 摘要模型**（或插件详情页）中修改常用项，**保存后无需重启 DSH，后续操作使用新设置；进行中的压缩保留原设置**。
 
 | 设置项 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -82,10 +82,13 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
 | 失败重试次数 | 2 次 | 首次请求失败后最多追加尝试 2 次 |
 | 重试基础间隔 | 1 秒 | 连续重试时按指数退避延长等待（上限 30 秒） |
 | 每次摘要等待上限 | 180 秒 | 单次摘要请求的超时时间 |
+| 闲置后先压缩 | 关闭 | 预设或自定义 1–43200 分钟（30 天）；超过间隔后先压缩已有历史再继续 |
 
 重试设置可独立于摘要模型生效。前缀保留、近期原话预算、摘要语言（自动 / 中文 / 英文）、后台分页参数，以及关闭本地归档（`archiveEnabled: false`）时的功能限制见 [配置指南](docs/configuration.md) 与 [压缩原理与示意图](docs/principles.md)。
 
 ## 测试与验证
+
+- **当前候选 `0.3.2-rc.4`**：Windows / Node.js 24.21.0 / DSH 0.2.2-rc.3 下 **67 套、2064 项，0 失败**；包括来源和状态修复、闲置触发、设置热生效与并发快照。使用注入摘要响应，无新增付费模型调用；[逐套结果](docs/benchmarks/rc4-tests.json)。
 
 - **离线与宿主回归**：`0.3.2-rc.3` 在 Windows（Node.js 24.21.0，分别搭配 DSH `0.2.2-rc.1` 与 `0.2.2-rc.3`）及 Linux（Node.js 24.9.0，分别搭配 DSH `0.2.2-rc.2` 与 `0.2.2-rc.3`）均通过 **56 套、1698 项**测试（其中离线 **50 套、1597 项**，真实宿主集成 **6 套、101 项**，含新增 8 项宿主事务、范围准入与未知实现拒绝检查），全部 0 失败；明细见 [`docs/benchmarks/rc3-host-compatibility.json`](docs/benchmarks/rc3-host-compatibility.json)。
 - **四模型连续切换实测**：在移除旧手动接续命令并补充诊断元数据前的内部版本（`0.3.2-rc.1`）上，联网验收覆盖 **Gemini 4 Argon → GLM → DeepSeek → GPT**，连续完成 4 次压缩（每次 1 次摘要请求）、24 次模型切换与 60 次 HTTP 请求，**728 / 728** 个状态字段和 **77 / 77** 项流程结构检查全部通过。

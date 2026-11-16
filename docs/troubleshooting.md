@@ -52,7 +52,7 @@
 命令行 profile 停止后可执行覆盖升级或卸载：
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.4.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

@@ -35,13 +35,13 @@ When context approaches the trigger threshold or a compaction request is issued,
 
 ## Installation and upgrade
 
-Supports **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0-0`** (`0.2` series from `0.2.2-rc.1`), verified against **DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`** on **Node.js 24.9+**. The examples below use `0.3.2-rc.3`; download the release asset from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases) or build a local `.tgz` package.
+Supports **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0-0`** (`0.2` series from `0.2.2-rc.1`), verified against **DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`** on **Node.js 24.9+**. The examples below use `0.3.2-rc.4`; download the release asset from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases) or build a local `.tgz` package.
 
 ### Desktop
 
-1. Obtain `dsh-compaction-weave-0.3.2-rc.3.tgz`.
+1. Obtain `dsh-compaction-weave-0.3.2-rc.4.tgz`.
 2. When upgrading, uninstall the existing Weave package on the **Plugins** page first while keeping archives and settings in the independent storage directory. Skip this step for a fresh installation.
-3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.3.2-rc.3.tgz`), then install and enable it.
+3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.3.2-rc.4.tgz`), then install and enable it.
 4. **Restart DSH** and verify the version on the plugin details page.
 
 ### Command line
@@ -49,7 +49,7 @@ Supports **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0-0`** (`0.2` series from `0.2.2-
 Stop the target profile, then install or upgrade the package:
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.4.tgz
 ```
 
 Replace `web` with your command-line profile name and restart that profile afterwards. Desktop users should follow the plugin manager steps above.
@@ -71,7 +71,7 @@ Once enabled, chat normally. By default, Weave uses the active conversation mode
 
 ## Basic settings
 
-Adjust common options under **Settings → Summary model** (or on the plugin details page). **Restart DSH after saving.**
+Adjust common options under **Settings → Summary model** (or on the plugin details page). **Saving applies to subsequent operations without restarting DSH; an in-flight compaction keeps its original settings.**
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -82,10 +82,13 @@ Adjust common options under **Settings → Summary model** (or on the plugin det
 | Retry count | 2 | Up to 2 additional attempts after an initial failure |
 | Base retry delay | 1 second | Exponentially backed-off wait between retries (capped at 30 seconds) |
 | Per-request timeout | 180 seconds | Timeout limit for each summary request |
+| Compact after inactivity | Off | Presets or custom 1–43200 minutes (30 days); compact existing history before resuming after the interval |
 
 Retry settings take effect independently of summary model selection. See [Configuration](docs/en/configuration.md) and [Compaction principles and diagrams](docs/en/principles.md) for prefix preservation, verbatim quote budgets, summary language (`auto` / `zh` / `en`), continuation paging options, and the restrictions when local archiving is disabled (`archiveEnabled: false`).
 
 ## Tests and verification
+
+- **Current candidate `0.3.2-rc.4`**: **67 suites / 2064 checks, 0 failures** on Windows / Node.js 24.21.0 / DSH 0.2.2-rc.3, covering source/state fixes, idle compaction, live settings, and concurrent snapshots. Summary responses are injected; no new paid model calls. [Per-suite results](docs/benchmarks/rc4-tests.json).
 
 - **Offline and host regression**: `0.3.2-rc.3` passed **56 suites with 1,698 checks** (**50 offline suites with 1,597 checks** plus **6 real-host integration suites with 101 checks**, including 8 new checks for native transactional commit/rollback, range admission, and unknown-method refusal) on Windows (Node.js 24.21.0 with DSH `0.2.2-rc.1` and `0.2.2-rc.3`) and on Linux (Node.js 24.9.0 with DSH `0.2.2-rc.2` and `0.2.2-rc.3`), all with 0 failures; see [`docs/benchmarks/rc3-host-compatibility.json`](docs/benchmarks/rc3-host-compatibility.json).
 - **Four-model live cross-switch acceptance**: Live testing on the internal `0.3.2-rc.1` build prior to removing the legacy manual continuation command and adding diagnostic metadata covered **Gemini 4 Argon → GLM → DeepSeek → GPT**, completing 4 compactions (1 summary call each), 24 model switches, and 60 HTTP requests with **728 / 728** state fields and **77 / 77** workflow and structure checks passing.

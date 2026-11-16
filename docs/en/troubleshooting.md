@@ -52,7 +52,7 @@ To update a local package in Desktop, uninstall the existing Weave package on th
 For a command-line profile, stop the profile before upgrading or removing the package:
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.3.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2-rc.4.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

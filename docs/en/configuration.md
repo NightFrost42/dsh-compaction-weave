@@ -12,6 +12,7 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 | Model | `summarizationModel` | Follow conversation | Models offered by the provider |
 | Output limit | `maxTokens` | 8192 | 1–1000000 |
 | Trigger ratio | `thresholdRatio` | 0.8 | 0.5–0.95 |
+| Compact before resuming | `idleCompactionMinutes` | 0 (off) | 0 disables it; presets or custom input from 1–43200 whole minutes, up to 30 days |
 | Minimum reduction | `minimumReductionRatio` | 0.2 | 0.05–0.9 |
 | Additional retries | `summaryRetryCount` | 2 | 0–4 |
 | Base delay | `summaryRetryDelayMs` | 1000 | 0–30000 ms |
@@ -19,7 +20,11 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 
 The UI displays timing in seconds; configuration fields use milliseconds. A retry count of 2 allows up to 3 attempts for each unfinished summary or page. Consecutive retries use exponential backoff, capped at 30 seconds.
 
-Select or clear the provider and model together. Clearing them follows the conversation model while retaining retry and trigger settings. **Restart DSH after saving.**
+Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry and idle settings, including unsaved edits.
+
+**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings all apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
+
+First installation or plugin upgrades still require a host reload as prompted by DSH to load the new code. The no-restart behavior above applies to changes on the summary settings page.
 
 Settings are stored in:
 
@@ -28,6 +33,28 @@ Settings are stored in:
 ```
 
 When `DSH_HOME` is unset, DSH uses `.dsh` in the user's home directory.
+
+### Compact before resuming
+
+Choose **5, 10, 30, 60, 720 or 1440 minutes**, or the longer **7 days (10080 minutes) / 30 days (43200 minutes)** presets. For **Custom**, enter **1–43200 whole minutes**. Here, **1 month is fixed at 30 days, or 43200 minutes**, regardless of calendar month length. The default is off; select **Off** to disable, which saves 0. Custom input starts at 1.
+
+The Claude 5 / 60-minute references, GPT ordinary and extended-cache references, and Gemini 30-minute reference remain available. The 7-day and 30-day presets support longer idle policies; they do not imply that provider caches last that long.
+
+When a new user message arrives, compare its queue time with the latest user, assistant or tool activity in the same conversation. If the gap **exceeds** the selected interval, compact existing history at the first step of the new turn before handling the new input. This setting is independent of the pressure-based `auto` switch, applies across conversations, and does not change automatically when switching models. Saved changes apply at subsequent request boundaries; they do not start an idle countdown or background compaction timer.
+
+The clock comes from durable session events, including after reopening. Skip new conversations, missing or invalid timestamps, input added during active tool loops, and history that cannot shrink. Do not repeat a successful compaction without intervening conversation work. New input stays outside the selected history. Summary, audit or storage failures stop the main request and retain that input; cancellation retains it too. Existing archives, requirement checks, tool pairing, retry limits and circuit breakers still apply.
+
+This is a manual client policy, not an observation of server cache expiry. It does not enable or change upstream cache settings. Request start, response completion and explicit cache expiry are different clocks; savings still depend on actual input, summary and cache-hit costs.
+
+Official references checked on 2026-11-17:
+
+| Provider | Documented retention | Setting guidance |
+| --- | --- | --- |
+| [OpenAI GPT](https://developers.openai.com/api/docs/guides/prompt-caching) | GPT-5.6 and later in Responses default to a 30-minute minimum lifetime, with 12 hours available. Older `in_memory` typically lasts 5–10 idle minutes, up to 1 hour; `24h` typically lasts around 30 minutes, up to 24 hours | Choose for the model, API and upstream configuration. Maximum retention is not guaranteed availability; the new minimum lifetime governs cache-read pricing eligibility |
+| [Claude](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) | Default minimum 5 minutes, optional 1 hour; refreshed on cache use, timed from request start | 5 or 60 minutes as a reference; response generation consumes lifetime too |
+| [Gemini](https://ai.google.dev/gemini-api/docs/caching) | No fixed implicit-cache TTL published in the checked guide. Explicit caches default to 1 hour with configurable expiry | This plugin offers 30 minutes as a trigger reference, not an official implicit-cache TTL |
+| [DeepSeek](https://api-docs.deepseek.com/guides/kv_cache/) | Usually cleared within hours to days after falling out of use; best-effort hits | No fixed expiration point; choose a custom interval |
+| [GLM](https://docs.bigmodel.cn/cn/guide/capabilities/cache.md) | No numerical retention time in the checked official guide | Choose a custom interval without assuming a fixed TTL |
 
 ## Advanced configuration
 
@@ -52,6 +79,7 @@ Values saved by the summary settings page override the corresponding engine fiel
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `auto` | `true` | Automatic compaction under context pressure |
+| `idleCompactionMinutes` | `0` | Independent idle-resume threshold, 1–43200 whole minutes (up to 30 days); 0 disables it |
 | `thresholdRatio` | `0.8` | Automatic trigger ratio |
 | `headroomTokens` | `33000` | Space reserved for replies and tool output |
 | `minimumReductionRatio` | `0.2` | Target minimum automatic input reduction |
@@ -62,7 +90,7 @@ Values saved by the summary settings page override the corresponding engine fiel
 | `proactiveMinTokens` | `8192` | Minimum context size for proactive compaction |
 | `proactiveMinGrowthTokens` | `4096` | New content required before another proactive request |
 
-`auto` controls pressure-based compaction; `proactiveEnabled` controls model requests. Use `/compact` for manual compaction.
+`auto` controls pressure-based compaction, `idleCompactionMinutes` controls compaction when resuming after idle time, and `proactiveEnabled` controls model requests. Use `/compact` for manual compaction.
 
 ### Quotes and resumable pages
 

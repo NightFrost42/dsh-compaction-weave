@@ -31,7 +31,7 @@ Or supply the directory directly:
 node scripts/test.mjs --host-modules /path/to/dsh/node_modules
 ```
 
-This runs all offline suites (50 suites, 1597 tests) plus host session, surface, capacity, proactive-compaction, multi-generation prefix-preservation, range admission, native durable commit, rollback, post-decision failure, cold recovery, batch `append`, and unknown-method refusal tests (6 suites, 101 tests). Model output is supplied by fixtures without paid model calls, and temporary storage is isolated. See [rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json) for the host compatibility and test records.
+This runs all offline suites (counts depend on the current version) plus host session, surface, capacity, proactive-compaction, multi-generation prefix-preservation, range admission, native durable commit, rollback, post-decision failure, cold recovery, batch `append`, and unknown-method refusal tests (see the current testing record). Model output is supplied by fixtures without paid model calls, and temporary storage is isolated. See [rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json) for the host compatibility and test records.
 
 ## Layout
 
@@ -72,7 +72,7 @@ The runtime package follows `package.json.files`; the source archive uses an exp
 5. If publishing to npm, publish the verified tarball:
 
 ```bash
-npm publish dist/dsh-compaction-weave-0.3.2-rc.3.tgz --tag next --access public
+npm publish dist/dsh-compaction-weave-0.3.2-rc.4.tgz --tag next --access public
 ```
 
 The current release is a candidate and uses the `next` npm tag. A stable release updates both the version and `publishConfig.tag`.
