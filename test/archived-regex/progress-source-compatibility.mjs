@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {extractProgressFacts} from '../lib/progress-facts.js';
+import {extractProgressFacts} from '../../lib/progress-facts.js';
 // Snapshots captured from review.35 source extraction. Candidate interpretation
 // may improve without invalidating the IDs in existing persisted checkpoints.
 const fixtures=JSON.parse(readFileSync(new URL('./fixtures/progress-source-identities.json',import.meta.url),'utf8'));

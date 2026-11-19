@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import {extractProgressFacts,validateProgressFacts} from '../lib/progress-facts.js';
+import {extractProgressFacts,validateProgressFacts} from '../../lib/progress-facts.js';
 const fixtures=JSON.parse(fs.readFileSync(new URL('./fixtures/cost-audit-rejections.json',import.meta.url),'utf8'));
 const results=[];
 for(const fixture of fixtures){

@@ -21,11 +21,14 @@ if(packed.name!==pkg.name||packed.version!==pkg.version)throw new Error('Packed 
 const runtime=filesUnder(projectRoot,[...pkg.files,'package.json']);
 const listed=packed.files.map(x=>x.path).sort();
 if(JSON.stringify(listed)!==JSON.stringify(runtime))throw new Error('npm payload differs from the release whitelist.');
+const latestTgzName=`${pkg.name}.tgz`;
+if(latestTgzName===packed.filename)throw new Error('Version-free archive name collides with versioned archive.');
+fs.copyFileSync(path.join(out,packed.filename),path.join(out,latestTgzName));
 const source=filesUnder(projectRoot,sourceEntries);
 const sourceName=`${pkg.name}-${pkg.version}-source.tar.gz`;
 const tar=process.platform==='win32'?'tar.exe':'tar';
 execFileSync(tar,['-czf',path.join(out,sourceName),...sourceEntries],{cwd:projectRoot,windowsHide:true});
-const archives=[packed.filename,sourceName].map(name=>({name,bytes:fs.statSync(path.join(out,name)).size,sha256:hash(path.join(out,name))}));
+const archives=[latestTgzName,packed.filename,sourceName].map(name=>({name,bytes:fs.statSync(path.join(out,name)).size,sha256:hash(path.join(out,name))}));
 const fileHashes=files=>Object.fromEntries(files.map(name=>[name,hash(path.join(projectRoot,name))]));
 const manifest={name:pkg.name,version:pkg.version,createdAt:new Date().toISOString(),node:process.version,dsh:pkg.engines.dsh,archives,runtimeFiles:fileHashes(runtime),sourceFiles:fileHashes(source)};
 fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');

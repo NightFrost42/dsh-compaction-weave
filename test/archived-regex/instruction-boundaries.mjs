@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {
   selectMemoryMessages, memoryRequirements, memorySourceRefs, restoreMemorySource,
-} from '../lib/memory-policy.js';
-import {auditCompaction} from '../lib/audit.js';
-import {reconstructDisputedLines} from '../lib/reconstruct.js';
-import {residentConstraints} from '../lib/continuation.js';
-import {buildCompactionInstruction} from '../lib/prompt.js';
-import {materializeUserMessageSection} from '../lib/validate.js';
+} from '../../lib/memory-policy.js';
+import {auditCompaction} from '../../lib/audit.js';
+import {reconstructDisputedLines} from '../../lib/reconstruct.js';
+import {residentConstraints} from '../../lib/continuation.js';
+import {buildCompactionInstruction} from '../../lib/prompt.js';
+import {materializeUserMessageSection} from '../../lib/validate.js';
 
 // Function-level regressions for D01 / B01-B03 / B07-B08 / S04. These call
 // production exports only: no model, engine, network, files or mock parser.

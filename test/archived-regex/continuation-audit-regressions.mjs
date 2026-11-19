@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {auditCompaction} from '../lib/audit.js';
+import {auditCompaction} from '../../lib/audit.js';
 const rows=[];function test(name,fn){try{fn();rows.push({name,pass:true});}catch(e){rows.push({name,pass:false,error:e.message});}}
 const run=(source,candidate)=>auditCompaction({userMessages:[{seq:10,text:source}],summaryText:candidate,checkpointText:source+'\n'+candidate,includeAllConflicts:true});
 const ok=(s,c)=>assert.deepEqual(run(s,c).lost,[]);

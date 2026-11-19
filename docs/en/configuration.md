@@ -80,9 +80,15 @@ Values saved by the summary settings page override the corresponding engine fiel
 | --- | --- | --- |
 | `auto` | `true` | Automatic compaction under context pressure |
 | `idleCompactionMinutes` | `0` | Independent idle-resume threshold, 1–43200 whole minutes (up to 30 days); 0 disables it |
+| `idleCompactionMinTokens` | `0` | Minimum context tokens required before idle compaction runs (`0` = no extra floor) |
+| `idleRetainTokens` | `0` | Recent tail tokens retained during idle compaction |
 | `thresholdRatio` | `0.8` | Automatic trigger ratio |
 | `headroomTokens` | `33000` | Space reserved for replies and tool output |
 | `minimumReductionRatio` | `0.2` | Target minimum automatic input reduction |
+| `observationMaskingEnabled` | `true` | Stage-1 archive-backed observation masking for older large tool outputs (skips LLM summary when target is met) |
+| `observationMaskThresholdChars` | `4000` | Minimum tool-result length (in chars) for Stage-1 observation masking |
+| `observationMaskHeadChars` | `300` | Leading chars retained inline by Stage-1 observation masking |
+| `observationMaskTailChars` | `300` | Trailing chars retained inline by Stage-1 observation masking |
 | `cachePreservePrefix` | `true` | Prefer incremental ranges preserving existing prefixes |
 | `cacheMaxCheckpoints` | `4` | Checkpoint count at which consolidation is considered |
 | `cacheMinSavingsTokens` | `4096` | Minimum space freed by incremental compaction |
@@ -117,6 +123,7 @@ Older quotes leave the budget first; active requirements remain independently ch
 | `auditEnabled` | `true` | Check requirement retention |
 | `auditBlockOnLoss` | `true` | Retry and prevent submission of summaries losing requirements |
 | `failureThreshold` | `3` | Consecutive-failure threshold for automatic compaction |
+| `strictHostFingerprints` | `false` | When `false`, host minor updates altering private persistence methods gracefully fall back (with a one-time warning) to public `Session.append(replace)` + `sessions.flush` if no unrecovered `.rollback`/`.tail` atomic journal exists; set `true` to enforce reviewed method fingerprints |
 | `language` | `auto` | Summary language: `auto`, `zh`, or `en` |
 
 The settings interface follows DSH's Chinese or English locale. The `language` option controls generated summaries separately.

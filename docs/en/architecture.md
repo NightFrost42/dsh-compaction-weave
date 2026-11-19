@@ -8,12 +8,12 @@ For the user-facing explanation, worked examples, static diagrams, and guarantee
 
 Weave runs during DSH session maintenance:
 
-1. Measure the visible messages and select a history range with balanced tool calls and results.
-2. Prefer a range that preserves existing checkpoints and stable prefixes while meeting the space-saving target.
-3. Recover active requirements, recent verbatim messages, and the latest work report from original sources.
+1. Measure the visible messages and, when archives, history lookup tools, and `observationMaskingEnabled` are enabled (with no pending continuation), first fold older large non-error tool outputs outside the hot tail into archived head/tail previews (`observation-mask.js`); re-measure afterwards and skip calling a summary model if both the threshold and reduction target are met.
+2. Otherwise, select tool-balanced history spans and enable verbatim `preservePrefixCache` prefix reuse when summarizing on the same model route within budget so provider KV Cache stays warm.
+3. Extract active requirements, recent verbatim messages, XML provenance boundaries (`source-provenance.js` / `instruction-source.js` / `reference-input.js`: verified user messages vs `<untrusted_reference>` / `<channel-provenance>`), and the latest work report from original sources.
 4. Request a candidate summary. Large histories may use chunks; eligible capacity failures can enter backend paged continuation.
-5. Validate the complete candidate's structure, requirements, progress, and size with finite retries. Archive the selected originals and attachments after acceptance.
-6. Verify transaction conditions, back up and durably write the replacement, persist the success decision, then publish the checkpoint.
+5. Validate structure, requirements, progress, and size with finite retries. Archive selected originals and attachments and attach `History archive: <compactionId>` pointers and touched files to standard checkpoints.
+6. Verify transaction preconditions, back up via single-pass copy-and-hash, durably write the replacement, persist the success decision, then publish the checkpoint.
 
 Ordinary chunks commit individually, so earlier chunks may remain committed when a later one fails. Continuation saves accepted pages for recovery but replaces main history only after the complete candidate passes.
 
@@ -21,7 +21,7 @@ Ordinary chunks commit individually, so earlier chunks may remain committed when
 
 `cache-policy.js` first considers history after the latest checkpoint. Existing checkpoints and the retained prefix keep their content while new notes are added after them.
 
-Selection accounts for recent conversation, output capacity, quotes, the latest work report, and required savings. Consolidation is used when the checkpoint limit is reached, a revision affects requirements carried by an older checkpoint, or incremental compaction cannot free enough space.
+Selection accounts for recent conversation, output capacity, quotes, the latest work report, and required savings. Consolidation is used when idle-resume compaction disables prefix preservation, the checkpoint limit is reached, a revision affects requirements carried by an older checkpoint, or incremental compaction cannot free enough space.
 
 Actual cache reuse is measured from service usage reports. [Testing](testing.md) records recovery across subsequent replies.
 
@@ -39,13 +39,11 @@ Standalone “continue” messages may leave the checkpoint. Relative cancellati
 
 `work-report.js` records the latest work report's source. Short reports may be carried verbatim; longer reports retain source references for summarization and lookup.
 
-`progress-facts.js` tracks source-backed counts, completion states, artifact paths, and next actions. Candidate validation distinguishes current assertions, historical attribution, negated claims, and plans.
-
-The semantic fixes in `0.3.2-rc.1` affect candidate interpretation. Original progress-fact extraction, hashes, IDs, and persisted source references retain their existing format.
+`progress-facts.js` tracks explicit `key: value` structured progress assertions and `nextAction` with SHA-256 source provenance instead of domain-specific noun dictionaries.
 
 ## Paging and retries
 
-A complete summary request includes source messages, instructions, quote indexes, and work-report context. `summary-budget.js` plans for the whole request; `continuation.js` produces working notes in pages when needed.
+A complete summary request includes source messages, instructions, `<channel-provenance>` channel isolation metadata, quote indexes, and work-report context. `summary-budget.js` plans for the whole request; `continuation.js` produces working notes in pages when needed.
 
 Accepted pages persist their source identity and progress. Later attempts reuse matching completed pages and resume unfinished work. Request allowance, actual dispatch, and unknown usage are tracked separately.
 
@@ -53,9 +51,9 @@ Accepted pages persist their source identity and progress. Later attempts reuse 
 
 ## Archives and transactions
 
-Archives preserve original events, message blocks, tool relationships, and SHA-256-checked attachments. History tools read these records in pages.
+Archives preserve original events, message blocks, tool relationships, and SHA-256-checked attachments (`history_search` uses multi-term matching with attachment stat checks, while `readSpan`/`readAttachment` verify byte-for-byte SHA-256 digests on demand). History tools read these records in pages.
 
-The transaction adapter checks fingerprints of the reviewed DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3` host methods (including single-event and batch `Session.append` implementations). Unrecognized host method implementations are refused before any summary request or transactional history mutation while retaining existing recovery materials. It backs up the original state, durably writes the replacement, persists a success decision, then publishes. A failure before that decision can restore a verified backup. A publication failure after durable success quarantines the writer and requires a cold reopen, preserving the successfully committed history.
+The transaction adapter checks both raw and comment/whitespace-normalized fingerprints of the reviewed DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3` host methods (including single-event and batch `Session.append` implementations). Unrecognized host method bodies are refused before any summary request or transactional history mutation while retaining existing recovery materials. It backs up the original state via single-pass hashed `copySynced`, durably writes the replacement, persists a success decision, then publishes. A failure before that decision can restore a verified backup. A publication failure after durable success quarantines the writer and requires a cold reopen, preserving the successfully committed history.
 
 ## Entry points
 
@@ -64,10 +62,12 @@ The transaction adapter checks fingerprints of the reviewed DSH `0.2.2-rc.1`, `0
 | Module | Responsibility |
 | --- | --- |
 | `index.js`, `engine-entry.js` | Host loading and configuration |
-| `engine.js` | Selection, generation, validation, and commit |
-| `cache-policy.js`, `region.js` | Prefix preservation and balanced ranges |
-| `memory-policy.js`, `audit.js` | Requirement lifecycle and validation |
-| `progress-facts.js`, `work-report.js` | Source-backed progress and reports |
+| `engine.js`, `idle-compaction.js` | Selection, staged compaction, idle detection, generation, validation, and commit |
+| `observation-mask.js` | Stage-1 tool-output archive folding and preview stubs |
+| `cache-policy.js`, `region.js` | Prefix reuse, balanced ranges, and archive pointers |
+| `source-provenance.js`, `instruction-source.js`, `reference-input.js` | Channel provenance and `<untrusted_reference>` / `<channel-provenance>` XML boundaries |
+| `memory-policy.js`, `audit.js` | Requirement lifecycle and generic deterministic guards |
+| `progress-facts.js`, `work-report.js` | Structured `key: value` progress and reports |
 | `summary-*.js`, `continuation*.js` | Requests, budgets, paging, retries, and recovery |
 | `history.js`, `attachments.js`, `tools.js` | Archives and retrieval |
 | `transaction*.js`, `journal.js`, `state.js` | Transactions and persisted state |

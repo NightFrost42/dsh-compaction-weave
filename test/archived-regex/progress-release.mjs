@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {extractProgressFacts,validateProgressFacts} from '../lib/progress-facts.js';
+import {extractProgressFacts,validateProgressFacts} from '../../lib/progress-facts.js';
 const corpus=JSON.parse(readFileSync(new URL('./fixtures/progress-release-candidates.json',import.meta.url),'utf8'));
 const selection={effective:extractProgressFacts(corpus.source,{seq:corpus.seq})};
 const results=corpus.cases.map(({name,text,expectedValid})=>{

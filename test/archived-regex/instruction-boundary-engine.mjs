@@ -3,15 +3,15 @@ import {mkdtemp} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {WeaveCompactionEngine} from '../lib/engine.js';
-import {resolveConfig} from '../lib/config.js';
-import {approxTokens,blocksToText} from '../lib/meter.js';
-import {summaryProse} from '../lib/validate.js';
-import {selectSessionMemory} from '../lib/region.js';
-import {memoryRequirements,selectMemoryMessages,memorySourceRefs,restoreMemorySource} from '../lib/memory-policy.js';
-import {collectReferenceMessages} from '../lib/constraint-scope.js';
-import {auditInstructionProvenance,auditCompaction} from '../lib/audit.js';
-import {sourceLayout} from '../lib/source-refs.js';
+import {WeaveCompactionEngine} from '../../lib/engine.js';
+import {resolveConfig} from '../../lib/config.js';
+import {approxTokens,blocksToText} from '../../lib/meter.js';
+import {summaryProse} from '../../lib/validate.js';
+import {selectSessionMemory} from '../../lib/region.js';
+import {memoryRequirements,selectMemoryMessages,memorySourceRefs,restoreMemorySource} from '../../lib/memory-policy.js';
+import {collectReferenceMessages} from '../../lib/constraint-scope.js';
+import {auditInstructionProvenance,auditCompaction} from '../../lib/audit.js';
+import {sourceLayout} from '../../lib/source-refs.js';
 
 // Offline production-engine coverage. The event store is synthetic and every
 // model response is fixed; these are not native-host or real-provider tasks.

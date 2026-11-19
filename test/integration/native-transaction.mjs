@@ -47,8 +47,8 @@ async function fixture(){
   session.append('step/end',{turn:1,step:1});
   session.append('turn/end',{turn:1});
   await store.flush(session);
-  let calls=0;
-  const ctx={on(){},provide(){},logger:{info(){},warn(){}},sessions:{flush:s=>store.flush(s)},
+  let calls=0;const warnings=[];
+  const ctx={on(){},provide(){},logger:{info(){},warn(m){warnings.push(String(m));}},sessions:{flush:s=>store.flush(s)},
     tokenMeter:{measure(s){const nodes=s.surface.nodes.map(seq=>({seq,tokens:approxTokens(blocksToText(s.deriveEventMessage(s.eventAt(seq))?.content))}));return {nodes,totalTokens:nodes.reduce((n,x)=>n+x.tokens,0)};}},
     llm:{async resolveModelInfo(){return {contextWindow:1000000};},async *stream(){calls++;yield {type:'text-delta',text:summary};yield {type:'finish',kind:'stop'};}}};
   const engine=new WeaveCompactionEngine(ctx,resolveConfig({archiveDir:path.join(directory,'weave','archive'),language:'en'}).config);
@@ -56,18 +56,18 @@ async function fixture(){
   adapter.register(engine.journal,engine.sessionState,engine.config.failureThreshold);
   engine.transactionAdapter=adapter;engine.requireTransactionAdapter=true;engine.historyToolsAvailable=true;
   const agent={session,options:{provider:'p',model:'m'},runMaintenance:fn=>fn(new AbortController().signal)};
-  return {directory,root,backend,store,session,handle,engine,adapter,agent,add,calls:()=>calls,
+  return {directory,root,backend,store,session,handle,engine,adapter,agent,add,calls:()=>calls,warnings:()=>warnings,
     async compact(){const seqs=session.surface.nodes.slice(1);return engine._compactRegionCore(seqs[0],seqs.at(-1),agent,new AbortController().signal,{manual:true,policy:engine.config});},
     detach(){detach?.();detach=null;},
     expectQuarantinedClose(){expectedHandleCloseFailure=true;},
     async close(){delete adapter.checkpoint;engine.dispose();adapter.dispose();detach?.();if(expectedHandleCloseFailure)await assert.rejects(handle.close(),/writer quarantined/);else await handle.close();await mounting.dispose();}};
 }
 
-await test('host-version-range-admits-rc1-rc2-rc3-and-later-02',()=>{
-  for(const version of ['0.2.2-rc.1','0.2.2-rc.2','0.2.2-rc.3','0.2.2','0.2.3-rc.1','0.2.9'])assert.equal(evaluatePluginCompatibility(pkg,{},version),undefined,version);
+await test('host-version-range-admits-rc1-rc2-rc3-and-03x-until-10',()=>{
+  for(const version of ['0.2.2-rc.1','0.2.2-rc.2','0.2.2-rc.3','0.2.2','0.2.3-rc.1','0.2.9','0.3.0-alpha.1','0.3.0-rc.1','0.3.0','0.9.9'])assert.equal(evaluatePluginCompatibility(pkg,{},version),undefined,version);
 });
-await test('host-version-range-refuses-old-and-03-prereleases',()=>{
-  for(const version of ['0.2.1-rc.5','0.2.2-alpha.3','0.2.2-rc.0','0.3.0-alpha.1','0.3.0','1.0.0'])assert.ok(evaluatePluginCompatibility(pkg,{},version),version);
+await test('host-version-range-refuses-old-and-10-major',()=>{
+  for(const version of ['0.2.1-rc.5','0.2.2-alpha.3','0.2.2-rc.0','1.0.0-alpha.1','1.0.0'])assert.ok(evaluatePluginCompatibility(pkg,{},version),version);
 });
 await test('native-transaction-durable-commit-archive-reopen',async()=>{
   const f=await fixture();
@@ -163,6 +163,45 @@ await test('native-transaction-batch-append-or-single-append-then-compact',async
     const stored=await f.backend.readStoredLog(f.backend.locate(f.session.header).path,f.session.id);
     assert.deepEqual(stored.events,f.session.snapshotEvents());
     assert.match(JSON.stringify(f.session.deriveEventMessage(f.session.eventAt(f.session.surface.nodes.at(-1))).content),/Do not publish credentials/);
+  }finally{await f.close();}
+});
+await test('native-transaction-minor-host-update-gracefully-falls-back-by-default',async()=>{
+  const f=await fixture();
+  try{
+    assert.equal(f.engine.config.strictHostFingerprints,false);
+    f.engine.requireTransactionAdapter=false;
+    const original=Object.getPrototypeOf(f.session),changed=Object.create(original);
+    changed.append=function(...args){void 'harmless host telemetry tweak';return original.append.apply(this,args);};
+    Object.setPrototypeOf(f.session,changed);
+    try{
+      const result=await f.compact();
+      assert.equal(f.calls(),1);
+      assert.equal(f.warnings().filter(w=>/falling back to public Session\.append replace/.test(w)).length,1);
+      assert.equal(f.session.surface.nodes.length,2);
+      const checkpoint=f.session.deriveEventMessage(f.session.eventAt(f.session.surface.nodes.at(-1)));
+      assert.match(JSON.stringify(checkpoint.content),/55 seconds/);
+      assert.equal((await f.engine.archive.readSpan(f.session.id,result.compactionId)).ok,true);
+      const stored=await f.backend.readStoredLog(f.backend.locate(f.session.header).path,f.session.id);
+      assert.deepEqual(stored.events,f.session.snapshotEvents());
+      const replay=Session.fromRestore(f.session.id,stored.events,stored.meta,stored.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.deepEqual(replay.surface.nodes,f.session.surface.nodes);
+      assert.equal((await f.engine.journal.pending(f.session.id)).length,0);
+    }finally{Object.setPrototypeOf(f.session,original);}
+  }finally{await f.close();}
+});
+await test('native-transaction-adapter-unavailable-falls-back-by-default',async()=>{
+  const f=await fixture();
+  try{
+    f.engine.requireTransactionAdapter=false;
+    f.engine.transactionAdapter=undefined;
+    const result=await f.compact();
+    assert.equal(f.calls(),1);
+    assert.equal(f.warnings().filter(w=>/falling back to public Session\.append replace/.test(w)).length,1);
+    assert.equal(f.session.surface.nodes.length,2);
+    assert.equal((await f.engine.archive.readSpan(f.session.id,result.compactionId)).ok,true);
+    const stored=await f.backend.readStoredLog(f.backend.locate(f.session.header).path,f.session.id);
+    assert.deepEqual(stored.events,f.session.snapshotEvents());
+    assert.equal((await f.engine.journal.pending(f.session.id)).length,0);
   }finally{await f.close();}
 });
 

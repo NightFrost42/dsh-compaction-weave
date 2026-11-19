@@ -1,17 +1,120 @@
 [简体中文](../testing.md) · [English](testing.md)
 
-# DSH Compaction Weave Testing Record (`0.3.2-rc.4`)
+# DSH Compaction Weave Testing Record (`0.3.2`)
 
-## 0.3.2-rc.4 validation (2026-11-17)
+## 0.3.2 Stable Release Validation, Paired Speedups, and Four-System Live Benchmark (2026-11-19)
 
-On Windows / Node.js 24.21.0 / DSH 0.2.2-rc.3, **67 suites and 2064 checks passed with 0 failures**: 60 offline suites / 1948 checks and 7 native-host suites / 116 checks. [Per-suite results](../benchmarks/rc4-tests.json) identify this candidate and the scope.
+Running under Windows / Node.js `v24.19.0` against an isolated DSH `0.2.2-rc.3` host, stable release `0.3.2` completes two-stage tool folding, same-route verbatim KV prefix reuse, `History archive` checkpoint pointers, host-channel + XML provenance isolation, domain-agnostic `key: value` progress checks, lexically normalized host method fingerprints, single-pass hashed transaction backups, ASCII word-set indexing in `coverageOf`, single-key JSON wrapper unwrapping and space-delimited scalar binding, pre-release billing-safety stress tests, and graceful public `Session.append(replace)` fallback (`strictHostFingerprints: false` across `>=0.2.2-rc.1 <1.0.0-0`). **All 51 active suites and 1,059 checks pass with 0 failures** (machine-readable evidence in [../benchmarks/v0.3.2-tests.json](../benchmarks/v0.3.2-tests.json)):
 
-Coverage includes instruction/reference boundaries, corrections and task lifecycle, execution states, structured content, pruned-source recovery, per-call parsing caches, idle compaction, and live settings. Added live-setting checks exercise concurrent operation snapshots, clearing overrides back to inherited configuration, the 30-day limit, and updates during native-session compaction.
+- **44 offline unit suites (941 checks)**: alongside [`phase1-optimizations.mjs`](../../test/phase1-optimizations.mjs) (5 checks), [`phase2-optimizations.mjs`](../../test/phase2-optimizations.mjs) (5 checks), [`phase3-route-b.mjs`](../../test/phase3-route-b.mjs) (6 checks), and [`astra-review-fixes.mjs`](../../test/astra-review-fixes.mjs) (20 checks), `0.3.2` adds [`release-billing-safety.mjs`](../../test/release-billing-safety.mjs) (9 checks) specifically verifying:
+  1. Stage-1 observation masking executes **0 LLM calls** when pressure savings suffice, stays strictly idempotent (never re-masking stubs or error outputs), and avoids mutating the live prefix when Stage-2 LLM summarization is still required;
+  2. Same-route context overflow triggers bounded downgrade fallback to projected coordinates without looping, while cross-route summarization strips incompatible `reasoningEffort`/`temperature` parameters;
+  3. Retry bounds (`summaryRetryCount`), circuit breaker blocking across pressure/idle/overflow/`compaction/summary-error` waterfall paths after 3 consecutive failures, immediate abort on `401` credential failures without wasting retries, and `continuationMaxExtraCalls` halt + saved-page reuse without double-billing;
+  4. Idle compaction skipping tiny/unshrinkable histories (`0` LLM calls), restoring user queued input cleanly on failure, validating HTTP RPC same-origin/size guards (`lib/index.js`), public package exports, `cordis.patch.yml`, and VM bundle loading for `lib/client.js`.
+- **7 native DSH `0.2.2-rc.3` host integration suites (118 checks)**: native `Session` surface, capacity regressions, multi-generation cache retention, proactive compaction, durable atomic transactions (including `strictHostFingerprints: false` public-API fallback and unconditional refusal on unrecovered `.rollback`/`.tail` journals), and idle-resume checks all pass.
+- **Clean-room archive verification**: extracting `dsh-compaction-weave-0.3.2-source.tar.gz` and `dsh-compaction-weave.tgz` into an isolated directory and running source checks, full offline tests, and export imports passes standalone without workspace `.local` or Git state.
+
+### Paired benchmark comparison against 0.3.2-rc.4 (`a41b41a`)
+
+Paired before/after benchmark running `v0.3.2-rc.4` (`a41b41a`) vs. `0.3.2` in the same Node.js `v24.19.0` / DSH `0.2.2-rc.3` environment ([../benchmarks/v0.3.2-tests.json](../benchmarks/v0.3.2-tests.json)):
+
+| Benchmark metric | `0.3.2-rc.4` (`a41b41a`) | `0.3.2` stable | Measured impact |
+| :--- | :--- | :--- | :--- |
+| **Tool-heavy pressure compaction (`58,480` tokens)** | `1` LLM summary call; `58,480 → 10,052` (`-82.81%`); `7,329.35 ms` | **`0` LLM calls** (Stage-1 masking); `58,480 → 10,793` (`-81.54%`); **`19.36 ms`** | Eliminates the LLM summary call completely (~`379×` faster locally) while archiving exact tool bytes |
+| **Same-route verbatim KV prefix bytes preserved** | `3 / 5` messages (`654 / 12,215` B = `60%` messages) | **`5 / 5` messages (`12,215 / 12,215` B = `100%`)** | Keeps the prompt prefix byte-for-byte intact before the tail instruction for provider KV cache hits |
+| **Structured `key: value` progress validation (45 turns)** | `1.08 ms` (legacy regex + noun list) | **`0.01 ms`** (`key: value` structural parser) | ~`108×` faster and avoids false conflicts on ordinary prose mentioning reports/charts |
+| **`2.1 MB` native host transaction commit (`.rollback` + hash)** | `23.61 ms` | **`20.26 ms`** | **`14.2%` faster** via single-pass streaming copy-and-hash |
+| **Multi-term archive search (`"sqlite locking"`, 16 spans + 64 KB blobs)** | `0` hits (single-phrase + full blob hash per hit) | **`1` hit** (`11.78 ms`; fast stat + multi-term matching) | Multi-term queries match split tokens without re-hashing unrelated blobs on search |
+| **Boundary & authorization edge cases (4 checks)** | `0 / 4` (unspaced CJK paraphrase, nested `<quoted_text>`, forged `</untrusted_reference>`, revoked approval) | **`4 / 4`** | Structural XML stack + boundary escaping + CJK bigrams + chronological revocation block spoofing |
+| **Runtime bundle size & 45-turn requirement audit tradeoff** | 53 `lib/*.js` files (`748,804` B); audit `16.13 ms` | 54 files (**`728,876` B**, **-2.66%**); audit `31.83 ms` | Net `-19,928 B` (`-2.66%`) across `lib/` while adding Stage-1 masking, JSON unwrapping, and host fallback; `+15.7 ms` (~`0.7 ms`/turn) reflects deeper bilateral & provenance audit |
+
+### Four-Model × Four-System Distortion-Free Live Gateway Benchmark (2026-11-19 Single-Run Observations)
+
+To measure real-world anti-degradation accuracy, compression, multi-compaction KV cache recovery curves, wall-clock compaction speed, and spend without benchmark distortion, we evaluated **4 model families** across **4 systems** (`weave-0.3.2`, `weave-0.3.2-rc.4`, `dsh-basic` with `ToolResultPruner`, and `billion-context@0.1.216`) in [../benchmarks/v0.3.2-live-four-way.json](../benchmarks/v0.3.2-live-four-way.json):
+
+- **Anti-distortion baseline controls**:
+  - `dsh-basic` used stock DSH `0.2.2-rc.3` `headroomTokens: 65,536` and `CHAT_MAX_TOKENS=16384` to eliminate artificial output truncation failures;
+  - `billion-context@0.1.216` ran behind a persistent header-injecting hop attaching `x-acp-session` per session (including across model switches) with `ccr: true` and natural `<acp-nudge>` autonomous compression;
+  - Workloads used unique per-phase Node.js/SQL modules (zero repetitive filler) and explicitly permitted `null` when values were unverified.
+- **Model routing & `GPT-6 Astra` disclosure**: Tests ran `auto/gemini-4-argon` (`Gemini 4 Argon`), `auto/glm-5.3-flash` (`GLM-5.3-Flash`), `deepseek/deepseek-flash` (`DeepSeek-V4.1-Flash`), and `GPT-6.1 Sol` (`2-2/gpt-6.1-sol` in Suite A; `auto/gpt-6.1-sol` in Suite C after `公益2` disabled `/v1/chat/completions`, verified `99.33%–99.46%` cache hits via live probe). On Magpie, `auto/gpt-6-astra` works natively in the official Codex CLI (used via MCP for code & benchmark audits) while returning HTTP `403 ("This account only allows Codex official clients")` to non-Codex DSH HTTP clients (`2-2/gpt-6-astra` HTTP `400`, `group/gpt-6.2-astra` HTTP `404`), so no client headers were spoofed.
+- **Metric definitions**: **Effective reduction** computes `(rawBaselineBeforeInput - afterFirstCompactionInput) / rawBaselineBeforeInput` against unmodified Weave baselines; **wire reduction** computes `(observedBeforeInput - afterFirstCompactionInput) / observedBeforeInput` (negative values indicate net wire token bloat). Both Magpie catalog USD and unified Normalized reference USD are reported; all timings and cache readings are observed single-run gateway measurements.
+
+#### A. Standalone Single-Model Matrix (32 Branches = 4 Systems × 8 Branches/System = 176 Checks/System)
+
+- `w1-engineering-spec`: Multi-turn engineering spec evolution & anti-trap verification (36 checks: 14 recall + 5 trap + 3 JSONL draft + 14 final recall).
+- `w2-repo-debug`: Eight ~23 KB source-file reads + crash log command failure (8 checks including `failedCommandPid: 48210` and middle-of-file constants `src/storage/sqlite-pool.js` / `busyTimeoutMs=4750` / `SQLITE_BUSY_SNAPSHOT_517`).
+
+| System | Completed | Overall Accuracy (All / Conditional) | `w1` Spec Evolution | `w2` Tool-Heavy Debug | Mean Eff / Wire Reduction | Mean `w1` / `w2` Comp Wall Ms | Mean Summary Calls | Total Spend (Magpie / Norm USD) | Key Failure / Tradeoff Drivers |
+| :--- | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
+| **`weave-0.3.2`** | **8 / 8** | **175 / 176 (99.43%)** | **144 / 144** (`4/4`) | **31 / 32 (96.88%)** (`4/4`) | **`72.20%` / `72.20%`** | `26,881 ms` / **`35.8 ms`** (`20–48 ms`) | **`0.50`** (`0` on `w2`) | `$1.0821` / `$0.8539` | Only 8/8 high-accuracy system; all `w2` resolved in Stage-1 with `0` LLM calls (`gpt/w2` missed `failedCommandPid`: `7/8`) |
+| **`weave-0.3.2-rc.4`** | **5 / 8** | `62 / 176` (35.23% all; conditional `62 / 68 = 91.18%`) | 36 / 36 (**`1/4` finished**) | 26 / 32 (`4/4`) | `38.87%` / `35.50%` | `53,131 ms` / `48,041 ms` | `1.20` | `$0.9372` / `$0.6605` (5 done) | Gemini, GPT, and DeepSeek `w1` failed deterministically on legacy `PROGRESS_FACT_CONFLICT`; `deepseek/w2` scored `3/8` |
+| **`dsh-basic`** | 8 / 8 | 164 / 176 (**93.18%**) | **144 / 144** (`4/4`) | **20 / 32 (62.50%)** (`4/4`) | `65.49%` / `69.76%` | `56,811 ms` (**2.11×** slower vs Weave) / `6.8 ms` | `0.50` | `$0.7952` / `$0.6143` | Stock budget restored `w1` to `144/144`, but `ToolResultPruner` head/tail slicing drops middle constants (`4750`, `SQLITE_BUSY_SNAPSHOT_517`) with no archive lookup |
+| **`billion-context@0.1.216`** | 8 / 8 | 155 / 176 (**88.07%**) | **144 / 144** (`4/4`) | **11 / 32 (34.38%)** (`gpt`/`deepseek` **0/8**) | `33.35%` / **`-13.95%` (wire bloat)** | `24,588 ms` / `34,863 ms` | `1.25` | **`$1.6899`** / **`$1.3999`** | Persistent `x-acp-session` fixed `w1` (`144/144`), but `w2` collapsed (`glm` `3/8`, `gpt` `0/8`, `deepseek` `0/8`) with `-13.95%` net local wire bloat |
+
+<details>
+<summary>Expand per-branch breakdown across all 32 standalone runs</summary>
+
+| Model | System | `w1` Acc | `w1` Eff / Wire | `w1` Wall / Calls / R2→R6 Cache / USD | `w2` Acc | `w2` Eff / Wire | `w2` Wall / Calls / R2 Cache / USD |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `Gemini 4 Argon` | **`weave-0.3.2`** | **36/36** | 79.36% / 79.36% | `35,751 ms` / 1 / 60.66%→70.28% / `$0.2135` | **8/8** | 42.31% / 42.31% | **`27 ms`** / **0** / 0% / `$0.3447` |
+| `Gemini 4 Argon` | `weave-0.3.2-rc.4` | **FAIL** (`PROGRESS_FACT_CONFLICT`) | — | — | **8/8** | -34.43% / -34.42% | `40,730 ms` / 1 / 47.09% / `$0.3100` |
+| `Gemini 4 Argon` | `dsh-basic` | 36/36 | 83.51% / 83.44% | `110,970 ms` / 1 / 51.65%→65.76% / `$0.2668` | **6/8** | 28.49% / 28.47% | `8 ms` / 0 / 87.56% / `$0.1180` |
+| `Gemini 4 Argon` | `billion-context` | 36/36 | 36.87% / 8.58% | `45,476 ms` / 2 / 0%→0% / `$0.4791` | **8/8** | 7.05% / `-9.56%` | `45,090 ms` / 2 / 0% / `$0.5828` |
+| `GLM-5.3-Flash` | **`weave-0.3.2`** | **36/36** | 87.40% / 87.40% | `33,391 ms` / 1 / 89.78%→93.72% / `$0.0081` | **8/8** | 77.55% / 77.55% | **`48 ms`** / **0** / 28.58% / `$0.0189` |
+| `GLM-5.3-Flash` | `weave-0.3.2-rc.4` | 36/36 | 86.59% / 86.50% | `53,131 ms` / 2 / 90.68%→94.02% / `$0.0129` | **8/8** | 44.47% / 44.46% | `64,978 ms` / 1 / 49.80% / `$0.0217` |
+| `GLM-5.3-Flash` | `dsh-basic` | 36/36 | 90.57% / 90.56% | `56,330 ms` / 1 / 0%→73.52% / `$0.0095` | **5/8** | 71.58% / 71.57% | `6 ms` / 0 / 9.66% / `$0.0108` |
+| `GLM-5.3-Flash` | `billion-context` | 36/36 | 39.09% / 6.29% | `15,749 ms` / 1 / 97.60%→98.05% / `$0.0109` | **3/8** | 70.35% / 4.97% | `30,073 ms` / 0 / 98.82% / `$0.0127` |
+| `GPT-6.1 Sol` (`2-2`) | **`weave-0.3.2`** | **36/36** | 67.91% / 67.91% | `26,842 ms` / 1 / 33.42%→0% / `$0.1771` | **7/8** | 57.19% / 57.19% | **`48 ms`** / **0** / 0% / `$0.2897` |
+| `GPT-6.1 Sol` (`2-2`) | `weave-0.3.2-rc.4` | **FAIL** (`PROGRESS_FACT_CONFLICT`) | — | — | **7/8** | 53.49% / 36.71% | `46,019 ms` / 1 / 0% / `$0.5656` |
+| `GPT-6.1 Sol` (`2-2`) | `dsh-basic` | 36/36 | 8.25% / 50.15% | `52,053 ms` / 1 / 98.84%→98.94% / `$0.2137` | **5/8** | 79.24% / 71.75% | `6 ms` / 0 / 81.28% / `$0.1551` |
+| `GPT-6.1 Sol` (`2-2`) | `billion-context` | 36/36 | -42.41% / `-65.11%` | `26,211 ms` / 2 / 98.92%→85.97% / `$0.2402` | **0/8** | 51.36% / **`-72.46%`** | `57,821 ms` / 2 / 92.56% / `$0.3371` |
+| `DeepSeek-V4.1-Flash` | **`weave-0.3.2`** | **36/36** | 88.18% / 88.18% | `11,538 ms` / 1 / 89.87%→91.95% / `$0.0106` | **8/8** | 77.71% / 77.71% | **`20 ms`** / **0** / 45.81% / `$0.0196` |
+| `DeepSeek-V4.1-Flash` | `weave-0.3.2-rc.4` | **FAIL** (`PROGRESS_FACT_CONFLICT`) | — | — | **3/8** | 44.23% / 44.23% | `40,436 ms` / 1 / 78.34% / `$0.0269` |
+| `DeepSeek-V4.1-Flash` | `dsh-basic` | 36/36 | 90.63% / 90.55% | `7,889 ms` / 1 / 89.29%→87.83% / `$0.0099` | **4/8** | 71.62% / 71.62% | `7 ms` / 0 / 98.28% / `$0.0114` |
+| `DeepSeek-V4.1-Flash` | `billion-context` | 36/36 | 34.49% / 15.19% | `10,915 ms` / 1 / 97.41%→96.77% / `$0.0118` | **0/8** | 70.00% / 0.52% | `6,467 ms` / 0 / 98.49% / `$0.0152` |
+
+</details>
+
+#### B. Continuous 5-Compaction (`C1–C5`) × 6-Reply (`R1–R6`) KV Cache Recovery & Speed
+
+Running 5 consecutive compactions with 6 follow-up replies per cycle (`8` long trajectories, `40` compactions, `240` replies) on `DeepSeek-V4.1-Flash` and `GLM-5.3-Flash` separates **compaction's own prefix cache hit (`compactionSelfPct`)**, **`R1` first-turn prefix write (`0%` on consolidation / `~33%` on incremental because a compacted span changes the prompt prefix)**, and **`R2–R6` steady-state KV cache recovery** (under provider `cache_read`/`cache_write` telemetry; single-run trajectories):
+
+| Model / System | Accuracy | Comp Wall / End-to-End Wall | Reqs | Compaction Self-Cache (`C1–C5`) | `R1` Prefix Write (`C1–C5`) | `R2` Recovery (`C1–C5`) | `R3–R6` Steady State | Wire Reduction (`C1–C5`) | Total Spend (Magpie / Norm USD) |
+| :--- | :---: | ---: | ---: | :--- | :--- | :--- | :--- | :--- | ---: |
+| `DeepSeek` / **`weave-0.3.2`** | **100/100** | **`45,989 ms`** / **`116,878 ms`** | **40** | **`95.52, 93.49, 90.60, 87.15, 85.94%`** | `0, 33.24, 0, 0, 0%` | **`97.68, 99.08, 98.14, 98.32, 98.98%`** | `96.97%–98.65%` | `70.48, 53.51, 61.16, 55.06, 55.82%` | **`$0.0419` / `$0.0419`** |
+| `DeepSeek` / `weave-0.3.2-rc.4` | 100/100 | `127,239 ms` (`2.77×` slower) / `195,746 ms` | 44 | `94.93, 0, 62.72, 0, 60.64%` | `0, 33.93, 0, 0, 0%` | `98.50–99.02%` | `96.56%–98.55%` | `70.73, 55.31, 61.42, 53.67, 56.53%` | `$0.0632` / `$0.0632` |
+| `DeepSeek` / `dsh-basic` | 100/100 | `52,253 ms` (`1.14×` slower) / `126,139 ms` | 40 | **`0, 0, 0, 0, 0%`** | `0, 0, 0, 0, 0%` | `98.11–99.02%` | `95.65%–98.43%` | `70.08, 70.49, 64.27, 57.19, 58.04%` | `$0.0599` / `$0.0599` |
+| `DeepSeek` / `billion-context` | **88/100** (`C2` 10/20, `C5` 18/20) | `173,811 ms` (`3.78×` slower) / `363,807 ms` | 69 | N/A | `27.78–87.23%` | `57.62–73.68%` | `57.17%–97.97%` | **`-27.75, -113.58, 35.40, -118.96, -189.07%`** | `$0.1032` / `$0.1032` |
+| `GLM` / **`weave-0.3.2`** | **100/100** | **`107,648 ms`** / **`282,650 ms`** | **40** | `0, 37.68, 65.37, 0, 57.93%` | `0, 0, 0, 0, 0%` | `98.13, 34.18, 98.89, 98.92, 99.03%` (`C2` write delay; `R3=98.97%`) | `97.75%–99.11%` | `69.58, 53.48, 62.68, 54.87, 55.02%` | **`$0.0529` / `$0.0505`** |
+| `GLM` / `weave-0.3.2-rc.4` | **FAIL** (`budget overflow`) | — | — | — | — | — | — | — | — |
+| `GLM` / `dsh-basic` | 100/100 | `431,436 ms` (**`4.01×`** slower) / `576,429 ms` | 40 | **`0, 0, 0, 0, 0%`** | `0, 0, 0, 0, 0%` | `98.39–99.05%` | `97.41%–98.90%` | `68.20, 62.15, 55.92, 55.34, 55.85%` | `$0.0636` / `$0.0685` |
+| `GLM` / `billion-context` | 100/100 | `351,901 ms` (**`3.27×`** slower) / `801,041 ms` (`2.83×`) | 57 | N/A | `0, 67.30, 58.00, 57.82, 0%` | `44.74, 0, 0, 0, 0%` | `R3` `0%–89.62%` → `R6` `95.54%–97.85%` | `-30.12, -157.12, -7.55, -7.22, 33.23%` | `$0.1034` / `$0.1164` |
+
+#### C. Continuous 19-Switch Cross-Model Matrix (`Gemini 4 Argon → GLM-5.3-Flash → DeepSeek-V4.1-Flash → auto/gpt-6.1-sol`, 226 Checks)
+
+Across 4 model-rotated generations (note Gen 4 ran `auto/gpt-6.1-sol` due to upstream `公益2` `/v1/chat/completions` shutdown; single-run gateway measurements):
+
+| System | Compactions Passed | Accuracy | Per-Gen Wire Reduction (`G1 / G2 / G3 / G4`) | Comp Wall / End-to-End Wall | HTTP / Comp Reqs | Total Spend (Magpie / Norm USD) | Operational & Tradeoff Notes |
+| :--- | :---: | ---: | :--- | ---: | ---: | ---: | :--- |
+| **`weave-0.3.2`** | **4 / 4** (all 1st attempt) | **226 / 226 (100%)** | **`66.32% / 58.47% / 59.49% / 55.72%`** | **`114,864 ms`** / `400,743 ms` | **34 / 4** (`0` retries) | `$0.6077` / `$0.4915` | Single-key JSON unwrap + space-delimited scalar binding passed all 4 generations including GPT on the first attempt |
+| **`weave-0.3.2-rc.4`** | **3 / 4** (Gen 4 GPT failed) | `226 / 226` (Gen 4 left uncompressed) | `65.47% / 57.95% / 60.13%` / **`-0.64%`** | `224,449 ms` (`1.95×` slower) / `436,157 ms` | 37 / **7** | `$0.7259` / `$0.5610` | Gen 4 GPT rejected until budget exhaustion (scored `226/226` only because full uncompressed history remained); nearly `2×` slower compaction |
+| **`dsh-basic`** | 4 / 4 | 226 / 226 (100%) | `69.11% / 70.94% / 65.61% / 66.43%` | `118,401 ms` (still slower than Weave) / `327,876 ms` | 34 / 4 | `$0.5935` / `$0.4811` | Pure-text prompts without verbatim Section 6 retention or tool-archive lookup; ~`2.1%` cheaper norm USD on text-only rotation while taking `3.5s` longer to compact |
+| **`billion-context@0.1.216`** | 4 / 4 (ACP) | 226 / 226 (100%) | **`-36.31%`** `/ 54.18% / 32.01% / N/A` | `203,650 ms` (`1.77×` slower) / **`875,970 ms`** (`2.19×` slower) | **48 / 15** | **`$0.8260`** / **`$0.6873`** | Fired 15 compaction calls across 48 HTTP requests; Gen 1 bloated `-36.31%`; full run took `14.6` minutes |
+
+> **Longitudinal context**: Compared to historical baselines, `0.3.2` moves from `0.3.1-review.35` (stopped after Gen 4 consolidation / historical false rejection limit; DeepSeek `68.50%` mean / `70.20%` weighted reduction in [../benchmarks/review35-compression.json](../benchmarks/review35-compression.json)) and `0.3.2-rc.4` (Suite A `5/8`, Suite B GLM failed, Suite C Gen 4 failed) to **8/8 Suite A, 100/100 Suite B on DeepSeek & GLM, and 4/4 first-attempt 226/226 Suite C**, matching `0.3.2-rc.2` accuracy (`728/728` in [../benchmarks/rc2-live-and-cost.json](../benchmarks/rc2-live-and-cost.json)) while adding Stage-1 masking, `97%–99%` verified `R2–R6` cache recovery across 5 cycles, and public-API host fallback.
+
+> **Historical baseline & scope boundary**: Alongside removing domain wordlists and natural-language guessing regexes, 21 coupled synthetic-fixture suites were moved to [`test/archived-regex/`](../../test/archived-regex/README.md); the pre-archive baseline (`2026-11-17`, 67 suites / 2,064 checks, 0 failures) stays recorded in [../benchmarks/rc4-tests.json](../benchmarks/rc4-tests.json). All 51 active unit/host suites and the `a41b41a` paired microbenchmarks use deterministic injected model responses and isolated runtimes with zero live paid calls, whereas the 2026-11-19 four-model × four-system matrices reflect live Magpie gateway runs archived in [../benchmarks/v0.3.2-live-four-way.json](../benchmarks/v0.3.2-live-four-way.json).
+
+### Earlier pre-archive baseline (2026-11-17)
+
+On Windows / Node.js 24.21.0 / DSH 0.2.2-rc.3 prior to archiving the legacy synthetic suites, **67 suites and 2064 checks passed with 0 failures**: 60 offline suites / 1948 checks and 7 native-host suites / 116 checks. [Per-suite baseline results](../benchmarks/rc4-tests.json) identify that snapshot and its scope.
+
+Together, the active suites and baseline cover instruction/reference boundaries, corrections and task lifecycle, execution states, structured content, pruned-source recovery, per-call parsing caches, idle compaction, and live settings (concurrent operation snapshots, clearing overrides back to inherited configuration, the 30-day limit, and updates during native-session compaction).
 
 Historical sections below retain their original version attribution. This release uses injected summary responses and adds no paid calls. Automated checks are not a real development-task success rate and do not establish desktop behavior, actual cache hits, or total task costs. Whole-task cost and waiting benefits still require separate task validation.
 
 
-This document summarizes the multi-host compatibility and offline regressions for `0.3.2-rc.3`, the offline and host-integration regressions for `0.3.2-rc.2`, the four-model live cross-switch acceptance run and paired strategy cost evaluation conducted during `0.3.2-rc.2` candidate development, and the historical test records and formulas from `0.3.2-rc.1` and `0.3.1-review.35`.
+This document summarizes the validation for `0.3.2` and `0.3.2-rc.3`, the offline and host-integration regressions for `0.3.2-rc.2`, the four-model live cross-switch acceptance run and paired strategy cost evaluation conducted during `0.3.2-rc.2` candidate development, and the historical test records and formulas from `0.3.2-rc.1` and `0.3.1-review.35`.
 
 ---
 
@@ -21,6 +124,8 @@ Testing across development and release verification covered offline synthetic st
 
 | Test batch | Code or package version | Platform & runtime | Host & model conditions | Scale & outcome | Evidence |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Windows stable release & paired benchmark** | `0.3.2` | Windows `win32` · Node.js `v24.19.0` | Isolated DSH `0.2.2-rc.3` host + synthetic streams + `a41b41a` paired run | **51 suites, 1,059 checks** (44 offline suites / 941 checks incl. 20 Astra-fix & 9 billing-safety checks + 7 host suites / 118 checks), **0 failures** | [../benchmarks/v0.3.2-tests.json](../benchmarks/v0.3.2-tests.json) |
+| **Four-model × four-system live gateway benchmark** | `0.3.2` vs `rc.4` / `dsh-basic` / `billion-context@0.1.216` | Windows `win32` · Magpie gateway (single-run observations) | `Gemini 4 Argon`, `GLM-5.3-Flash`, `DeepSeek-V4.1-Flash`, `GPT-6.1 Sol` (`auto/gpt-6-astra` Codex-audited, HTTP `403` for non-Codex DSH) | **32 standalone** (Weave `8/8`, **175/176**, `w2` `35.8 ms` / 0 LLM calls) + **5-cycle cache** (`R2–R6` **97%–99%**) + **19-switch rotation** (Weave **4/4**, **226/226**) | [../benchmarks/v0.3.2-live-four-way.json](../benchmarks/v0.3.2-live-four-way.json) |
 | **Windows full regression (`rc.3` multi-host)** | `0.3.2-rc.3` | Windows `win32` · Node.js `v24.21.0` | Isolated DSH `0.2.2-rc.1` and `0.2.2-rc.3` hosts + synthetic streams | **56 suites, 1,698 checks per host** (50 offline suites / 1,597 checks + 6 host suites / 101 checks), **0 failures** | [../benchmarks/rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json), [../test-results.json](../test-results.json) |
 | **Linux full regression (`rc.3` multi-host)** | `0.3.2-rc.3` | Linux `linux` · Node.js `v24.9.0` | Isolated DSH `0.2.2-rc.2` and `0.2.2-rc.3` hosts + synthetic streams | **56 suites, 1,698 checks per host** (50 offline suites / 1,597 checks + 6 host suites / 101 checks), **0 failures** | [../benchmarks/rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json) |
 | **Windows full regression (`0.3.2-rc.2`)** | `0.3.2-rc.2` | Windows `win32` · Node.js `v24.21.0` | Isolated DSH `0.2.2-rc.1` host + synthetic streams | **55 suites, 1,690 checks** (50 offline suites / 1,597 checks + 5 host suites / 93 checks), **0 failures** | [../benchmarks/rc3-host-compatibility.json](../benchmarks/rc3-host-compatibility.json) |

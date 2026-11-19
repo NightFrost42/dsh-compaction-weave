@@ -1,0 +1,3495 @@
+{
+  "schemaVersion": 2,
+  "measuredDate": "2026-11-19",
+  "timeZone": "Asia/Shanghai",
+  "pluginVersion": "0.3.2",
+  "baselineRc4Commit": "a41b41a",
+  "hostEnvironment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "win32",
+    "arch": "x64",
+    "dshHostRuntime": "0.2.2-rc.3",
+    "dshCompatibilityRange": ">=0.2.2-rc.1 <1.0.0-0",
+    "strictHostFingerprintsDefault": false,
+    "comparedSystems": [
+      {
+        "id": "weave-0.3.2",
+        "description": "DSH Compaction Weave 0.3.2 (Stage-1 local observation masking + XML provenance isolation + key:value progress + CommonMark 0–3 space heading tolerance + subject-bound audit)"
+      },
+      {
+        "id": "weave-0.3.2-rc.4",
+        "description": "DSH Compaction Weave 0.3.2-rc.4 baseline at commit a41b41a (no Stage-1 masking; legacy domain regex heuristics)"
+      },
+      {
+        "id": "dsh-basic",
+        "description": "DSH 0.2.2-rc.3 built-in BasicCompactionEngine + ToolResultPruner with full stock 65,536 headroomTokens (no artificial output cap)"
+      },
+      {
+        "id": "billion-context",
+        "description": "billion-context@0.1.216 local ACP HTTP proxy with unified x-acp-session header, ccr enabled, and natural <acp-nudge> autonomous compression"
+      }
+    ]
+  },
+  "fairnessAndAntiDistortionControls": [
+    "dsh-basic mounted with stock headroomTokens (65,536 vs earlier 22,000 test harness setting) and CHAT_MAX_TOKENS=16384 so GLM/Gemini/DeepSeek never hit artificial output truncation in w1.",
+    "billion-context mounted with a persistent header-injecting hop attaching x-acp-session per session across all turns and model switches plus ccr=true and autonomous <acp-nudge> handling.",
+    "Workloads use unique per-phase Node.js/SQL module implementations (100% distinct domain classes and functions, zero repetitive filler) and ambiguous fields explicitly permit null when unverified.",
+    "Models receive identical surface prompts, JSON schemas, and retry budgets via @deepseek-ai/dsh-llm-pi-ai over Magpie gateway."
+  ],
+  "models": {
+    "requested": [
+      "gemini4Argon",
+      "GLMf5.3lash",
+      "gpt6astr / Astra6.2",
+      "deepseekv4flash"
+    ],
+    "testedRoutes": [
+      {
+        "slug": "gemini",
+        "displayName": "Gemini 4 Argon",
+        "route": "auto/gemini-4-argon",
+        "fallbackRoute": "group/gemini-4-carbon",
+        "contextWindow": 1048576,
+        "maxTokens": 65536
+      },
+      {
+        "slug": "glm",
+        "displayName": "GLM-5.3-Flash",
+        "route": "auto/glm-5.3-flash",
+        "fallbackRoute": null,
+        "contextWindow": 1000000,
+        "maxTokens": 131072
+      },
+      {
+        "slug": "deepseek",
+        "displayName": "DeepSeek-V4.1-Flash",
+        "route": "deepseek/deepseek-flash",
+        "fallbackRoute": "auto/deepseek-v4.1-flash",
+        "contextWindow": 1048576,
+        "maxTokens": 393216
+      },
+      {
+        "slug": "gpt",
+        "displayName": "GPT-6.1 Sol",
+        "suiteARoute": "2-2/gpt-6.1-sol",
+        "suiteCRoute": "auto/gpt-6.1-sol",
+        "contextWindow": 922000,
+        "maxTokens": 128000
+      }
+    ],
+    "gpt6AstraApiRestrictionNote": {
+      "note": "User invited GPT-6 Astra collaboration. On Magpie, auto/gpt-6-astra works natively in the official Codex CLI (used heavily for adversarial code and benchmark audits via MCP), but direct HTTP calls from non-Codex DSH clients return HTTP 403 (\"This account only allows Codex official clients\"); 2-2/gpt-6-astra returns HTTP 400 (no Responses upstream URL) and group/gpt-6.2-astra returns HTTP 404. Following strict no-spoofing guidelines, DSH HTTP benchmarks therefore ran GPT-6.1 Sol (2-2/gpt-6.1-sol in Suite A before 公益2 disabled chat completions; auto/gpt-6.1-sol in Suite C with 99.33%–99.46% KV cache verified by live probe).",
+      "probeCheckedAt": "2026-11-19T10:46:13.465Z"
+    }
+  },
+  "suiteA_standalone": {
+    "branchCount": 32,
+    "completedCount": 29,
+    "failedCount": 3,
+    "systemSummary": {
+      "weave-0.3.2": {
+        "completedBranches": 8,
+        "totalBranches": 8,
+        "failedBranches": [],
+        "accuracySum": "175/176",
+        "accuracyPct": 99.43,
+        "w1Accuracy": "144/144 (4/4 models finished)",
+        "w2Accuracy": "31/32 (4/4 models finished)",
+        "meanEffectiveCompressionPct": 72.2,
+        "meanLocalWireCompressionPct": 72.2,
+        "meanW1CompactionWallMs": 26880.5,
+        "meanW2CompactionWallMs": 35.75,
+        "avgCompactionSummaryCalls": 0.5,
+        "completedMagpieUsdSum": 1.0821439,
+        "completedNormalizedUsdSum": 0.8538941
+      },
+      "weave-0.3.2-rc.4": {
+        "completedBranches": 5,
+        "totalBranches": 8,
+        "failedBranches": [
+          {
+            "model": "gemini",
+            "workload": "w1-engineering-spec",
+            "error": "all summarization targets failed: magpie/auto/gemini-4-argon → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/auto/gemini-4-argon → SUMMARY_STRUCTURE_INVALID: the summary is missing 9 required section(s): 1. 用户的核心请求与意图; 2. 关键技术概念; 3. 涉及的文件与代码; 4. 错误与修复; 5. 问题解决过程; 6. 全部用户消息; 7. 待办任务; 8. 已完成的工作; 9. 继续工作所需的上下文 | magpie/auto/gemini-4-argon → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown."
+          },
+          {
+            "model": "gpt",
+            "workload": "w1-engineering-spec",
+            "error": "all summarization targets failed: magpie/2-2/gpt-6.1-sol → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/2-2/gpt-6.1-sol → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/2-2/gpt-6.1-sol → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown."
+          },
+          {
+            "model": "deepseek",
+            "workload": "w1-engineering-spec",
+            "error": "all summarization targets failed: magpie/deepseek/deepseek-flash → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/deepseek/deepseek-flash → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/deepseek/deepseek-flash → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown."
+          }
+        ],
+        "accuracySum": "62/68",
+        "accuracyPct": 91.18,
+        "w1Accuracy": "36/36 (1/4 models finished)",
+        "w2Accuracy": "26/32 (4/4 models finished)",
+        "meanEffectiveCompressionPct": 38.87,
+        "meanLocalWireCompressionPct": 35.5,
+        "meanW1CompactionWallMs": 53131,
+        "meanW2CompactionWallMs": 48040.75,
+        "avgCompactionSummaryCalls": 1.2,
+        "completedMagpieUsdSum": 0.9371696,
+        "completedNormalizedUsdSum": 0.6604697
+      },
+      "dsh-basic": {
+        "completedBranches": 8,
+        "totalBranches": 8,
+        "failedBranches": [],
+        "accuracySum": "164/176",
+        "accuracyPct": 93.18,
+        "w1Accuracy": "144/144 (4/4 models finished)",
+        "w2Accuracy": "20/32 (4/4 models finished)",
+        "meanEffectiveCompressionPct": 65.49,
+        "meanLocalWireCompressionPct": 69.76,
+        "meanW1CompactionWallMs": 56810.5,
+        "meanW2CompactionWallMs": 6.75,
+        "avgCompactionSummaryCalls": 0.5,
+        "completedMagpieUsdSum": 0.7952249,
+        "completedNormalizedUsdSum": 0.6142671
+      },
+      "billion-context": {
+        "completedBranches": 8,
+        "totalBranches": 8,
+        "failedBranches": [],
+        "accuracySum": "155/176",
+        "accuracyPct": 88.07,
+        "w1Accuracy": "144/144 (4/4 models finished)",
+        "w2Accuracy": "11/32 (4/4 models finished)",
+        "meanEffectiveCompressionPct": 33.35,
+        "meanLocalWireCompressionPct": -13.95,
+        "meanW1CompactionWallMs": 24587.75,
+        "meanW2CompactionWallMs": 34862.75,
+        "avgCompactionSummaryCalls": 1.25,
+        "completedMagpieUsdSum": 1.6898588,
+        "completedNormalizedUsdSum": 1.3998974
+      }
+    },
+    "branches": [
+      {
+        "model": "gemini",
+        "modelDisplay": "Gemini 4 Argon",
+        "modelRouteUsed": "auto/gemini-4-argon",
+        "system": "weave-0.3.2",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 35751,
+          "compactionLlmWallMs": 35685,
+          "postCompactionAnswerWallMs": 95209,
+          "endToEndWallMs": 183154,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 28803,
+          "observedBeforeInput": 28803,
+          "afterFirstCompactionInput": 5946,
+          "effectiveCompressionPct": 79.36,
+          "localWireCompressionPct": 79.36
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 89.5,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 60.66,
+            "R3Pct": 64.79,
+            "R4Pct": 63.47,
+            "R5Pct": 65.15,
+            "R6Pct": 70.28
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 130058,
+          "totalCachedInputTokens": 50222,
+          "totalOutputTokens": 4882
+        },
+        "costUsd": {
+          "magpieTotal": 0.2135142,
+          "normalizedTotal": 0.2135142
+        }
+      },
+      {
+        "model": "gemini",
+        "modelDisplay": "Gemini 4 Argon",
+        "modelRouteUsed": "auto/gemini-4-argon",
+        "system": "weave-0.3.2",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 8,
+          "total": 8,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 27,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 77348,
+          "endToEndWallMs": 91767,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 26841,
+          "observedBeforeInput": 26841,
+          "afterFirstCompactionInput": 15484,
+          "effectiveCompressionPct": 42.31,
+          "localWireCompressionPct": 42.31
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": true,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 0,
+            "R3Pct": 0,
+            "R4Pct": 0,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [
+            {
+              "tool": "history_read",
+              "args": {
+                "seq": 10,
+                "full": true,
+                "raw": null
+              }
+            }
+          ],
+          "totalHttpRequests": 6,
+          "totalInputTokens": 168081,
+          "totalCachedInputTokens": 0,
+          "totalOutputTokens": 854
+        },
+        "costUsd": {
+          "magpieTotal": 0.344702,
+          "normalizedTotal": 0.344702
+        }
+      },
+      {
+        "model": "gemini",
+        "modelDisplay": "Gemini 4 Argon",
+        "modelRouteUsed": "auto/gemini-4-argon",
+        "system": "weave-0.3.2-rc.4",
+        "workload": "w1-engineering-spec",
+        "status": "failed",
+        "error": "all summarization targets failed: magpie/auto/gemini-4-argon → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/auto/gemini-4-argon → SUMMARY_STRUCTURE_INVALID: the summary is missing 9 required section(s): 1. 用户的核心请求与意图; 2. 关键技术概念; 3. 涉及的文件与代码; 4. 错误与修复; 5. 问题解决过程; 6. 全部用户消息; 7. 待办任务; 8. 已完成的工作; 9. 继续工作所需的上下文 | magpie/auto/gemini-4-argon → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown.",
+        "accuracy": null,
+        "timingMs": null,
+        "tokens": null,
+        "execution": null,
+        "costUsd": null
+      },
+      {
+        "model": "gemini",
+        "modelDisplay": "Gemini 4 Argon",
+        "modelRouteUsed": "auto/gemini-4-argon",
+        "system": "weave-0.3.2-rc.4",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 8,
+          "total": 8,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 40730,
+          "compactionLlmWallMs": 40580,
+          "postCompactionAnswerWallMs": 101279,
+          "endToEndWallMs": 161859,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 26841,
+          "observedBeforeInput": 26842,
+          "afterFirstCompactionInput": 36082,
+          "effectiveCompressionPct": -34.43,
+          "localWireCompressionPct": -34.42
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 47.09,
+            "R3Pct": 91.81,
+            "R4Pct": 92.85,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [
+            {
+              "tool": "history_search",
+              "args": {
+                "query": "SQLITE_BUSY_TIMEOUT_MS"
+              }
+            }
+          ],
+          "totalHttpRequests": 7,
+          "totalInputTokens": 245444,
+          "totalCachedInputTokens": 104665,
+          "totalOutputTokens": 1796
+        },
+        "costUsd": {
+          "magpieTotal": 0.3099845,
+          "normalizedTotal": 0.3099845
+        }
+      },
+      {
+        "model": "gemini",
+        "modelDisplay": "Gemini 4 Argon",
+        "modelRouteUsed": "auto/gemini-4-argon",
+        "system": "dsh-basic",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 110970,
+          "compactionLlmWallMs": 110967,
+          "postCompactionAnswerWallMs": 118526,
+          "endToEndWallMs": 259039,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 28803,
+          "observedBeforeInput": 28690,
+          "afterFirstCompactionInput": 4750,
+          "effectiveCompressionPct": 83.51,
+          "localWireCompressionPct": 83.44
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 89.85,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 51.65,
+            "R3Pct": 57.2,
+            "R4Pct": 56.85,
+            "R5Pct": 59.23,
+            "R6Pct": 65.76
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 121187,
+          "totalCachedInputTokens": 44136,
+          "totalOutputTokens": 10832
+        },
+        "costUsd": {
+          "magpieTotal": 0.2668356,
+          "normalizedTotal": 0.2668356
+        }
+      },
+      {
+        "model": "gemini",
+        "modelDisplay": "Gemini 4 Argon",
+        "modelRouteUsed": "auto/gemini-4-argon",
+        "system": "dsh-basic",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 6,
+          "total": 8,
+          "pct": 75,
+          "mismatches": [
+            {
+              "phase": "R2",
+              "fields": [
+                {
+                  "field": "busyTimeoutMs",
+                  "expected": 4750,
+                  "actual": null
+                },
+                {
+                  "field": "lockCode",
+                  "expected": "SQLITE_BUSY_SNAPSHOT_517",
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 8,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 94141,
+          "endToEndWallMs": 112532,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 26841,
+          "observedBeforeInput": 26834,
+          "afterFirstCompactionInput": 19194,
+          "effectiveCompressionPct": 28.49,
+          "localWireCompressionPct": 28.47
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 87.56,
+            "R3Pct": 88.28,
+            "R4Pct": 87.24,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 5,
+          "totalInputTokens": 105880,
+          "totalCachedInputTokens": 52485,
+          "totalOutputTokens": 593
+        },
+        "costUsd": {
+          "magpieTotal": 0.1179685,
+          "normalizedTotal": 0.1179685
+        }
+      },
+      {
+        "model": "gemini",
+        "modelDisplay": "Gemini 4 Argon",
+        "modelRouteUsed": "auto/gemini-4-argon",
+        "system": "billion-context",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 45476,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 96830,
+          "endToEndWallMs": 171527,
+          "biliProxyToolLoopCalls": 2,
+          "biliAutonomousCompressCalls": 2
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 28803,
+          "observedBeforeInput": 19890,
+          "afterFirstCompactionInput": 18183,
+          "effectiveCompressionPct": 36.87,
+          "localWireCompressionPct": 8.58
+        },
+        "execution": {
+          "compactionSummaryCalls": 2,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 0,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 0,
+            "R3Pct": 0,
+            "R4Pct": 0,
+            "R5Pct": 0,
+            "R6Pct": 0
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 10,
+          "totalInputTokens": 219378,
+          "totalCachedInputTokens": 0,
+          "totalOutputTokens": 4036
+        },
+        "costUsd": {
+          "magpieTotal": 0.479116,
+          "normalizedTotal": 0.479116
+        }
+      },
+      {
+        "model": "gemini",
+        "modelDisplay": "Gemini 4 Argon",
+        "modelRouteUsed": "auto/gemini-4-argon",
+        "system": "billion-context",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 8,
+          "total": 8,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 45090,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 97669,
+          "endToEndWallMs": 250813,
+          "biliProxyToolLoopCalls": 2,
+          "biliAutonomousCompressCalls": 2
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 26841,
+          "observedBeforeInput": 22772,
+          "afterFirstCompactionInput": 24948,
+          "effectiveCompressionPct": 7.05,
+          "localWireCompressionPct": -9.56
+        },
+        "execution": {
+          "compactionSummaryCalls": 2,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 0,
+            "R3Pct": 0,
+            "R4Pct": 0,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 10,
+          "totalInputTokens": 209632,
+          "totalCachedInputTokens": 0,
+          "totalOutputTokens": 16358
+        },
+        "costUsd": {
+          "magpieTotal": 0.582844,
+          "normalizedTotal": 0.582844
+        }
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "weave-0.3.2",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 33391,
+          "compactionLlmWallMs": 33296,
+          "postCompactionAnswerWallMs": 29768,
+          "endToEndWallMs": 89050,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 21760,
+          "observedBeforeInput": 21760,
+          "afterFirstCompactionInput": 2741,
+          "effectiveCompressionPct": 87.4,
+          "localWireCompressionPct": 87.4
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 97.94,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 89.78,
+            "R3Pct": 94.91,
+            "R4Pct": 91.98,
+            "R5Pct": 91.98,
+            "R6Pct": 93.72
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 85835,
+          "totalCachedInputTokens": 36928,
+          "totalOutputTokens": 2439
+        },
+        "costUsd": {
+          "magpieTotal": 0.0081345,
+          "normalizedTotal": 0.0089102
+        }
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "weave-0.3.2",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 8,
+          "total": 8,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 48,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 89683,
+          "endToEndWallMs": 100037,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 50666,
+          "observedBeforeInput": 50666,
+          "afterFirstCompactionInput": 11373,
+          "effectiveCompressionPct": 77.55,
+          "localWireCompressionPct": 77.55
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": true,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 28.58,
+            "R3Pct": 0,
+            "R4Pct": 0.21,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [
+            {
+              "tool": "history_read",
+              "args": {
+                "seq": 10,
+                "full": true,
+                "raw": null
+              }
+            }
+          ],
+          "totalHttpRequests": 6,
+          "totalInputTokens": 165201,
+          "totalCachedInputTokens": 12352,
+          "totalOutputTokens": 421
+        },
+        "costUsd": {
+          "magpieTotal": 0.018869,
+          "normalizedTotal": 0.023217
+        }
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "weave-0.3.2-rc.4",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 53131,
+          "compactionLlmWallMs": 51830,
+          "postCompactionAnswerWallMs": 39326,
+          "endToEndWallMs": 102859,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 21760,
+          "observedBeforeInput": 21621,
+          "afterFirstCompactionInput": 2919,
+          "effectiveCompressionPct": 86.59,
+          "localWireCompressionPct": 86.5
+        },
+        "execution": {
+          "compactionSummaryCalls": 2,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 0.59,
+            "compactionSelfPct": 0.41,
+            "R1Pct": 0,
+            "R2Pct": 90.68,
+            "R3Pct": 95.17,
+            "R4Pct": 92.23,
+            "R5Pct": 93.54,
+            "R6Pct": 94.02
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 10,
+          "totalInputTokens": 110670,
+          "totalCachedInputTokens": 16832,
+          "totalOutputTokens": 2613
+        },
+        "costUsd": {
+          "magpieTotal": 0.0128869,
+          "normalizedTotal": 0.015694
+        }
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "weave-0.3.2-rc.4",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 8,
+          "total": 8,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 64978,
+          "compactionLlmWallMs": 64737,
+          "postCompactionAnswerWallMs": 36216,
+          "endToEndWallMs": 113494,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 50666,
+          "observedBeforeInput": 50664,
+          "afterFirstCompactionInput": 28137,
+          "effectiveCompressionPct": 44.47,
+          "localWireCompressionPct": 44.46
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 49.8,
+            "R3Pct": 0,
+            "R4Pct": 99.6,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [
+            {
+              "tool": "history_search",
+              "args": {
+                "query": "SQLITE_BUSY_TIMEOUT_MS"
+              }
+            }
+          ],
+          "totalHttpRequests": 7,
+          "totalInputTokens": 219159,
+          "totalCachedInputTokens": 57536,
+          "totalOutputTokens": 1025
+        },
+        "costUsd": {
+          "magpieTotal": 0.0217229,
+          "normalizedTotal": 0.0250311
+        }
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "dsh-basic",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 56330,
+          "compactionLlmWallMs": 56343,
+          "postCompactionAnswerWallMs": 75074,
+          "endToEndWallMs": 157048,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 21760,
+          "observedBeforeInput": 21735,
+          "afterFirstCompactionInput": 2051,
+          "effectiveCompressionPct": 90.57,
+          "localWireCompressionPct": 90.56
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0.6,
+            "beforeWarm2Pct": 98.05,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 0,
+            "R3Pct": 0,
+            "R4Pct": 0,
+            "R5Pct": 0,
+            "R6Pct": 73.52
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 80430,
+          "totalCachedInputTokens": 23744,
+          "totalOutputTokens": 4675
+        },
+        "costUsd": {
+          "magpieTotal": 0.0095466,
+          "normalizedTotal": 0.0113791
+        }
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "dsh-basic",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 5,
+          "total": 8,
+          "pct": 62.5,
+          "mismatches": [
+            {
+              "phase": "R2",
+              "fields": [
+                {
+                  "field": "filePath",
+                  "expected": "src/storage/sqlite-pool.js",
+                  "actual": null
+                },
+                {
+                  "field": "busyTimeoutMs",
+                  "expected": 4750,
+                  "actual": null
+                },
+                {
+                  "field": "lockCode",
+                  "expected": "SQLITE_BUSY_SNAPSHOT_517",
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 6,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 52954,
+          "endToEndWallMs": 56722,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 50666,
+          "observedBeforeInput": 50662,
+          "afterFirstCompactionInput": 14401,
+          "effectiveCompressionPct": 71.58,
+          "localWireCompressionPct": 71.57
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 0.89,
+            "R2Pct": 9.66,
+            "R3Pct": 99.28,
+            "R4Pct": 96.73,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 5,
+          "totalInputTokens": 109359,
+          "totalCachedInputTokens": 30656,
+          "totalOutputTokens": 738
+        },
+        "costUsd": {
+          "magpieTotal": 0.0107686,
+          "normalizedTotal": 0.0123402
+        }
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "billion-context",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 15749,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 33289,
+          "endToEndWallMs": 73335,
+          "biliProxyToolLoopCalls": 1,
+          "biliAutonomousCompressCalls": 1
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 21760,
+          "observedBeforeInput": 14145,
+          "afterFirstCompactionInput": 13255,
+          "effectiveCompressionPct": 39.09,
+          "localWireCompressionPct": 6.29
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 60.97,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 97.6,
+            "R3Pct": 98.69,
+            "R4Pct": 98.06,
+            "R5Pct": 97.2,
+            "R6Pct": 98.05
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 152292,
+          "totalCachedInputTokens": 94848,
+          "totalOutputTokens": 1838
+        },
+        "costUsd": {
+          "magpieTotal": 0.0108935,
+          "normalizedTotal": 0.0100039
+        }
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "billion-context",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 3,
+          "total": 8,
+          "pct": 37.5,
+          "mismatches": [
+            {
+              "phase": "R1",
+              "fields": [
+                {
+                  "field": "port",
+                  "expected": 9443,
+                  "actual": null
+                },
+                {
+                  "field": "maxConnections",
+                  "expected": 128,
+                  "actual": null
+                },
+                {
+                  "field": "walAutoCheckpointPages",
+                  "expected": 2500,
+                  "actual": null
+                },
+                {
+                  "field": "forbidDropTable",
+                  "expected": true,
+                  "actual": null
+                },
+                {
+                  "field": "failedCommandPid",
+                  "expected": 48210,
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 30073,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 50230,
+          "endToEndWallMs": 139646,
+          "biliProxyToolLoopCalls": 4,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 50666,
+          "observedBeforeInput": 15806,
+          "afterFirstCompactionInput": 15021,
+          "effectiveCompressionPct": 70.35,
+          "localWireCompressionPct": 4.97
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 31.61,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 98.82,
+            "R3Pct": 97.05,
+            "R4Pct": 97.09,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 11,
+          "totalInputTokens": 155404,
+          "totalCachedInputTokens": 105792,
+          "totalOutputTokens": 7590
+        },
+        "costUsd": {
+          "magpieTotal": 0.0127396,
+          "normalizedTotal": 0.0123132
+        }
+      },
+      {
+        "model": "gpt",
+        "modelDisplay": "GPT-6.1 Sol (free 公益2 fallback for down GPT-6.2 Astra)",
+        "modelRouteUsed": "2-2/gpt-6.1-sol",
+        "system": "weave-0.3.2",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 26842,
+          "compactionLlmWallMs": 26727,
+          "postCompactionAnswerWallMs": 76797,
+          "endToEndWallMs": 123083,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 21842,
+          "observedBeforeInput": 21842,
+          "afterFirstCompactionInput": 7009,
+          "effectiveCompressionPct": 67.91,
+          "localWireCompressionPct": 67.91
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 82.69,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 33.42,
+            "R3Pct": 0,
+            "R4Pct": 73.59,
+            "R5Pct": 73.6,
+            "R6Pct": 0
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 107184,
+          "totalCachedInputTokens": 31678,
+          "totalOutputTokens": 2288
+        },
+        "costUsd": {
+          "magpieTotal": 0.1770598,
+          "normalizedTotal": 0.0885299
+        }
+      },
+      {
+        "model": "gpt",
+        "modelDisplay": "GPT-6.1 Sol (free 公益2 fallback for down GPT-6.2 Astra)",
+        "modelRouteUsed": "2-2/gpt-6.1-sol",
+        "system": "weave-0.3.2",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 7,
+          "total": 8,
+          "pct": 87.5,
+          "mismatches": [
+            {
+              "phase": "R1",
+              "fields": [
+                {
+                  "field": "failedCommandPid",
+                  "expected": 48210,
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 48,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 125120,
+          "endToEndWallMs": 138757,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 69010,
+          "observedBeforeInput": 69010,
+          "afterFirstCompactionInput": 29541,
+          "effectiveCompressionPct": 57.19,
+          "localWireCompressionPct": 57.19
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": true,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 62.12,
+            "R2Pct": 0,
+            "R3Pct": 70.11,
+            "R4Pct": 99.22,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [
+            {
+              "tool": "history_read",
+              "args": {
+                "seq": 10,
+                "full": true,
+                "raw": null
+              }
+            }
+          ],
+          "totalHttpRequests": 6,
+          "totalInputTokens": 228096,
+          "totalCachedInputTokens": 90013,
+          "totalOutputTokens": 452
+        },
+        "costUsd": {
+          "magpieTotal": 0.2896873,
+          "normalizedTotal": 0.1448437
+        }
+      },
+      {
+        "model": "gpt",
+        "modelDisplay": "GPT-6.1 Sol (free 公益2 fallback for down GPT-6.2 Astra)",
+        "modelRouteUsed": "2-2/gpt-6.1-sol",
+        "system": "weave-0.3.2-rc.4",
+        "workload": "w1-engineering-spec",
+        "status": "failed",
+        "error": "all summarization targets failed: magpie/2-2/gpt-6.1-sol → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/2-2/gpt-6.1-sol → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/2-2/gpt-6.1-sol → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown.",
+        "accuracy": null,
+        "timingMs": null,
+        "tokens": null,
+        "execution": null,
+        "costUsd": null
+      },
+      {
+        "model": "gpt",
+        "modelDisplay": "GPT-6.1 Sol (free 公益2 fallback for down GPT-6.2 Astra)",
+        "modelRouteUsed": "2-2/gpt-6.1-sol",
+        "system": "weave-0.3.2-rc.4",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 7,
+          "total": 8,
+          "pct": 87.5,
+          "mismatches": [
+            {
+              "phase": "R1",
+              "fields": [
+                {
+                  "field": "failedCommandPid",
+                  "expected": 48210,
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 46019,
+          "compactionLlmWallMs": 45967,
+          "postCompactionAnswerWallMs": 434856,
+          "endToEndWallMs": 451702,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 69010,
+          "observedBeforeInput": 50722,
+          "afterFirstCompactionInput": 32100,
+          "effectiveCompressionPct": 53.49,
+          "localWireCompressionPct": 36.71
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 0,
+            "R3Pct": 0,
+            "R4Pct": 0,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [
+            {
+              "tool": "history_search",
+              "args": {
+                "query": "SQLITE_BUSY_TIMEOUT_MS"
+              }
+            }
+          ],
+          "totalHttpRequests": 10,
+          "totalInputTokens": 268814,
+          "totalCachedInputTokens": 0,
+          "totalOutputTokens": 1406
+        },
+        "costUsd": {
+          "magpieTotal": 0.5656305,
+          "normalizedTotal": 0.2828153
+        }
+      },
+      {
+        "model": "gpt",
+        "modelDisplay": "GPT-6.1 Sol (free 公益2 fallback for down GPT-6.2 Astra)",
+        "modelRouteUsed": "2-2/gpt-6.1-sol",
+        "system": "dsh-basic",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 52053,
+          "compactionLlmWallMs": 52055,
+          "postCompactionAnswerWallMs": 50912,
+          "endToEndWallMs": 130067,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 21842,
+          "observedBeforeInput": 40205,
+          "afterFirstCompactionInput": 20041,
+          "effectiveCompressionPct": 8.25,
+          "localWireCompressionPct": 50.15
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 98.92,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 98.84,
+            "R3Pct": 99.45,
+            "R4Pct": 98.61,
+            "R5Pct": 99.04,
+            "R6Pct": 98.94
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 229426,
+          "totalCachedInputTokens": 141986,
+          "totalOutputTokens": 2459
+        },
+        "costUsd": {
+          "magpieTotal": 0.2136686,
+          "normalizedTotal": 0.1068343
+        }
+      },
+      {
+        "model": "gpt",
+        "modelDisplay": "GPT-6.1 Sol (free 公益2 fallback for down GPT-6.2 Astra)",
+        "modelRouteUsed": "2-2/gpt-6.1-sol",
+        "system": "dsh-basic",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 5,
+          "total": 8,
+          "pct": 62.5,
+          "mismatches": [
+            {
+              "phase": "R1",
+              "fields": [
+                {
+                  "field": "failedCommandPid",
+                  "expected": 48210,
+                  "actual": null
+                }
+              ]
+            },
+            {
+              "phase": "R2",
+              "fields": [
+                {
+                  "field": "busyTimeoutMs",
+                  "expected": 4750,
+                  "actual": null
+                },
+                {
+                  "field": "lockCode",
+                  "expected": "SQLITE_BUSY_SNAPSHOT_517",
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 6,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 26237,
+          "endToEndWallMs": 31281,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 69010,
+          "observedBeforeInput": 50722,
+          "afterFirstCompactionInput": 14328,
+          "effectiveCompressionPct": 79.24,
+          "localWireCompressionPct": 71.75
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 81.28,
+            "R3Pct": 80.43,
+            "R4Pct": 82.51,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 5,
+          "totalInputTokens": 109088,
+          "totalCachedInputTokens": 35853,
+          "totalOutputTokens": 500
+        },
+        "costUsd": {
+          "magpieTotal": 0.1550553,
+          "normalizedTotal": 0.0775277
+        }
+      },
+      {
+        "model": "gpt",
+        "modelDisplay": "GPT-6.1 Sol (free 公益2 fallback for down GPT-6.2 Astra)",
+        "modelRouteUsed": "2-2/gpt-6.1-sol",
+        "system": "billion-context",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 26211,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 54731,
+          "endToEndWallMs": 93543,
+          "biliProxyToolLoopCalls": 2,
+          "biliAutonomousCompressCalls": 2
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 21842,
+          "observedBeforeInput": 18840,
+          "afterFirstCompactionInput": 31106,
+          "effectiveCompressionPct": -42.41,
+          "localWireCompressionPct": -65.11
+        },
+        "execution": {
+          "compactionSummaryCalls": 2,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 43.78,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 98.92,
+            "R3Pct": 99.4,
+            "R4Pct": 99.03,
+            "R5Pct": 99.12,
+            "R6Pct": 85.97
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 10,
+          "totalInputTokens": 305735,
+          "totalCachedInputTokens": 203697,
+          "totalOutputTokens": 1576
+        },
+        "costUsd": {
+          "magpieTotal": 0.2402057,
+          "normalizedTotal": 0.1201029
+        }
+      },
+      {
+        "model": "gpt",
+        "modelDisplay": "GPT-6.1 Sol (free 公益2 fallback for down GPT-6.2 Astra)",
+        "modelRouteUsed": "2-2/gpt-6.1-sol",
+        "system": "billion-context",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 0,
+          "total": 8,
+          "pct": 0,
+          "mismatches": [
+            {
+              "phase": "R1",
+              "fields": [
+                {
+                  "field": "port",
+                  "expected": 9443,
+                  "actual": null
+                },
+                {
+                  "field": "maxConnections",
+                  "expected": 128,
+                  "actual": null
+                },
+                {
+                  "field": "walAutoCheckpointPages",
+                  "expected": 2500,
+                  "actual": null
+                },
+                {
+                  "field": "forbidDropTable",
+                  "expected": true,
+                  "actual": null
+                },
+                {
+                  "field": "failedCommandPid",
+                  "expected": 48210,
+                  "actual": null
+                }
+              ]
+            },
+            {
+              "phase": "R2",
+              "fields": [
+                {
+                  "field": "filePath",
+                  "expected": "src/storage/sqlite-pool.js",
+                  "actual": null
+                },
+                {
+                  "field": "busyTimeoutMs",
+                  "expected": 4750,
+                  "actual": null
+                },
+                {
+                  "field": "lockCode",
+                  "expected": "SQLITE_BUSY_SNAPSHOT_517",
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 57821,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 103280,
+          "endToEndWallMs": 191403,
+          "biliProxyToolLoopCalls": 7,
+          "biliAutonomousCompressCalls": 2
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 69010,
+          "observedBeforeInput": 19464,
+          "afterFirstCompactionInput": 33568,
+          "effectiveCompressionPct": 51.36,
+          "localWireCompressionPct": -72.46
+        },
+        "execution": {
+          "compactionSummaryCalls": 2,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 0,
+            "R2Pct": 92.56,
+            "R3Pct": 78.61,
+            "R4Pct": 62.2,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 14,
+          "totalInputTokens": 429323,
+          "totalCachedInputTokens": 296532,
+          "totalOutputTokens": 4185
+        },
+        "costUsd": {
+          "magpieTotal": 0.3370852,
+          "normalizedTotal": 0.1685426
+        }
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "weave-0.3.2",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 11538,
+          "compactionLlmWallMs": 11463,
+          "postCompactionAnswerWallMs": 20738,
+          "endToEndWallMs": 60656,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 23421,
+          "observedBeforeInput": 23421,
+          "afterFirstCompactionInput": 2769,
+          "effectiveCompressionPct": 88.18,
+          "localWireCompressionPct": 88.18
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 97.28,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 89.87,
+            "R3Pct": 95.06,
+            "R4Pct": 89.64,
+            "R5Pct": 88.42,
+            "R6Pct": 91.95
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 91248,
+          "totalCachedInputTokens": 38528,
+          "totalOutputTokens": 4280
+        },
+        "costUsd": {
+          "magpieTotal": 0.0105916,
+          "normalizedTotal": 0.0105916
+        }
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "weave-0.3.2",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 8,
+          "total": 8,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 20,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 13558,
+          "endToEndWallMs": 14789,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 54468,
+          "observedBeforeInput": 54468,
+          "afterFirstCompactionInput": 12143,
+          "effectiveCompressionPct": 77.71,
+          "localWireCompressionPct": 77.71
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": true,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 1.05,
+            "R2Pct": 45.81,
+            "R3Pct": 37.32,
+            "R4Pct": 98.37,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [
+            {
+              "tool": "history_search",
+              "args": {
+                "query": "busyTimeoutMs"
+              }
+            },
+            {
+              "tool": "history_search",
+              "args": {
+                "query": "lockCode"
+              }
+            },
+            {
+              "tool": "history_read",
+              "args": {
+                "seq": 10,
+                "full": null,
+                "raw": true
+              }
+            }
+          ],
+          "totalHttpRequests": 7,
+          "totalInputTokens": 194662,
+          "totalCachedInputTokens": 73216,
+          "totalOutputTokens": 1915
+        },
+        "costUsd": {
+          "magpieTotal": 0.0195855,
+          "normalizedTotal": 0.0195855
+        }
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "weave-0.3.2-rc.4",
+        "workload": "w1-engineering-spec",
+        "status": "failed",
+        "error": "all summarization targets failed: magpie/deepseek/deepseek-flash → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/deepseek/deepseek-flash → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown. | magpie/deepseek/deepseek-flash → PROGRESS_FACT_CONFLICT: Summary conflicts with source-backed progress. Keep exact values, batch scope and verification limits; omit stale claims instead of turning known results into unknown.",
+        "accuracy": null,
+        "timingMs": null,
+        "tokens": null,
+        "execution": null,
+        "costUsd": null
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "weave-0.3.2-rc.4",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 3,
+          "total": 8,
+          "pct": 37.5,
+          "mismatches": [
+            {
+              "phase": "R1",
+              "fields": [
+                {
+                  "field": "maxConnections",
+                  "expected": 128,
+                  "actual": null
+                },
+                {
+                  "field": "walAutoCheckpointPages",
+                  "expected": 2500,
+                  "actual": null
+                }
+              ]
+            },
+            {
+              "phase": "R2",
+              "fields": [
+                {
+                  "field": "filePath",
+                  "expected": "src/storage/sqlite-pool.js",
+                  "actual": null
+                },
+                {
+                  "field": "busyTimeoutMs",
+                  "expected": 4750,
+                  "actual": null
+                },
+                {
+                  "field": "lockCode",
+                  "expected": "SQLITE_BUSY_SNAPSHOT_517",
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 40436,
+          "compactionLlmWallMs": 40336,
+          "postCompactionAnswerWallMs": 28408,
+          "endToEndWallMs": 73417,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 54468,
+          "observedBeforeInput": 54472,
+          "afterFirstCompactionInput": 30379,
+          "effectiveCompressionPct": 44.23,
+          "localWireCompressionPct": 44.23
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 78.34,
+            "R3Pct": 79.69,
+            "R4Pct": 98.3,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [
+            {
+              "tool": "history_search",
+              "args": {
+                "query": "SQLITE_BUSY_TIMEOUT_MS"
+              }
+            },
+            {
+              "tool": "history_search",
+              "args": {
+                "query": "SQLITE_BUSY_SNAPSHOT"
+              }
+            },
+            {
+              "tool": "history_read",
+              "args": {
+                "seq": 10,
+                "full": null,
+                "raw": null
+              }
+            },
+            {
+              "tool": "history_read",
+              "args": {
+                "seq": 10,
+                "full": null,
+                "raw": null
+              }
+            },
+            {
+              "tool": "history_read",
+              "args": {
+                "seq": 10,
+                "full": null,
+                "raw": null
+              }
+            },
+            {
+              "tool": "history_read",
+              "args": {
+                "seq": 10,
+                "full": null,
+                "raw": null
+              }
+            }
+          ],
+          "totalHttpRequests": 10,
+          "totalInputTokens": 362349,
+          "totalCachedInputTokens": 204544,
+          "totalOutputTokens": 4434
+        },
+        "costUsd": {
+          "magpieTotal": 0.0269448,
+          "normalizedTotal": 0.0269448
+        }
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "dsh-basic",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 7889,
+          "compactionLlmWallMs": 7891,
+          "postCompactionAnswerWallMs": 16241,
+          "endToEndWallMs": 30897,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 23421,
+          "observedBeforeInput": 23224,
+          "afterFirstCompactionInput": 2195,
+          "effectiveCompressionPct": 90.63,
+          "localWireCompressionPct": 90.55
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 98.11,
+            "compactionSelfPct": 0,
+            "R1Pct": 0,
+            "R2Pct": 89.29,
+            "R3Pct": 90.39,
+            "R4Pct": 86.33,
+            "R5Pct": 91.82,
+            "R6Pct": 87.83
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 86066,
+          "totalCachedInputTokens": 35456,
+          "totalOutputTokens": 3733
+        },
+        "costUsd": {
+          "magpieTotal": 0.0099377,
+          "normalizedTotal": 0.0099377
+        }
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "dsh-basic",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 4,
+          "total": 8,
+          "pct": 50,
+          "mismatches": [
+            {
+              "phase": "R1",
+              "fields": [
+                {
+                  "field": "failedCommandPid",
+                  "expected": 48210,
+                  "actual": null
+                }
+              ]
+            },
+            {
+              "phase": "R2",
+              "fields": [
+                {
+                  "field": "filePath",
+                  "expected": "src/storage/sqlite-pool.js",
+                  "actual": null
+                },
+                {
+                  "field": "busyTimeoutMs",
+                  "expected": 4750,
+                  "actual": null
+                },
+                {
+                  "field": "lockCode",
+                  "expected": "SQLITE_BUSY_SNAPSHOT_517",
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 7,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 18663,
+          "endToEndWallMs": 19518,
+          "biliProxyToolLoopCalls": 0,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 54468,
+          "observedBeforeInput": 54467,
+          "afterFirstCompactionInput": 15456,
+          "effectiveCompressionPct": 71.62,
+          "localWireCompressionPct": 71.62
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 7.45,
+            "R2Pct": 98.28,
+            "R3Pct": 98.97,
+            "R4Pct": 97.54,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 5,
+          "totalInputTokens": 117472,
+          "totalCachedInputTokens": 47872,
+          "totalOutputTokens": 1434
+        },
+        "costUsd": {
+          "magpieTotal": 0.011444,
+          "normalizedTotal": 0.011444
+        }
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "billion-context",
+        "workload": "w1-engineering-spec",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 36,
+          "total": 36,
+          "pct": 100,
+          "mismatches": []
+        },
+        "timingMs": {
+          "compactionWallMs": 10915,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 21853,
+          "endToEndWallMs": 39284,
+          "biliProxyToolLoopCalls": 1,
+          "biliAutonomousCompressCalls": 1
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 23421,
+          "observedBeforeInput": 18092,
+          "afterFirstCompactionInput": 15343,
+          "effectiveCompressionPct": 34.49,
+          "localWireCompressionPct": 15.19
+        },
+        "execution": {
+          "compactionSummaryCalls": 1,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 0,
+            "beforeWarm2Pct": 66.35,
+            "compactionSelfPct": null,
+            "R1Pct": 28.36,
+            "R2Pct": 97.41,
+            "R3Pct": 98.45,
+            "R4Pct": 96.83,
+            "R5Pct": 96.66,
+            "R6Pct": 96.77
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 9,
+          "totalInputTokens": 174176,
+          "totalCachedInputTokens": 116480,
+          "totalOutputTokens": 4610
+        },
+        "costUsd": {
+          "magpieTotal": 0.0117698,
+          "normalizedTotal": 0.0117698
+        }
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "billion-context",
+        "workload": "w2-repo-debug",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 0,
+          "total": 8,
+          "pct": 0,
+          "mismatches": [
+            {
+              "phase": "R1",
+              "fields": [
+                {
+                  "field": "port",
+                  "expected": 9443,
+                  "actual": null
+                },
+                {
+                  "field": "maxConnections",
+                  "expected": 128,
+                  "actual": null
+                },
+                {
+                  "field": "walAutoCheckpointPages",
+                  "expected": 2500,
+                  "actual": null
+                },
+                {
+                  "field": "forbidDropTable",
+                  "expected": true,
+                  "actual": null
+                },
+                {
+                  "field": "failedCommandPid",
+                  "expected": 48210,
+                  "actual": null
+                }
+              ]
+            },
+            {
+              "phase": "R2",
+              "fields": [
+                {
+                  "field": "filePath",
+                  "expected": "src/storage/sqlite-pool.js",
+                  "actual": null
+                },
+                {
+                  "field": "busyTimeoutMs",
+                  "expected": 4750,
+                  "actual": null
+                },
+                {
+                  "field": "lockCode",
+                  "expected": "SQLITE_BUSY_SNAPSHOT_517",
+                  "actual": null
+                }
+              ]
+            }
+          ]
+        },
+        "timingMs": {
+          "compactionWallMs": 6467,
+          "compactionLlmWallMs": 0,
+          "postCompactionAnswerWallMs": 59343,
+          "endToEndWallMs": 110188,
+          "biliProxyToolLoopCalls": 3,
+          "biliAutonomousCompressCalls": 0
+        },
+        "tokens": {
+          "rawBaselineBeforeInput": 54468,
+          "observedBeforeInput": 16424,
+          "afterFirstCompactionInput": 16338,
+          "effectiveCompressionPct": 70,
+          "localWireCompressionPct": 0.52
+        },
+        "execution": {
+          "compactionSummaryCalls": 0,
+          "stage1MaskedOnly": false,
+          "cacheTrajectory": {
+            "beforeWarm1Pct": 12.68,
+            "beforeWarm2Pct": null,
+            "compactionSelfPct": null,
+            "R1Pct": 26.64,
+            "R2Pct": 98.49,
+            "R3Pct": 97.43,
+            "R4Pct": 94.05,
+            "R5Pct": null,
+            "R6Pct": null
+          },
+          "r2ToolsCalled": [],
+          "totalHttpRequests": 10,
+          "totalInputTokens": 156983,
+          "totalCachedInputTokens": 112384,
+          "totalOutputTokens": 13630
+        },
+        "costUsd": {
+          "magpieTotal": 0.015205,
+          "normalizedTotal": 0.015205
+        }
+      }
+    ]
+  },
+  "suiteB_fiveCycleCacheAndSpeed": {
+    "description": "Continuous 5-compaction engineering session (Cycles 1–5; Phases 1–5) measuring compactionSelfPct (cache hit on compaction call itself), R1 (one-turn prefix rebuild after compaction), R2–R6 steady-state KV cache recovery, totalCompactionWallMs, and endToEndWallMs on DeepSeek-V4.1-Flash and GLM-5.3-Flash across all 4 systems (8 trajectories, 40 compactions, 240 post-compaction replies).",
+    "completedCount": 7,
+    "failedCount": 1,
+    "runs": [
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "weave-0.3.2",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 100,
+          "total": 100,
+          "pct": 100
+        },
+        "compactionModes": [
+          "initial",
+          "incremental",
+          "consolidation",
+          "consolidation",
+          "consolidation"
+        ],
+        "checkpointCountSeries": [
+          1,
+          2,
+          1,
+          1,
+          1
+        ],
+        "timingMs": {
+          "totalCompactionWallMs": 107648,
+          "meanCycleCompactionWallMs": 21529.6,
+          "endToEndWallMs": 282650
+        },
+        "totalsAllRequests": {
+          "requests": 40,
+          "wallMs": 282151,
+          "inputTokens": 704609,
+          "cachedInputTokens": 413952,
+          "outputTokens": 9492,
+          "magpieUsd": 0.0529333,
+          "normalizedUsd": 0.0505356
+        },
+        "cycles": [
+          {
+            "cycle": 1,
+            "compactionMode": "initial",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 21289,
+            "wireReductionPct": 69.58,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.13,
+              "R3Pct": 99.11,
+              "R4Pct": 99.31,
+              "R5Pct": 99.09,
+              "R6Pct": 98.13
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 2,
+            "compactionMode": "incremental",
+            "checkpointsAfter": 2,
+            "compactionWallMs": 19525,
+            "wireReductionPct": 53.48,
+            "cacheTrajectory": {
+              "preWarmPct": 30.3,
+              "compactionSelfPct": 37.68,
+              "R1Pct": 0,
+              "R2Pct": 34.18,
+              "R3Pct": 98.97,
+              "R4Pct": 99.17,
+              "R5Pct": 99.1,
+              "R6Pct": 98.78
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 3,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 19213,
+            "wireReductionPct": 62.68,
+            "cacheTrajectory": {
+              "preWarmPct": 51.61,
+              "compactionSelfPct": 65.37,
+              "R1Pct": 0,
+              "R2Pct": 98.89,
+              "R3Pct": 98.93,
+              "R4Pct": 98.73,
+              "R5Pct": 99.07,
+              "R6Pct": 98.23
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 4,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 21949,
+            "wireReductionPct": 54.87,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.92,
+              "R3Pct": 98.63,
+              "R4Pct": 98.43,
+              "R5Pct": 98.51,
+              "R6Pct": 97.96
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 5,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 25672,
+            "wireReductionPct": 55.02,
+            "cacheTrajectory": {
+              "preWarmPct": 46.44,
+              "compactionSelfPct": 57.93,
+              "R1Pct": 0,
+              "R2Pct": 99.03,
+              "R3Pct": 98.93,
+              "R4Pct": 97.9,
+              "R5Pct": 98.06,
+              "R6Pct": 97.75
+            },
+            "accuracy": "20/20"
+          }
+        ]
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "weave-0.3.2-rc.4",
+        "status": "failed",
+        "error": "compaction cannot fit the next main request: 30273 estimated input tokens >= 183616 message budget; 0 chunks committed, remaining history retained; use /compact or a larger-capacity target",
+        "accuracy": null,
+        "compactionModes": null,
+        "checkpointCountSeries": null,
+        "timingMs": null,
+        "totalsAllRequests": null,
+        "cycles": []
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "dsh-basic",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 100,
+          "total": 100,
+          "pct": 100
+        },
+        "compactionModes": [
+          "initial",
+          "consolidation",
+          "consolidation",
+          "consolidation",
+          "consolidation"
+        ],
+        "checkpointCountSeries": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "timingMs": {
+          "totalCompactionWallMs": 431436,
+          "meanCycleCompactionWallMs": 86287.2,
+          "endToEndWallMs": 576429
+        },
+        "totalsAllRequests": {
+          "requests": 40,
+          "wallMs": 576646,
+          "inputTokens": 655629,
+          "cachedInputTokens": 345984,
+          "outputTokens": 35037,
+          "magpieUsd": 0.0635531,
+          "normalizedUsd": 0.0685069
+        },
+        "cycles": [
+          {
+            "cycle": 1,
+            "compactionMode": "initial",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 52323,
+            "wireReductionPct": 68.2,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.61,
+              "R3Pct": 98.9,
+              "R4Pct": 99.09,
+              "R5Pct": 98.4,
+              "R6Pct": 97.97
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 2,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 114407,
+            "wireReductionPct": 62.15,
+            "cacheTrajectory": {
+              "preWarmPct": 35.49,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.39,
+              "R3Pct": 98.6,
+              "R4Pct": 98.81,
+              "R5Pct": 98.8,
+              "R6Pct": 98.19
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 3,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 67936,
+            "wireReductionPct": 55.92,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.94,
+              "R3Pct": 98.89,
+              "R4Pct": 98.75,
+              "R5Pct": 99.21,
+              "R6Pct": 98.3
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 4,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 108146,
+            "wireReductionPct": 55.34,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.92,
+              "R3Pct": 98.77,
+              "R4Pct": 98.48,
+              "R5Pct": 98.19,
+              "R6Pct": 97.53
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 5,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 88624,
+            "wireReductionPct": 55.85,
+            "cacheTrajectory": {
+              "preWarmPct": 46.58,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 99.05,
+              "R3Pct": 98.82,
+              "R4Pct": 96.89,
+              "R5Pct": 96.24,
+              "R6Pct": 97.41
+            },
+            "accuracy": "20/20"
+          }
+        ]
+      },
+      {
+        "model": "glm",
+        "modelDisplay": "GLM-5.3-Flash",
+        "modelRouteUsed": "auto/glm-5.3-flash",
+        "system": "billion-context",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 100,
+          "total": 100,
+          "pct": 100
+        },
+        "compactionModes": [
+          "bili-autonomous",
+          "bili-autonomous",
+          "bili-autonomous",
+          "bili-autonomous",
+          "bili-autonomous"
+        ],
+        "checkpointCountSeries": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "timingMs": {
+          "totalCompactionWallMs": 351901,
+          "meanCycleCompactionWallMs": 70380.2,
+          "endToEndWallMs": 801041
+        },
+        "totalsAllRequests": {
+          "requests": 57,
+          "wallMs": 797781,
+          "inputTokens": 1037150,
+          "cachedInputTokens": 390784,
+          "outputTokens": 30512,
+          "magpieUsd": 0.1034445,
+          "normalizedUsd": 0.1164345
+        },
+        "cycles": [
+          {
+            "cycle": 1,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 84179,
+            "wireReductionPct": -30.12,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": null,
+              "R1Pct": 0,
+              "R2Pct": 44.74,
+              "R3Pct": 89.62,
+              "R4Pct": 67.96,
+              "R5Pct": 0,
+              "R6Pct": 95.54
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 2,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 49352,
+            "wireReductionPct": -157.12,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": null,
+              "R1Pct": 67.3,
+              "R2Pct": 0,
+              "R3Pct": 0,
+              "R4Pct": 0,
+              "R5Pct": 95.85,
+              "R6Pct": 97.64
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 3,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 52173,
+            "wireReductionPct": -7.55,
+            "cacheTrajectory": {
+              "preWarmPct": 43.75,
+              "compactionSelfPct": null,
+              "R1Pct": 58,
+              "R2Pct": 0,
+              "R3Pct": 0,
+              "R4Pct": 0,
+              "R5Pct": 95.61,
+              "R6Pct": 97.52
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 4,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 113914,
+            "wireReductionPct": -7.22,
+            "cacheTrajectory": {
+              "preWarmPct": 46.49,
+              "compactionSelfPct": null,
+              "R1Pct": 57.82,
+              "R2Pct": 0,
+              "R3Pct": 0,
+              "R4Pct": 0,
+              "R5Pct": 94.16,
+              "R6Pct": 97.85
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 5,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 52283,
+            "wireReductionPct": 33.23,
+            "cacheTrajectory": {
+              "preWarmPct": 27.44,
+              "compactionSelfPct": null,
+              "R1Pct": 0,
+              "R2Pct": 0,
+              "R3Pct": 51.85,
+              "R4Pct": 0,
+              "R5Pct": 93.88,
+              "R6Pct": 97.2
+            },
+            "accuracy": "20/20"
+          }
+        ]
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "weave-0.3.2",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 100,
+          "total": 100,
+          "pct": 100
+        },
+        "compactionModes": [
+          "initial",
+          "incremental",
+          "consolidation",
+          "consolidation",
+          "consolidation"
+        ],
+        "checkpointCountSeries": [
+          1,
+          2,
+          1,
+          1,
+          1
+        ],
+        "timingMs": {
+          "totalCompactionWallMs": 45989,
+          "meanCycleCompactionWallMs": 9197.8,
+          "endToEndWallMs": 116878
+        },
+        "totalsAllRequests": {
+          "requests": 40,
+          "wallMs": 116373,
+          "inputTokens": 757866,
+          "cachedInputTokens": 556672,
+          "outputTokens": 16671,
+          "magpieUsd": 0.0418517,
+          "normalizedUsd": 0.0418517
+        },
+        "cycles": [
+          {
+            "cycle": 1,
+            "compactionMode": "initial",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 10563,
+            "wireReductionPct": 70.48,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": 95.52,
+              "R1Pct": 0,
+              "R2Pct": 97.68,
+              "R3Pct": 97.81,
+              "R4Pct": 98.49,
+              "R5Pct": 98.23,
+              "R6Pct": 97.68
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 2,
+            "compactionMode": "incremental",
+            "checkpointsAfter": 2,
+            "compactionWallMs": 8727,
+            "wireReductionPct": 53.51,
+            "cacheTrajectory": {
+              "preWarmPct": 29.88,
+              "compactionSelfPct": 93.49,
+              "R1Pct": 33.24,
+              "R2Pct": 99.08,
+              "R3Pct": 98.65,
+              "R4Pct": 97.98,
+              "R5Pct": 98.65,
+              "R6Pct": 98.35
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 3,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 9147,
+            "wireReductionPct": 61.16,
+            "cacheTrajectory": {
+              "preWarmPct": 50.97,
+              "compactionSelfPct": 90.6,
+              "R1Pct": 0,
+              "R2Pct": 98.14,
+              "R3Pct": 97.69,
+              "R4Pct": 97.98,
+              "R5Pct": 98.02,
+              "R6Pct": 97.94
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 4,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 8065,
+            "wireReductionPct": 55.06,
+            "cacheTrajectory": {
+              "preWarmPct": 46.06,
+              "compactionSelfPct": 87.15,
+              "R1Pct": 0,
+              "R2Pct": 98.32,
+              "R3Pct": 97.48,
+              "R4Pct": 96.7,
+              "R5Pct": 96.63,
+              "R6Pct": 97.08
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 5,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 9487,
+            "wireReductionPct": 55.82,
+            "cacheTrajectory": {
+              "preWarmPct": 47.83,
+              "compactionSelfPct": 85.94,
+              "R1Pct": 0,
+              "R2Pct": 98.98,
+              "R3Pct": 97.35,
+              "R4Pct": 95.75,
+              "R5Pct": 95.72,
+              "R6Pct": 96.97
+            },
+            "accuracy": "20/20"
+          }
+        ]
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "weave-0.3.2-rc.4",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 100,
+          "total": 100,
+          "pct": 100
+        },
+        "compactionModes": [
+          "initial",
+          "incremental",
+          "consolidation",
+          "consolidation",
+          "consolidation"
+        ],
+        "checkpointCountSeries": [
+          1,
+          2,
+          1,
+          1,
+          1
+        ],
+        "timingMs": {
+          "totalCompactionWallMs": 127239,
+          "meanCycleCompactionWallMs": 25447.8,
+          "endToEndWallMs": 195746
+        },
+        "totalsAllRequests": {
+          "requests": 44,
+          "wallMs": 189207,
+          "inputTokens": 835969,
+          "cachedInputTokens": 541952,
+          "outputTokens": 29060,
+          "magpieUsd": 0.0631644,
+          "normalizedUsd": 0.0631644
+        },
+        "cycles": [
+          {
+            "cycle": 1,
+            "compactionMode": "initial",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 24637,
+            "wireReductionPct": 70.73,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": 94.93,
+              "R1Pct": 0,
+              "R2Pct": 98.5,
+              "R3Pct": 98.55,
+              "R4Pct": 98.16,
+              "R5Pct": 98.08,
+              "R6Pct": 97.62
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 2,
+            "compactionMode": "incremental",
+            "checkpointsAfter": 2,
+            "compactionWallMs": 12177,
+            "wireReductionPct": 55.31,
+            "cacheTrajectory": {
+              "preWarmPct": 29.63,
+              "compactionSelfPct": 0,
+              "R1Pct": 33.93,
+              "R2Pct": 98.64,
+              "R3Pct": 98.31,
+              "R4Pct": 98.56,
+              "R5Pct": 98.6,
+              "R6Pct": 98.26
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 3,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 38014,
+            "wireReductionPct": 61.42,
+            "cacheTrajectory": {
+              "preWarmPct": 49.85,
+              "compactionSelfPct": 62.72,
+              "R1Pct": 0,
+              "R2Pct": 99.01,
+              "R3Pct": 97.91,
+              "R4Pct": 98.48,
+              "R5Pct": 98.33,
+              "R6Pct": 97.87
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 4,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 9921,
+            "wireReductionPct": 53.67,
+            "cacheTrajectory": {
+              "preWarmPct": 44.99,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 99.02,
+              "R3Pct": 98.44,
+              "R4Pct": 97.62,
+              "R5Pct": 97.41,
+              "R6Pct": 97.64
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 5,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 42490,
+            "wireReductionPct": 56.53,
+            "cacheTrajectory": {
+              "preWarmPct": 47.39,
+              "compactionSelfPct": 60.64,
+              "R1Pct": 0,
+              "R2Pct": 98.63,
+              "R3Pct": 97.74,
+              "R4Pct": 96.79,
+              "R5Pct": 95.43,
+              "R6Pct": 96.56
+            },
+            "accuracy": "20/20"
+          }
+        ]
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "dsh-basic",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 100,
+          "total": 100,
+          "pct": 100
+        },
+        "compactionModes": [
+          "initial",
+          "consolidation",
+          "consolidation",
+          "consolidation",
+          "consolidation"
+        ],
+        "checkpointCountSeries": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "timingMs": {
+          "totalCompactionWallMs": 52253,
+          "meanCycleCompactionWallMs": 10450.6,
+          "endToEndWallMs": 126139
+        },
+        "totalsAllRequests": {
+          "requests": 40,
+          "wallMs": 126174,
+          "inputTokens": 678594,
+          "cachedInputTokens": 365440,
+          "outputTokens": 19755,
+          "magpieUsd": 0.0599224,
+          "normalizedUsd": 0.0599224
+        },
+        "cycles": [
+          {
+            "cycle": 1,
+            "compactionMode": "initial",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 7594,
+            "wireReductionPct": 70.08,
+            "cacheTrajectory": {
+              "preWarmPct": 0,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.53,
+              "R3Pct": 98.43,
+              "R4Pct": 97.99,
+              "R5Pct": 97.68,
+              "R6Pct": 98.41
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 2,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 8702,
+            "wireReductionPct": 70.49,
+            "cacheTrajectory": {
+              "preWarmPct": 30.06,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.49,
+              "R3Pct": 97.58,
+              "R4Pct": 97.1,
+              "R5Pct": 97.98,
+              "R6Pct": 97.06
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 3,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 8745,
+            "wireReductionPct": 64.27,
+            "cacheTrajectory": {
+              "preWarmPct": 35.46,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.43,
+              "R3Pct": 95.65,
+              "R4Pct": 97.81,
+              "R5Pct": 98.39,
+              "R6Pct": 97.65
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 4,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 15837,
+            "wireReductionPct": 57.19,
+            "cacheTrajectory": {
+              "preWarmPct": 43.15,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 98.11,
+              "R3Pct": 96.88,
+              "R4Pct": 96.29,
+              "R5Pct": 95.94,
+              "R6Pct": 95.9
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 5,
+            "compactionMode": "consolidation",
+            "checkpointsAfter": 1,
+            "compactionWallMs": 11375,
+            "wireReductionPct": 58.04,
+            "cacheTrajectory": {
+              "preWarmPct": 46.17,
+              "compactionSelfPct": 0,
+              "R1Pct": 0,
+              "R2Pct": 99.02,
+              "R3Pct": 97.83,
+              "R4Pct": 96.26,
+              "R5Pct": 95.97,
+              "R6Pct": 96.51
+            },
+            "accuracy": "20/20"
+          }
+        ]
+      },
+      {
+        "model": "deepseek",
+        "modelDisplay": "DeepSeek-V4.1-Flash",
+        "modelRouteUsed": "deepseek/deepseek-flash",
+        "system": "billion-context",
+        "status": "completed",
+        "error": null,
+        "accuracy": {
+          "passed": 88,
+          "total": 100,
+          "pct": 88
+        },
+        "compactionModes": [
+          "bili-autonomous",
+          "bili-autonomous",
+          "bili-autonomous",
+          "bili-autonomous",
+          "bili-autonomous"
+        ],
+        "checkpointCountSeries": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "timingMs": {
+          "totalCompactionWallMs": 173811,
+          "meanCycleCompactionWallMs": 34762.2,
+          "endToEndWallMs": 363807
+        },
+        "totalsAllRequests": {
+          "requests": 69,
+          "wallMs": 360665,
+          "inputTokens": 1279100,
+          "cachedInputTokens": 875008,
+          "outputTokens": 66633,
+          "magpieUsd": 0.1032186,
+          "normalizedUsd": 0.1032186
+        },
+        "cycles": [
+          {
+            "cycle": 1,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 27217,
+            "wireReductionPct": -27.75,
+            "cacheTrajectory": {
+              "preWarmPct": 7.31,
+              "compactionSelfPct": null,
+              "R1Pct": 27.78,
+              "R2Pct": 57.62,
+              "R3Pct": 57.17,
+              "R4Pct": 95.05,
+              "R5Pct": 96.61,
+              "R6Pct": 97.97
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 2,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 38094,
+            "wireReductionPct": -113.58,
+            "cacheTrajectory": {
+              "preWarmPct": 59.83,
+              "compactionSelfPct": null,
+              "R1Pct": 55.99,
+              "R2Pct": 68.65,
+              "R3Pct": 60.25,
+              "R4Pct": 95.72,
+              "R5Pct": 97.45,
+              "R6Pct": 96.55
+            },
+            "accuracy": "10/20"
+          },
+          {
+            "cycle": 3,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 25310,
+            "wireReductionPct": 35.4,
+            "cacheTrajectory": {
+              "preWarmPct": 37.74,
+              "compactionSelfPct": null,
+              "R1Pct": 58.57,
+              "R2Pct": 71.48,
+              "R3Pct": 91.31,
+              "R4Pct": 61.43,
+              "R5Pct": 96.38,
+              "R6Pct": 97.27
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 4,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 48870,
+            "wireReductionPct": -118.96,
+            "cacheTrajectory": {
+              "preWarmPct": 58.09,
+              "compactionSelfPct": null,
+              "R1Pct": 87.23,
+              "R2Pct": 73.68,
+              "R3Pct": 60.44,
+              "R4Pct": 60.65,
+              "R5Pct": 95.48,
+              "R6Pct": 69.21
+            },
+            "accuracy": "20/20"
+          },
+          {
+            "cycle": 5,
+            "compactionMode": "bili-autonomous",
+            "checkpointsAfter": 0,
+            "compactionWallMs": 34320,
+            "wireReductionPct": -189.07,
+            "cacheTrajectory": {
+              "preWarmPct": 66.39,
+              "compactionSelfPct": null,
+              "R1Pct": 74.37,
+              "R2Pct": 59.97,
+              "R3Pct": 63.64,
+              "R4Pct": 93.39,
+              "R5Pct": 95.25,
+              "R6Pct": 95.62
+            },
+            "accuracy": "18/20"
+          }
+        ]
+      }
+    ]
+  },
+  "suiteC_multiModelSwitching": {
+    "description": "4-generation continuous model rotation (Gemini 4 Argon -> GLM-5.3-Flash -> DeepSeek-V4.1-Flash -> GPT-6.1 Sol) with anti-trap probes and 3 cross-model hops per generation (24 switches per system).",
+    "completedCount": 4,
+    "failedCount": 0,
+    "systems": [
+      {
+        "system": "weave-0.3.2",
+        "status": "completed",
+        "error": null,
+        "totalSwitches": 19,
+        "compactionsSucceeded": 4,
+        "accuracy": {
+          "passed": 226,
+          "total": 226,
+          "pct": 100
+        },
+        "timingMs": {
+          "totalCompactionWallMs": 114864,
+          "endToEndWallMs": 400743
+        },
+        "httpRequests": 34,
+        "compactionRequests": 4,
+        "totals": {
+          "inputTokens": 617456,
+          "cachedInputTokens": 210670,
+          "outputTokens": 9752,
+          "magpieUsd": 0.6077257,
+          "normalizedUsd": 0.4914573
+        },
+        "generations": [
+          {
+            "generation": 1,
+            "ownerModel": "gemini",
+            "phaseTitle": "Phase 1: 核心账本模式与基础 SLA",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 33621,
+            "wireBeforeInput": 42797,
+            "wireAfter1Input": 14415,
+            "wireReductionPct": 66.32,
+            "score": "55/55",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 2,
+            "ownerModel": "glm",
+            "phaseTitle": "Phase 2: API 路由网关与限流策略上线",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 31880,
+            "wireBeforeInput": 32963,
+            "wireAfter1Input": 13691,
+            "wireReductionPct": 58.47,
+            "score": "55/55",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 3,
+            "ownerModel": "deepseek",
+            "phaseTitle": "Phase 3: 异步重试队列与死信投递器",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 14078,
+            "wireBeforeInput": 32679,
+            "wireAfter1Input": 13239,
+            "wireReductionPct": 59.49,
+            "score": "58/58",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 4,
+            "ownerModel": "gpt",
+            "phaseTitle": "Phase 4: 超时规格修订与 Webhook HMAC 安全加固",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 35285,
+            "wireBeforeInput": 30508,
+            "wireAfter1Input": 13510,
+            "wireReductionPct": 55.72,
+            "score": "58/58",
+            "accuracyPct": 100
+          }
+        ],
+        "hostFallbackNoticePresent": true
+      },
+      {
+        "system": "weave-0.3.2-rc.4",
+        "status": "completed",
+        "error": null,
+        "totalSwitches": 19,
+        "compactionsSucceeded": 3,
+        "accuracy": {
+          "passed": 226,
+          "total": 226,
+          "pct": 100
+        },
+        "timingMs": {
+          "totalCompactionWallMs": 224449,
+          "endToEndWallMs": 436157
+        },
+        "httpRequests": 37,
+        "compactionRequests": 7,
+        "totals": {
+          "inputTokens": 791402,
+          "cachedInputTokens": 296561,
+          "outputTokens": 14092,
+          "magpieUsd": 0.7259478,
+          "normalizedUsd": 0.5610217
+        },
+        "generations": [
+          {
+            "generation": 1,
+            "ownerModel": "gemini",
+            "phaseTitle": "Phase 1: 核心账本模式与基础 SLA",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 43032,
+            "wireBeforeInput": 42801,
+            "wireAfter1Input": 14780,
+            "wireReductionPct": 65.47,
+            "score": "55/55",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 2,
+            "ownerModel": "glm",
+            "phaseTitle": "Phase 2: API 路由网关与限流策略上线",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 51060,
+            "wireBeforeInput": 33288,
+            "wireAfter1Input": 13996,
+            "wireReductionPct": 57.95,
+            "score": "55/55",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 3,
+            "ownerModel": "deepseek",
+            "phaseTitle": "Phase 3: 异步重试队列与死信投递器",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 9991,
+            "wireBeforeInput": 32891,
+            "wireAfter1Input": 13115,
+            "wireReductionPct": 60.13,
+            "score": "58/58",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 4,
+            "ownerModel": "gpt",
+            "phaseTitle": "Phase 4: 超时规格修订与 Webhook HMAC 安全加固",
+            "compactionSucceeded": false,
+            "compactionError": "compaction cannot fit the next main request: 29092 estimated input tokens >= 183616 message budget; 0 chunks committed, remaining history retained; use /compact or a larger-capacity target",
+            "compactionWallMs": 120366,
+            "wireBeforeInput": 30409,
+            "wireAfter1Input": 30603,
+            "wireReductionPct": -0.64,
+            "score": "58/58",
+            "accuracyPct": 100
+          }
+        ],
+        "hostFallbackNoticePresent": false
+      },
+      {
+        "system": "dsh-basic",
+        "status": "completed",
+        "error": null,
+        "totalSwitches": 19,
+        "compactionsSucceeded": 4,
+        "accuracy": {
+          "passed": 226,
+          "total": 226,
+          "pct": 100
+        },
+        "timingMs": {
+          "totalCompactionWallMs": 118401,
+          "endToEndWallMs": 327876
+        },
+        "httpRequests": 34,
+        "compactionRequests": 4,
+        "totals": {
+          "inputTokens": 570486,
+          "cachedInputTokens": 146446,
+          "outputTokens": 11921,
+          "magpieUsd": 0.5934965,
+          "normalizedUsd": 0.4810641
+        },
+        "generations": [
+          {
+            "generation": 1,
+            "ownerModel": "gemini",
+            "phaseTitle": "Phase 1: 核心账本模式与基础 SLA",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 34086,
+            "wireBeforeInput": 42797,
+            "wireAfter1Input": 13218,
+            "wireReductionPct": 69.11,
+            "score": "55/55",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 2,
+            "ownerModel": "glm",
+            "phaseTitle": "Phase 2: API 路由网关与限流策略上线",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 47598,
+            "wireBeforeInput": 36038,
+            "wireAfter1Input": 10471,
+            "wireReductionPct": 70.94,
+            "score": "55/55",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 3,
+            "ownerModel": "deepseek",
+            "phaseTitle": "Phase 3: 异步重试队列与死信投递器",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 6828,
+            "wireBeforeInput": 33519,
+            "wireAfter1Input": 11528,
+            "wireReductionPct": 65.61,
+            "score": "58/58",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 4,
+            "ownerModel": "gpt",
+            "phaseTitle": "Phase 4: 超时规格修订与 Webhook HMAC 安全加固",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 29889,
+            "wireBeforeInput": 33070,
+            "wireAfter1Input": 11100,
+            "wireReductionPct": 66.43,
+            "score": "58/58",
+            "accuracyPct": 100
+          }
+        ],
+        "hostFallbackNoticePresent": false
+      },
+      {
+        "system": "billion-context",
+        "status": "completed",
+        "error": null,
+        "totalSwitches": 19,
+        "compactionsSucceeded": 4,
+        "accuracy": {
+          "passed": 226,
+          "total": 226,
+          "pct": 100
+        },
+        "timingMs": {
+          "totalCompactionWallMs": 203650,
+          "endToEndWallMs": 875970
+        },
+        "httpRequests": 48,
+        "compactionRequests": 15,
+        "totals": {
+          "inputTokens": 797593,
+          "cachedInputTokens": 245618,
+          "outputTokens": 22788,
+          "magpieUsd": 0.8260267,
+          "normalizedUsd": 0.6873457
+        },
+        "generations": [
+          {
+            "generation": 1,
+            "ownerModel": "gemini",
+            "phaseTitle": "Phase 1: 核心账本模式与基础 SLA",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 54385,
+            "wireBeforeInput": 17909,
+            "wireAfter1Input": 24411,
+            "wireReductionPct": -36.31,
+            "score": "55/55",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 2,
+            "ownerModel": "glm",
+            "phaseTitle": "Phase 2: API 路由网关与限流策略上线",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 29516,
+            "wireBeforeInput": 34027,
+            "wireAfter1Input": 15592,
+            "wireReductionPct": 54.18,
+            "score": "55/55",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 3,
+            "ownerModel": "deepseek",
+            "phaseTitle": "Phase 3: 异步重试队列与死信投递器",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 50065,
+            "wireBeforeInput": 31159,
+            "wireAfter1Input": 21186,
+            "wireReductionPct": 32.01,
+            "score": "58/58",
+            "accuracyPct": 100
+          },
+          {
+            "generation": 4,
+            "ownerModel": "gpt",
+            "phaseTitle": "Phase 4: 超时规格修订与 Webhook HMAC 安全加固",
+            "compactionSucceeded": true,
+            "compactionError": null,
+            "compactionWallMs": 69684,
+            "wireBeforeInput": null,
+            "wireAfter1Input": 30745,
+            "wireReductionPct": null,
+            "score": "58/58",
+            "accuracyPct": 100
+          }
+        ],
+        "hostFallbackNoticePresent": false
+      }
+    ]
+  },
+  "historicalWeaveReferences": {
+    "0.3.1-review.35": {
+      "measuredDate": "2026-11-11",
+      "model": "DeepSeek V4.1 Flash",
+      "successfulCompactions": 4,
+      "meanInputReductionPct": 68.5,
+      "incrementalFirstThreeMeanPct": 58.71,
+      "weightedReductionPct": 70.2,
+      "beforeInputTokens": 332270,
+      "afterInputTokens": 99019,
+      "cycle5Status": "Stopped after Gen 4 consolidation / historical false-rejection limit prior to v0.3.2 hardening"
+    },
+    "0.3.2-rc.2_internalCrossSwitch": {
+      "measuredDate": "2026-11-14",
+      "sequence": [
+        "auto/gemini-4-argon",
+        "auto/glm-5.3-flash",
+        "deepseek/deepseek-flash",
+        "auto/gpt-6.1-sol"
+      ],
+      "compactionsPassed": 4,
+      "switches": 24,
+      "calls": 60,
+      "recallAssertions": "728/728",
+      "checksPassed": "77/77",
+      "inputTokens": 863939,
+      "outputTokens": 9514,
+      "perModelTotalUsd": {
+        "Gemini": 0.112266,
+        "GLM": 0.006181,
+        "DeepSeek": 0.007895,
+        "GPT": 0.050375
+      }
+    }
+  }
+}

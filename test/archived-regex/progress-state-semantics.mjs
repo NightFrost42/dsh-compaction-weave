@@ -3,12 +3,12 @@ import {createHash,randomUUID} from 'node:crypto';
 import {readFileSync,mkdtempSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {collectProgressFacts,extractProgressFacts,progressSourceRefs,renderProgressFacts,validateProgressFacts} from '../lib/progress-facts.js';
-import {collectWorkReport,scopeWorkReport,workReportRef} from '../lib/work-report.js';
-import {progressFrames} from '../lib/progress-state.js';
-import {WeaveCompactionEngine} from '../lib/engine.js';
-import {resolveConfig} from '../lib/config.js';
-import {approxTokens,blocksToText} from '../lib/meter.js';
+import {collectProgressFacts,extractProgressFacts,progressSourceRefs,renderProgressFacts,validateProgressFacts} from '../../lib/progress-facts.js';
+import {collectWorkReport,scopeWorkReport,workReportRef} from '../../lib/work-report.js';
+import {progressFrames} from '../../lib/progress-state.js';
+import {WeaveCompactionEngine} from '../../lib/engine.js';
+import {resolveConfig} from '../../lib/config.js';
+import {approxTokens,blocksToText} from '../../lib/meter.js';
 
 const rows=[];
 async function test(name,fn){try{await fn();rows.push({name,pass:true});}catch(error){rows.push({name,pass:false,error:error.stack});}}

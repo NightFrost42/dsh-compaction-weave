@@ -1,0 +1,590 @@
+{
+  "version": "0.3.2",
+  "date": "2026-11-19T11:58:25.532Z",
+  "node": "v24.19.0",
+  "platform": "win32",
+  "hostIntegration": true,
+  "hostVersion": "0.2.2-rc.3",
+  "suites": 51,
+  "passed": 1059,
+  "failedSuites": 0,
+  "breakdown": {
+    "offlineSuites": 44,
+    "offlineChecks": 941,
+    "hostSuites": 7,
+    "hostChecks": 118
+  },
+  "results": [
+    {
+      "name": "host/capacity-regressions.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 29,
+      "failed": 0,
+      "milliseconds": 5209,
+      "log": "host-capacity-regressions.mjs.log"
+    },
+    {
+      "name": "host/independent.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 58,
+      "failed": 0,
+      "milliseconds": 5136,
+      "log": "host-independent.mjs.log"
+    },
+    {
+      "name": "host/native-cache-test.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 4,
+      "failed": 0,
+      "milliseconds": 773,
+      "log": "host-native-cache-test.mjs.log"
+    },
+    {
+      "name": "host/native-host.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 1,
+      "failed": 0,
+      "milliseconds": 269,
+      "log": "host-native-host.mjs.log"
+    },
+    {
+      "name": "host/native-idle-compaction.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 15,
+      "failed": 0,
+      "milliseconds": 1251,
+      "log": "host-native-idle-compaction.mjs.log"
+    },
+    {
+      "name": "host/native-proactive.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 1,
+      "failed": 0,
+      "milliseconds": 257,
+      "log": "host-native-proactive.mjs.log"
+    },
+    {
+      "name": "host/native-transaction.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 10,
+      "failed": 0,
+      "milliseconds": 880,
+      "log": "host-native-transaction.mjs.log"
+    },
+    {
+      "name": "unit/astra-review-fixes.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 20,
+      "failed": 0,
+      "milliseconds": 563,
+      "log": "unit-astra-review-fixes.mjs.log"
+    },
+    {
+      "name": "unit/atomic-replace.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 15,
+      "failed": 0,
+      "milliseconds": 227,
+      "log": "unit-atomic-replace.mjs.log"
+    },
+    {
+      "name": "unit/audit-diagnostics.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 8,
+      "failed": 0,
+      "milliseconds": 406,
+      "log": "unit-audit-diagnostics.mjs.log"
+    },
+    {
+      "name": "unit/audit-release.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 12,
+      "failed": 0,
+      "milliseconds": 164,
+      "log": "unit-audit-release.mjs.log"
+    },
+    {
+      "name": "unit/automatic-block.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 16,
+      "failed": 0,
+      "milliseconds": 283,
+      "log": "unit-automatic-block.mjs.log"
+    },
+    {
+      "name": "unit/cache-range-budget.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 11,
+      "failed": 0,
+      "milliseconds": 420,
+      "log": "unit-cache-range-budget.mjs.log"
+    },
+    {
+      "name": "unit/command-heartbeat.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 24,
+      "failed": 0,
+      "milliseconds": 490,
+      "log": "unit-command-heartbeat.mjs.log"
+    },
+    {
+      "name": "unit/constraint-scope.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 12,
+      "failed": 0,
+      "milliseconds": 140,
+      "log": "unit-constraint-scope.mjs.log"
+    },
+    {
+      "name": "unit/continuation-budget-failures.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 10,
+      "failed": 0,
+      "milliseconds": 3752,
+      "log": "unit-continuation-budget-failures.mjs.log"
+    },
+    {
+      "name": "unit/continuation-preflight.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 8,
+      "failed": 0,
+      "milliseconds": 3576,
+      "log": "unit-continuation-preflight.mjs.log"
+    },
+    {
+      "name": "unit/continuation-process-recovery.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 3,
+      "failed": 0,
+      "milliseconds": 2291,
+      "log": "unit-continuation-process-recovery.mjs.log"
+    },
+    {
+      "name": "unit/continuation-progress.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 25,
+      "failed": 0,
+      "milliseconds": 6696,
+      "log": "unit-continuation-progress.mjs.log"
+    },
+    {
+      "name": "unit/continuation-request-accounting.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 15,
+      "failed": 0,
+      "milliseconds": 2144,
+      "log": "unit-continuation-request-accounting.mjs.log"
+    },
+    {
+      "name": "unit/continuation-resume-engine.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 39,
+      "failed": 0,
+      "milliseconds": 6843,
+      "log": "unit-continuation-resume-engine.mjs.log"
+    },
+    {
+      "name": "unit/continuation-storage.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 17,
+      "failed": 0,
+      "milliseconds": 429,
+      "log": "unit-continuation-storage.mjs.log"
+    },
+    {
+      "name": "unit/continuation.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 37,
+      "failed": 0,
+      "milliseconds": 10491,
+      "log": "unit-continuation.mjs.log"
+    },
+    {
+      "name": "unit/failure-diagnostics.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 23,
+      "failed": 0,
+      "milliseconds": 611,
+      "log": "unit-failure-diagnostics.mjs.log"
+    },
+    {
+      "name": "unit/idle-compaction.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 26,
+      "failed": 0,
+      "milliseconds": 209,
+      "log": "unit-idle-compaction.mjs.log"
+    },
+    {
+      "name": "unit/idle-settings.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 60,
+      "failed": 0,
+      "milliseconds": 428,
+      "log": "unit-idle-settings.mjs.log"
+    },
+    {
+      "name": "unit/live-settings.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 17,
+      "failed": 0,
+      "milliseconds": 282,
+      "log": "unit-live-settings.mjs.log"
+    },
+    {
+      "name": "unit/memory-engine.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 16,
+      "failed": 0,
+      "milliseconds": 5290,
+      "log": "unit-memory-engine.mjs.log"
+    },
+    {
+      "name": "unit/memory-parser-cache.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 7,
+      "failed": 0,
+      "milliseconds": 193,
+      "log": "unit-memory-parser-cache.mjs.log"
+    },
+    {
+      "name": "unit/memory-policy.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 49,
+      "failed": 0,
+      "milliseconds": 173,
+      "log": "unit-memory-policy.mjs.log"
+    },
+    {
+      "name": "unit/minimum-reduction.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 12,
+      "failed": 0,
+      "milliseconds": 134,
+      "log": "unit-minimum-reduction.mjs.log"
+    },
+    {
+      "name": "unit/phase1-optimizations.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 5,
+      "failed": 0,
+      "milliseconds": 508,
+      "log": "unit-phase1-optimizations.mjs.log"
+    },
+    {
+      "name": "unit/phase2-optimizations.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 5,
+      "failed": 0,
+      "milliseconds": 476,
+      "log": "unit-phase2-optimizations.mjs.log"
+    },
+    {
+      "name": "unit/phase3-route-b.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 6,
+      "failed": 0,
+      "milliseconds": 166,
+      "log": "unit-phase3-route-b.mjs.log"
+    },
+    {
+      "name": "unit/proactive.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 17,
+      "failed": 0,
+      "milliseconds": 195,
+      "log": "unit-proactive.mjs.log"
+    },
+    {
+      "name": "unit/pruned-source-recovery.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 10,
+      "failed": 0,
+      "milliseconds": 445,
+      "log": "unit-pruned-source-recovery.mjs.log"
+    },
+    {
+      "name": "unit/reconstruct.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 24,
+      "failed": 0,
+      "milliseconds": 198,
+      "log": "unit-reconstruct.mjs.log"
+    },
+    {
+      "name": "unit/release-billing-safety.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 9,
+      "failed": 0,
+      "milliseconds": 993,
+      "log": "unit-release-billing-safety.mjs.log"
+    },
+    {
+      "name": "unit/retry-settings.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 12,
+      "failed": 0,
+      "milliseconds": 317,
+      "log": "unit-retry-settings.mjs.log"
+    },
+    {
+      "name": "unit/run.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 147,
+      "failed": 0,
+      "milliseconds": 46544,
+      "log": "unit-run.mjs.log"
+    },
+    {
+      "name": "unit/smoke.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 22,
+      "failed": 0,
+      "milliseconds": 233,
+      "log": "unit-smoke.mjs.log"
+    },
+    {
+      "name": "unit/source-cache-regressions.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 46,
+      "failed": 0,
+      "milliseconds": 316,
+      "log": "unit-source-cache-regressions.mjs.log"
+    },
+    {
+      "name": "unit/source-provenance.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 17,
+      "failed": 0,
+      "milliseconds": 219,
+      "log": "unit-source-provenance.mjs.log"
+    },
+    {
+      "name": "unit/source-recovery.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 8,
+      "failed": 0,
+      "milliseconds": 257,
+      "log": "unit-source-recovery.mjs.log"
+    },
+    {
+      "name": "unit/summary-dispatch-deadline.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 9,
+      "failed": 0,
+      "milliseconds": 5278,
+      "log": "unit-summary-dispatch-deadline.mjs.log"
+    },
+    {
+      "name": "unit/summary-progress.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 35,
+      "failed": 0,
+      "milliseconds": 10213,
+      "log": "unit-summary-progress.mjs.log"
+    },
+    {
+      "name": "unit/summary-projection-budget.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 4,
+      "failed": 0,
+      "milliseconds": 120,
+      "log": "unit-summary-projection-budget.mjs.log"
+    },
+    {
+      "name": "unit/summary-range-search.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 7,
+      "failed": 0,
+      "milliseconds": 606,
+      "log": "unit-summary-range-search.mjs.log"
+    },
+    {
+      "name": "unit/summary-retry.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 40,
+      "failed": 0,
+      "milliseconds": 235,
+      "log": "unit-summary-retry.mjs.log"
+    },
+    {
+      "name": "unit/summary-timeout.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 23,
+      "failed": 0,
+      "milliseconds": 5164,
+      "log": "unit-summary-timeout.mjs.log"
+    },
+    {
+      "name": "unit/work-report.mjs",
+      "exit": 0,
+      "timedOut": false,
+      "passed": 13,
+      "failed": 0,
+      "milliseconds": 140,
+      "log": "unit-work-report.mjs.log"
+    }
+  ],
+  "pairedComparisonVsRc4": {
+    "baselineCommit": "a41b41a",
+    "baselineVersion": "0.3.2-rc.4",
+    "targetVersion": "0.3.2",
+    "node": "v24.19.0",
+    "platform": "win32",
+    "workloadA_stage1Masking": {
+      "rc4": {
+        "beforeTokens": 58480,
+        "afterTokens": 10052,
+        "reductionPct": 82.81,
+        "llmCalls": 1,
+        "mode": "stage2-llm",
+        "elapsedMs": 7329.35
+      },
+      "v032": {
+        "beforeTokens": 58480,
+        "afterTokens": 10793,
+        "reductionPct": 81.54,
+        "llmCalls": 0,
+        "mode": "observation-mask",
+        "elapsedMs": 19.36
+      }
+    },
+    "workloadB_prefixCacheReuse": {
+      "rc4": {
+        "totalPrefixMessages": 5,
+        "exactPrefixMatches": 3,
+        "verbatimPrefixPct": 60,
+        "verbatimPrefixBytes": 654,
+        "totalPrefixBytes": 12215
+      },
+      "v032": {
+        "totalPrefixMessages": 5,
+        "exactPrefixMatches": 5,
+        "verbatimPrefixPct": 100,
+        "verbatimPrefixBytes": 12215,
+        "totalPrefixBytes": 12215
+      }
+    },
+    "workloadC_microbenchmarks": {
+      "auditAndMemoryMedianMs": {
+        "rc4": 22.58,
+        "v032": 38.88,
+        "speedupPct": -72.2,
+        "breakdown": {
+          "auditRc4Ms": 16.13,
+          "auditV032Ms": 31.83,
+          "progressRc4Ms": 1.08,
+          "progressV032Ms": 0.01
+        }
+      },
+      "archiveSearchMedianMs": {
+        "rc4SingleTerm": 10.64,
+        "v032MultiTerm": 11.78,
+        "speedupPct": -10.7,
+        "multiTermQueryHits": {
+          "rc4": 0,
+          "v032": 1
+        }
+      },
+      "hostTransactionCommitMedianMs": {
+        "sessionBytes": 2129280,
+        "rc4": 23.61,
+        "v032": 20.26,
+        "speedupPct": 14.2
+      }
+    },
+    "workloadD_securityAndRobustness": {
+      "rc4": {
+        "cjkUnspacedParaphraseAccepted": false,
+        "escapedInjectionBlocked": false,
+        "forgedWrappedCleanly": false,
+        "revokedApprovalBlocked": false
+      },
+      "v032": {
+        "cjkUnspacedParaphraseAccepted": true,
+        "escapedInjectionBlocked": true,
+        "forgedWrappedCleanly": true,
+        "revokedApprovalBlocked": true
+      }
+    },
+    "codebaseMetrics": {
+      "rc4": {
+        "files": 53,
+        "lines": 12990,
+        "bytes": 748804,
+        "modules": {
+          "audit.js": 852,
+          "progress-facts.js": 504,
+          "instruction-source.js": 158,
+          "action-state.js": 50,
+          "progress-state.js": 221,
+          "observation-mask.js": 0
+        }
+      },
+      "v032": {
+        "files": 54,
+        "lines": 14014,
+        "bytes": 728876,
+        "modules": {
+          "audit.js": 924,
+          "progress-facts.js": 348,
+          "instruction-source.js": 164,
+          "action-state.js": 61,
+          "progress-state.js": 31,
+          "observation-mask.js": 391
+        }
+      }
+    }
+  },
+  "scope": "Offline regression suites, billing-safety stress checks, isolated DSH 0.2.2-rc.3 host integration tests, and paired comparison vs v0.3.2-rc.4 (a41b41a) using deterministic injected model streams and local microbenchmarks; no new paid live provider calls or desktop GUI interaction tests."
+}

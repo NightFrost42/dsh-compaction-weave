@@ -5,7 +5,7 @@
 ## 环境
 
 - Node.js 24.9+ 与 npm。
-- 插件兼容声明为 DSH `>=0.2.2-rc.1 <0.3.0-0`；宿主集成测试使用已实测 DSH 宿主版本（`0.2.2-rc.1`、`0.2.2-rc.2` 或 `0.2.2-rc.3`）的运行依赖。
+- 插件兼容声明为 DSH `>=0.2.2-rc.1 <1.0.0-0`（覆盖 `0.2.x–0.x`）；宿主集成测试使用已实测 DSH 宿主版本（`0.2.2-rc.1`、`0.2.2-rc.2` 或 `0.2.2-rc.3`）的运行依赖。
 - 源码使用 JavaScript ES modules，没有构建步骤或额外运行依赖。
 
 ## 常用命令
@@ -42,10 +42,10 @@ node scripts/test.mjs --host-modules /path/to/dsh/node_modules
 ```text
 lib/               插件运行代码
 locale/            中英文插件描述
-test/              回归测试与样本
-  fixtures/        语义与来源样本
+test/              活动回归测试与样本
   integration/     DSH 宿主集成测试
   helpers/         测试隔离入口
+  archived-regex/  已归档的旧正则与合成词表测试（退出默认运行）
 scripts/           测试、检查与打包工具
 docs/              配置、架构、测试与发布文档
 cordis.patch.yml   DSH 插件组合包入口
@@ -59,9 +59,10 @@ GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、�
 
 运行 `npm run pack:release`，脚本检查项目后生成：
 
-- `dsh-compaction-weave-<version>.tgz`：DSH 安装包。
+- `dsh-compaction-weave.tgz`：无版本号的稳定最新包副本（与下方带版本号 `.tgz` 内容一致，供 `releases/latest/download/dsh-compaction-weave.tgz` 固定链接下载）。
+- `dsh-compaction-weave-<version>.tgz`：带版本号的 DSH 安装包。
 - `dsh-compaction-weave-<version>-source.tar.gz`：可单独解压运行测试的源码包。
-- `SHA256SUMS.txt`：两个包的 SHA-256。
+- `SHA256SUMS.txt`：三个归档产物的 SHA-256。
 - `manifest.json`：版本、运行环境、包内容及文件校验清单。
 
 安装包按 `package.json.files` 白名单打包；源码包按脚本中的明确目录清单打包。临时目录、原始会话、历史交付物和本地设置不进入交付物。
@@ -75,13 +76,13 @@ GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、�
 5. 如发布到 npm，发布已验证的 tarball：
 
 ```bash
-npm publish dist/dsh-compaction-weave-0.3.2-rc.4.tgz --tag next --access public
+npm publish dist/dsh-compaction-weave-0.3.2.tgz --tag latest --access public
 ```
 
-当前为候选版本，默认发布标签为 `next`。正式版同时更新版本号和 `publishConfig.tag`。
+正式版默认发布标签为 `latest`（如需发布预览候选版，则改用预发布版本号并将 `publishConfig.tag` 设为 `next`）。
 
 ## 新增语义回归
 
-进度判断的样本应同时包含正确摘要和真实矛盾。例如“不得声称图表已生成”应通过；同一句后面补上“但当前图表已生成”时，应根据原始进度判断冲突。
+进度判断目前以显式 `key: value` 结构化事实为准，样本应同时包含正确摘要和真实矛盾。例如保留 `chartGenerated: false` 与正确 `seq=` 历史引述应通过；把同作用域最新值改写为 `chartGenerated: true` 或 `null` 时，应能触发 `PROGRESS_FACT_CONFLICT`。
 
-修改候选解析时运行全部审计和进度套件，并检查 `progress-source-compatibility.mjs`，确保既有原始来源记录仍能恢复。
+修改候选解析、通道隔离或审计逻辑时，请运行全部活动测试（重点检查 `phase1-optimizations.mjs`、`phase2-optimizations.mjs`、`phase3-route-b.mjs`、`astra-review-fixes.mjs`、`release-billing-safety.mjs` 与 `constraint-scope.mjs`），确保版本 1 / 版本 2 结构化进度来源、计费边界及归档兼容契约不受影响。

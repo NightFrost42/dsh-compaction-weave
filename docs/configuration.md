@@ -80,9 +80,15 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | --- | --- | --- |
 | `auto` | `true` | 按上下文压力自动压缩 |
 | `idleCompactionMinutes` | `0` | 独立的闲置后压缩阈值，1–43200 整数分钟（最长 30 天）；0 关闭 |
+| `idleCompactionMinTokens` | `0` | 触发闲置压缩所需的最小上下文 token 数（0 表示不设额外下限） |
+| `idleRetainTokens` | `0` | 闲置压缩时保留在末尾的近期上下文 token 预算 |
 | `thresholdRatio` | `0.8` | 自动触发比例 |
 | `headroomTokens` | `33000` | 为后续回复和工具结果预留空间 |
 | `minimumReductionRatio` | `0.2` | 自动压缩的最小输入缩减目标 |
+| `observationMaskingEnabled` | `true` | 第一级归档存根掩码（优先掩码旧大体积工具输出，达标时免除摘要调用） |
+| `observationMaskThresholdChars` | `4000` | 触发第一级存根掩码的工具结果最小字符数 |
+| `observationMaskHeadChars` | `300` | 第一级存根掩码在首部保留的原始字符数 |
+| `observationMaskTailChars` | `300` | 第一级存根掩码在尾部保留的原始字符数 |
 | `cachePreservePrefix` | `true` | 优先选择保留已有前缀的增量区间 |
 | `cacheMaxCheckpoints` | `4` | 达到此数量后考虑合并摘要 |
 | `cacheMinSavingsTokens` | `4096` | 增量压缩需要释放的最小规模 |
@@ -117,6 +123,7 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `auditEnabled` | `true` | 检查要求是否保留 |
 | `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交 |
 | `failureThreshold` | `3` | 连续失败后的自动压缩熔断阈值 |
+| `strictHostFingerprints` | `false` | 宿主持久化私有方法随 DSH 小版本改动时，确认无未恢复 `.rollback`/`.tail` 日志后发出一次提示并降级使用公开 `Session.append(replace)` + `sessions.flush`；设为 `true` 时严格拦截未审核指纹 |
 | `language` | `auto` | 摘要语言：`auto`、`zh` 或 `en` |
 
 设置界面跟随 DSH 的中文或英文界面语言；`language` 字段单独控制生成摘要的语言。

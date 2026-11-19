@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';import {join} from 'node:path';import {randomUUID} from 'node:crypto';
-import {WeaveCompactionEngine} from '../lib/engine.js';import {resolveConfig} from '../lib/config.js';import {approxTokens,blocksToText} from '../lib/meter.js';
-import {collectProgressFacts} from '../lib/progress-facts.js';import {diagnosticFor} from '../lib/failure-diagnostics.js';
+import {WeaveCompactionEngine} from '../../lib/engine.js';import {resolveConfig} from '../../lib/config.js';import {approxTokens,blocksToText} from '../../lib/meter.js';
+import {collectProgressFacts} from '../../lib/progress-facts.js';import {diagnosticFor} from '../../lib/failure-diagnostics.js';
 const rows=[];async function test(name,fn){try{await fn();rows.push({name,pass:true});}catch(e){rows.push({name,pass:false,error:e.stack});}}
 const state='最新进度：本批110个文件已完成扫描和格式检查。报告尚未生成，图表尚未生成，下一步生成本地报告。不上传。';
 const notes=value=>`## Goal\n继续本地报告工作。\n## State\n${value}\n## Next\n沿用后续消息中的当前安排。\n## Uncertain\n生产环境未验证。`;

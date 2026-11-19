@@ -3,11 +3,11 @@ import {mkdtemp} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {WeaveCompactionEngine} from '../lib/engine.js';
-import {resolveConfig} from '../lib/config.js';
-import {approxTokens,blocksToText} from '../lib/meter.js';
-import {selectSessionMemory} from '../lib/region.js';
-import {retiredMemoryPresent,memoryRequirements} from '../lib/memory-policy.js';
+import {WeaveCompactionEngine} from '../../lib/engine.js';
+import {resolveConfig} from '../../lib/config.js';
+import {approxTokens,blocksToText} from '../../lib/meter.js';
+import {selectSessionMemory} from '../../lib/region.js';
+import {retiredMemoryPresent,memoryRequirements} from '../../lib/memory-policy.js';
 // Fixed model responses and a synthetic event store; product-engine control
 // tests, not real model or desktop task acceptance.
 const results=[];

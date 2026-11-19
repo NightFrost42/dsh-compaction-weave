@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {auditCompaction} from '../lib/audit.js';
+import {auditCompaction} from '../../lib/audit.js';
 const rows=[];
 const check=(id,source,candidate,reject=false,reason)=>{
  try{const messages=Array.isArray(source)?source.map((text,i)=>({seq:i+1,text})):[{seq:1,text:source}];const a=auditCompaction({userMessages:messages,summaryText:candidate,checkpointText:messages.map(m=>m.text).join('\n')});assert.equal(a.lost.length>0,reject);if(reason)assert.ok(a.lost.some(x=>x.reason===reason));rows.push({id,pass:true});}catch(e){rows.push({id,pass:false,error:e.message});}

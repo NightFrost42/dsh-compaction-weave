@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import {collectProgressFacts,createProgressSelector,extractProgressFacts,progressSourceRefs,renderProgressFacts,validateProgressFacts} from '../lib/progress-facts.js';
-import {buildSummarizationInput,buildCheckpointBlocks} from '../lib/region.js';
-import {collectWorkReport,scopeWorkReport,workReportRef,renderWorkReport} from '../lib/work-report.js';
-import {buildSummaryRequest} from '../lib/summary-budget.js';
+import {collectProgressFacts,createProgressSelector,extractProgressFacts,progressSourceRefs,renderProgressFacts,validateProgressFacts} from '../../lib/progress-facts.js';
+import {buildSummarizationInput,buildCheckpointBlocks} from '../../lib/region.js';
+import {collectWorkReport,scopeWorkReport,workReportRef,renderWorkReport} from '../../lib/work-report.js';
+import {buildSummaryRequest} from '../../lib/summary-budget.js';
 import {readFileSync} from 'node:fs';
 const rows=[];async function test(name,fn){try{await fn();rows.push({name,pass:true});}catch(e){rows.push({name,pass:false,error:e.stack});}}
 function fixture(){const events=[],nodes=[];const session={id:'progress',get seq(){return events.length},surface:{nodes,replaceGeneration:0},eventAt:n=>events[n],snapshotEvents:()=>events,deriveEventMessage:e=>e?.data?.message??e?.data};const add=(role,text,source={kind:role==='assistant'?'model':'user'})=>{const seq=events.length,m={role,content:[{type:'text',text}],source};events.push({seq,type:role+'/message',data:role==='assistant'||role==='system'?{message:m}:m});nodes.push(seq);return seq;};return {session,events,nodes,add};}

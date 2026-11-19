@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import {auditCompaction} from '../lib/audit.js';
-import {extractProgressFacts,validateProgressFacts} from '../lib/progress-facts.js';
-import {reconstructDisputedLines} from '../lib/reconstruct.js';
+import {auditCompaction} from '../../lib/audit.js';
+import {extractProgressFacts,validateProgressFacts} from '../../lib/progress-facts.js';
+import {reconstructDisputedLines} from '../../lib/reconstruct.js';
 
 const results=[];
 const test=(name,run)=>{

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import {auditCompaction} from '../lib/audit.js';
-import {summarizeWithChain} from '../lib/summary.js';
-import {buildSummaryRequest} from '../lib/summary-budget.js';
-import {buildCompactionInstruction,renderRepairFeedback} from '../lib/prompt.js';
-import {validateSummaryStructure} from '../lib/validate.js';
+import {auditCompaction} from '../../lib/audit.js';
+import {summarizeWithChain} from '../../lib/summary.js';
+import {buildSummaryRequest} from '../../lib/summary-budget.js';
+import {buildCompactionInstruction,renderRepairFeedback} from '../../lib/prompt.js';
+import {validateSummaryStructure} from '../../lib/validate.js';
 const results=[];
 async function test(id,fn){try{await fn();results.push({id,pass:true});}catch(e){results.push({id,pass:false,error:e.message});}}
 const cases=[

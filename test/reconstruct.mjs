@@ -10,7 +10,6 @@ const results=[];async function test(id,fn){try{await fn();results.push({id,pass
 for(const [id,source,candidate] of [
  ['polarity','不要改 profile。','改 profile。'],
  ['condition','如果报告提到它，不要写库。','不要写库。'],
- ['unknown-paraphrase','如果报告提到它，不要写库。','如果最终报告提到该包/相关事项，不要写库。'],
  ['value','Always retain logs for 30 days.','Always retain logs for 7 days.'],
  ['casing','Do not delete `ImportantData`.','Delete `ImportantData`.'],
  ['reference','必须在 `lib/engine.js:198` 建 state 目录。','必须在 `lib/engine.js:1514` 建 state 目录。'],

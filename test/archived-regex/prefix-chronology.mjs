@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {extractProgressFacts,validateProgressFacts} from '../lib/progress-facts.js';
+import {extractProgressFacts,validateProgressFacts} from '../../lib/progress-facts.js';
 const results=[];
 const test=(name,fn)=>{try{fn();results.push({name,pass:true});}catch(e){results.push({name,pass:false,error:e.stack});}};
 const selection={effective:extractProgressFacts('最新进度：本批135个文件已完成扫描和格式检查。报告已生成，图表尚未生成。下一步生成图表。',{seq:130})};

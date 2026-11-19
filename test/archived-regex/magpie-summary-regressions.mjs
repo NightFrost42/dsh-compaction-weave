@@ -3,13 +3,13 @@ import {readFileSync} from 'node:fs';
 import {mkdtemp,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {auditCompaction,scalarRequirement,sourceConstraintEvidence} from '../lib/audit.js';
-import {reconstructDisputedLines} from '../lib/reconstruct.js';
-import {extractProgressFacts,validateProgressFacts} from '../lib/progress-facts.js';
-import {summarizeWithChain} from '../lib/summary.js';
-import {FailureDiagnostics,diagnosticFor} from '../lib/failure-diagnostics.js';
-import {memoryRequirements,selectMemoryMessages,memorySourceRefs,restoreMemorySource} from '../lib/memory-policy.js';
-import {buildCheckpointBlocks} from '../lib/region.js';
+import {auditCompaction,scalarRequirement,sourceConstraintEvidence} from '../../lib/audit.js';
+import {reconstructDisputedLines} from '../../lib/reconstruct.js';
+import {extractProgressFacts,validateProgressFacts} from '../../lib/progress-facts.js';
+import {summarizeWithChain} from '../../lib/summary.js';
+import {FailureDiagnostics,diagnosticFor} from '../../lib/failure-diagnostics.js';
+import {memoryRequirements,selectMemoryMessages,memorySourceRefs,restoreMemorySource} from '../../lib/memory-policy.js';
+import {buildCheckpointBlocks} from '../../lib/region.js';
 
 const results=[];
 async function test(name,fn){try{await fn();results.push({name,pass:true});}catch(error){results.push({name,pass:false,error:error.message});}}

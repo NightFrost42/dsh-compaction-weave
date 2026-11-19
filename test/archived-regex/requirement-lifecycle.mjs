@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {selectMemoryMessages,memorySourceRefs,restoreMemorySource,removeConsumedCancellations,memoryRequirements} from '../lib/memory-policy.js';
-import {auditCompaction} from '../lib/audit.js';
+import {selectMemoryMessages,memorySourceRefs,restoreMemorySource,removeConsumedCancellations,memoryRequirements} from '../../lib/memory-policy.js';
+import {auditCompaction} from '../../lib/audit.js';
 const results=[];
 async function test(name,fn){try{await fn();results.push({name,pass:true});}catch(e){results.push({name,pass:false,error:e.message});}}
 const msg=(seq,text,sourceKind='user')=>({seq,text,sourceKind,blocks:[{type:'text',text}]});

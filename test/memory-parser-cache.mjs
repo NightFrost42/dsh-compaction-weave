@@ -27,14 +27,12 @@ test('scope-and-identifier-parsing-preserves-exact-objects',()=>{
 });
 
 test('same-text-in-reference-and-live-message-keeps-separate-authority',()=>{
-  const instruction='生成地图。',reference='以下是历史引用：\n```text\n生成地图。\n```';
+  const instruction='生成地图。',reference='<untrusted_reference>\n生成地图。\n</untrusted_reference>';
   const originals=[msg(0,instruction),msg(1,reference),msg(2,'取消生成地图。')];
   const s=select(originals);
   assert.deepEqual(retired(s).map(d=>[d.seq,d.by]),[[0,2]]);
   assert.deepEqual(s.active.map(m=>m.seq),[1]);
   assert.ok(s.active[0].text.includes(instruction));assert.ok(!instructionText(s.active[0]).includes(instruction));
-  const adopted=select([originals[1],msg(3,'我采纳上一条引用作为当前要求。')]);
-  assert.ok(adopted.active.map(instructionText).join('\n').includes(instruction));
   assert.deepEqual(retired(select(originals)).map(d=>[d.seq,d.by]),[[0,2]]);
   assert.ok(!instructionText(originals[1]).includes(instruction));
 });

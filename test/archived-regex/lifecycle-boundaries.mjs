@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import {selectMemoryMessages,memoryRequirements,memoryDecisionsForSource,restoreRetiredDecisions,retiredMemoryPresent,deduplicateNotes,memorySourceRefs} from '../lib/memory-policy.js';
-import {auditCompaction,auditInstructionProvenance} from '../lib/audit.js';
-import {selectSessionMemory} from '../lib/region.js';
+import {selectMemoryMessages,memoryRequirements,memoryDecisionsForSource,restoreRetiredDecisions,retiredMemoryPresent,deduplicateNotes,memorySourceRefs} from '../../lib/memory-policy.js';
+import {auditCompaction,auditInstructionProvenance} from '../../lib/audit.js';
+import {selectSessionMemory} from '../../lib/region.js';
 const results=[];
 async function test(name,run){try{await run();results.push({name,pass:true});}catch(error){results.push({name,pass:false,error:error.message,stack:error.stack});}}
 const msg=(seq,text,sourceKind='user')=>({seq,text,sourceKind,blocks:[{type:'text',text}]});

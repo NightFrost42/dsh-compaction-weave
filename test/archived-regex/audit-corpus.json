@@ -1,0 +1,12 @@
+[
+ {"id":"short-cn","source":"别删除","bad":"删除。","good":"别删除。","reason":"polarity"},
+ {"id":"short-en","source":"Must X","bad":"Must not X.","good":"Must X.","reason":"polarity"},
+ {"id":"unit-en","source":"Always retain backups for 30 days","bad":"Always retain backups for 30 hours.","good":"Always retain backups for 30 days.","reason":"unit"},
+ {"id":"unit-cn","source":"必须保留备份30天","bad":"必须保留备份30小时。","good":"必须保留备份30天。","reason":"unit"},
+ {"id":"range","source":"Always retain at least 3 backups","bad":"Always retain at most 3 backups.","good":"Always retain at least 3 backups.","reason":"range"},
+ {"id":"direction-en","source":"You must copy staging to production","bad":"You must copy production to staging.","good":"You must copy staging to production.","reason":"relation"},
+ {"id":"direction-cn","source":"请把测试库复制到生产库","bad":"请把生产库复制到测试库。","good":"请把测试库复制到生产库。","reason":"relation"},
+ {"id":"double-negation","source":"Do not delete production data","bad":"Do not avoid deleting production data.","good":"Do not delete production data.","reason":"polarity"},
+ {"id":"double-cn","source":"不要删除生产数据","bad":"不要不删除生产数据。","good":"不要删除生产数据。","reason":"polarity"},
+ {"id":"exception","source":"Never delete backups except temporary backups","bad":"Never delete backups except production backups.","good":"Never delete backups except temporary backups.","reason":"exception"}
+]

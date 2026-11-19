@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {auditCompaction} from '../lib/audit.js';
-import {extractProgressFacts,validateProgressFacts} from '../lib/progress-facts.js';
+import {auditCompaction} from '../../lib/audit.js';
+import {extractProgressFacts,validateProgressFacts} from '../../lib/progress-facts.js';
 const results=[];
 function test(name,fn){try{fn();results.push({name,pass:true});}catch(error){results.push({name,pass:false,error:error.stack});}}
 const selection={effective:extractProgressFacts('最新进度：本批149个文件已完成扫描和格式检查。报告尚未生成，图表尚未生成。下一步生成本地报告。',{seq:188})};

@@ -117,9 +117,9 @@ await test('cancel-previous-after-archived-nudge-keeps-older-rule',async()=>{
 });
 
 await test('stale-model-notes-are-retried-and-latest-work-report-survives-three-generations',async()=>{
- const stale=NINE.replace('Do not delete records.','报告已生成，但尚未打包；下一步打包并校验。');
- const f=await empty({summaryRetryDelayMs:0},(_o,n)=>n%2===1?stale:NINE);f.add('请创建离线诊断报告。');
- const text='报告 work/report-final.json 和统计图 work/chart.svg 均已完成。离线包 work/delivery.zip 已完成打包及哈希校验。全部任务完成，没有剩余动作。';
+ const stale=NINE.replace('Do not delete records.','checkedFileCount: 0, status: pending');
+ const f=await empty({summaryRetryDelayMs:0},(_o,n)=>n%2===1?stale:NINE);f.add('请检查当前工程状态。');
+ const text='已完成检查，checkedFileCount: 110, remainingCount: 0，全部任务完成。';
  const status=f.add(text,'assistant');
  for(let i=0;i<3;i++){
   f.add('reference '.repeat(2000),'assistant');await compact(f);const cp=f.request().at(-1);

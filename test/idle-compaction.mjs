@@ -94,6 +94,21 @@ await test('reopened-session-has-the-same-decision-without-process-state',()=>{
   const a=resumed(), b=session(Array.from({length:a.seq},(_,i)=>JSON.parse(JSON.stringify(a.eventAt(i)))));
   assert.deepEqual(idleResumeDue(a,[input],30,now),idleResumeDue(b,[input],30,now));
 });
+await test('recent-and-exact-threshold-history-stop-at-latest-activity',()=>{
+  for(const gap of [MINUTE,30*MINUTE]){
+    const s=session([...Array.from({length:10000},()=>assistant(0)),assistant(now-gap),event('turn/end',now-gap),arrival(now),event('turn/start',now)]);
+    let reads=0;const read=s.eventAt;s.eventAt=seq=>{reads++;return read(seq);};
+    assert.equal(idleResumeDue(s,[input],30,now),null);assert.equal(reads,4);
+  }
+});
+await test('expired-latest-arrival-still-checks-original-requeue-time',()=>{
+  const s=session([assistant(MINUTE),arrival(2*MINUTE),event('turn/start',2*MINUTE),event('turn/end',3*MINUTE),arrival(now),event('turn/start',now)]);
+  assert.equal(idleResumeDue(s,[input],30,now),null);
+});
+await test('short-gap-does-not-require-old-missing-arrivals-to-prove-no-trigger',()=>{
+  const other={...input,id:'not-found'},s=session([assistant(now-MINUTE),arrival(now),event('turn/start',now)]);
+  assert.equal(idleResumeDue(s,[input,other],30,now),null);
+});
 
 async function fixture({auto=false,minutes=30}={}){
   const hooks=new Map(),ctx={provide(){},on:(name,fn)=>hooks.set(name,fn),logger:{info(){},warn(){}}};

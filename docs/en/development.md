@@ -4,7 +4,7 @@
 
 ## Environment
 
-Use Node.js 24.9+ and npm. The plugin declares DSH compatibility as `>=0.2.2-rc.1 <0.3.0-0`; host integration uses runtime dependencies from a verified DSH host release (`0.2.2-rc.1`, `0.2.2-rc.2`, or `0.2.2-rc.3`). The plugin uses JavaScript ES modules directly, with no compilation step or additional runtime dependencies.
+Use Node.js 24.9+ and npm. The plugin declares DSH compatibility as `>=0.2.2-rc.1 <1.0.0-0` (`0.2.x–0.x`); host integration uses runtime dependencies from a verified DSH host release (`0.2.2-rc.1`, `0.2.2-rc.2`, or `0.2.2-rc.3`). The plugin uses JavaScript ES modules directly, with no compilation step or additional runtime dependencies.
 
 ```bash
 npm test
@@ -38,9 +38,10 @@ This runs all offline suites (counts depend on the current version) plus host se
 ```text
 lib/                  Runtime modules
 locale/               Chinese and English plugin descriptions
-test/                 Regression suites and fixtures
+test/                 Active regression suites and fixtures
   integration/        DSH host integration
   helpers/            Isolation setup
+  archived-regex/     Archived legacy regex & domain-wordlist suites
 scripts/              Test, validation, and packaging tools
 docs/                 Chinese guides and test records
   en/                 English guides
@@ -56,7 +57,8 @@ cordis.patch.yml      DSH plugin bundle entry
 
 | File | Purpose |
 | --- | --- |
-| `dsh-compaction-weave-<version>.tgz` | DSH installable package |
+| `dsh-compaction-weave.tgz` | Versionless DSH package copy for stable `releases/latest/download/dsh-compaction-weave.tgz` URLs |
+| `dsh-compaction-weave-<version>.tgz` | Versioned DSH installable package |
 | `dsh-compaction-weave-<version>-source.tar.gz` | Standalone source and tests |
 | `SHA256SUMS.txt` | Archive SHA-256 checksums |
 | `manifest.json` | Version, runtime requirements, and per-file hashes |
@@ -72,13 +74,13 @@ The runtime package follows `package.json.files`; the source archive uses an exp
 5. If publishing to npm, publish the verified tarball:
 
 ```bash
-npm publish dist/dsh-compaction-weave-0.3.2-rc.4.tgz --tag next --access public
+npm publish dist/dsh-compaction-weave-0.3.2.tgz --tag latest --access public
 ```
 
-The current release is a candidate and uses the `next` npm tag. A stable release updates both the version and `publishConfig.tag`.
+Stable releases publish under the `latest` npm tag (prereleases use `next` in `publishConfig.tag`).
 
 ## Semantic regression cases
 
-Pair valid statements with genuine contradictions. “Do not claim the chart is generated” should pass; a following “but the chart is generated now” must still be compared with source-backed progress.
+Structured progress checks validate explicit `key: value` facts, so fixtures should pair valid summaries with genuine conflicts. Keeping `chartGenerated: false` or an explicitly scoped historical `seq=` value should pass, while flipping the active scope to `chartGenerated: true` or `null` must still raise `PROGRESS_FACT_CONFLICT`.
 
-Run all audit and progress suites after changing candidate interpretation. `progress-source-compatibility.mjs` checks that persisted original-source identities remain readable.
+Run the full test suite after changing candidate interpretation, channel boundaries, or audit rules (including `phase1-optimizations.mjs`, `phase2-optimizations.mjs`, `phase3-route-b.mjs`, `astra-review-fixes.mjs`, `release-billing-safety.mjs`, and `constraint-scope.mjs`) to verify persisted v1/v2 source compatibility, billing guards, and archive guarantees remain intact.
