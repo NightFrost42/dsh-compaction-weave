@@ -134,3 +134,7 @@ npm run pack:release
 ## License
 
 [MIT](LICENSE)
+
+---
+
+感谢 [LINUX DO](https://linux.do/) 提供技术交流与开源分享的社区空间。
