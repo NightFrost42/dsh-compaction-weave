@@ -500,6 +500,9 @@ await test('rpc-status-live-telemetry-ordinary-session-and-hot-apply-auditBlockO
     assert.equal(doneStatus.body.ok, true);
     assert.equal(doneStatus.body.value.active, false);
     assert.equal(doneStatus.body.value.phase, 'done');
+    assert.equal(doneStatus.body.value.overallPercent, 100);
+    assert.ok(doneStatus.body.value.overallTotalNodes > 0);
+    assert.equal(doneStatus.body.value.overallProcessedNodes, doneStatus.body.value.overallTotalNodes);
     assert.equal(doneStatus.body.value.runId, liveStatus.body.value.runId);
     assert.ok(doneStatus.body.value.currentTokens < doneStatus.body.value.beforeTokens);
   } finally {
@@ -623,7 +626,11 @@ await test('e2e-ranxianglei-authored-checkpoint-backup-migrate-and-recall', asyn
     assert.equal(postStatus.body.ok, true);
     assert.equal(postStatus.body.value.bili.detected, false);
     assert.equal(postStatus.body.value.backup.count, 1);
+    assert.equal(postStatus.body.value.backup.originalBackupId, migrated.body.value.backupId);
     assert.equal(postStatus.body.value.backup.latestBackupId, migrated.body.value.backupId);
+    assert.equal(postStatus.body.value.backup.items.length, 1);
+    assert.equal(postStatus.body.value.backup.items[0].isBaseline, true);
+    assert.equal(postStatus.body.value.overallPercent, 100);
   } finally {
     host.cleanup();
     await rm(home, { recursive: true, force: true });

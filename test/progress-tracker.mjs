@@ -30,6 +30,11 @@ await test('idle-snapshot-matches-pinned-status-schema', () => {
   assert.equal(snap.maskedTokensSaved, 0);
   assert.equal(snap.stream, null);
   assert.equal(snap.error, null);
+  assert.equal(snap.overallPercent, null);
+  assert.equal(snap.overallProcessedTokens, null);
+  assert.equal(snap.overallTotalTokens, null);
+  assert.equal(snap.overallProcessedNodes, null);
+  assert.equal(snap.overallTotalNodes, null);
   assert.equal(tracker.hasActiveRun('s-idle'), false);
 });
 
@@ -186,6 +191,65 @@ await test('concurrent-sessions-stay-completely-isolated', async () => {
   releaseA();
   await pA;
   assert.equal(tracker.snapshot('sess-A').phase, 'done');
+});
+
+await test('overallPercent-is-strictly-monotonic-within-runId-and-hits-100-on-finish', async () => {
+  let now = 2000;
+  const tracker = new CompactionProgressTracker({ clock: () => now, doneTtlMs: 30000, errorTtlMs: 30000 });
+
+  await tracker.withRun(
+    's-mono',
+    {
+      trigger: 'migration',
+      phase: 'backing_up',
+      overallPercent: 5,
+      overallTotalNodes: 1000,
+      overallProcessedNodes: 0,
+      overallTotalTokens: 1_000_000,
+      overallProcessedTokens: 0,
+    },
+    async () => {
+      assert.equal(tracker.snapshot('s-mono').overallPercent, 5);
+      tracker.update('s-mono', { overallPercent: 42, overallProcessedNodes: 400, overallProcessedTokens: 420_000 });
+      assert.equal(tracker.snapshot('s-mono').overallPercent, 42);
+      assert.equal(tracker.snapshot('s-mono').overallProcessedNodes, 400);
+      assert.equal(tracker.snapshot('s-mono').overallProcessedTokens, 420_000);
+
+      // Regression attempts (lower percent, null percent, smaller nested withRun) MUST be ignored!
+      tracker.update('s-mono', { overallPercent: 12, overallProcessedNodes: 50, overallProcessedTokens: 10_000 });
+      tracker.update('s-mono', { overallPercent: null });
+      await tracker.withRun('s-mono', { phase: 'planning', overallPercent: 2, overallTotalNodes: 50 }, async () => {
+        const snap = tracker.snapshot('s-mono');
+        assert.equal(snap.overallPercent, 42);
+        assert.equal(snap.overallTotalNodes, 1000);
+        assert.equal(snap.overallProcessedNodes, 400);
+        assert.equal(snap.overallProcessedTokens, 420_000);
+      });
+
+      // Clamping to totals and advancing forward works cleanly
+      tracker.update('s-mono', { overallPercent: 97, overallProcessedNodes: 1500, overallProcessedTokens: 1_500_000 });
+      const nearEnd = tracker.snapshot('s-mono');
+      assert.equal(nearEnd.overallPercent, 97);
+      assert.equal(nearEnd.overallProcessedNodes, 1000);
+      assert.equal(nearEnd.overallProcessedTokens, 1_000_000);
+    },
+  );
+
+  const done = tracker.snapshot('s-mono');
+  assert.equal(done.phase, 'done');
+  assert.equal(done.overallPercent, 100);
+  assert.equal(done.overallProcessedNodes, 1000);
+  assert.equal(done.overallProcessedTokens, 1_000_000);
+
+  // Failed run retains last achieved percent (never jumps to 100 or resets to 0)
+  await assert.rejects(
+    tracker.withRun('s-fail-pct', { phase: 'summarizing', overallPercent: 55 }, async () => {
+      throw Object.assign(new Error('mid-run error'), { code: 'PROVIDER_ERROR' });
+    }),
+  );
+  const errSnap = tracker.snapshot('s-fail-pct');
+  assert.equal(errSnap.phase, 'error');
+  assert.equal(errSnap.overallPercent, 55);
 });
 
 console.log(
