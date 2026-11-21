@@ -1265,6 +1265,24 @@ await test('attachments-allowForeignFallback-opt-in-vs-strict-default', async ()
   }
 });
 
+// 13. buildSummaryRequest includes exact SUMMARY_NOT_SMALLER byte budget feedback on retry
+await test('summary-budget-retry-feedback-includes-size-budget-constraint', () => {
+  const req = buildSummaryRequest(
+    { messages: [{ role: 'user', content: [{ type: 'text', text: 'Keep strict limits.' }] }] },
+    {
+      language: 'en',
+      repairFeedback: {
+        code: 'SUMMARY_NOT_SMALLER',
+        message: 'complete checkpoint is not smaller (maxSummaryBytes=640, reduce summary prose by at least 500 UTF-8 bytes)',
+        issues: [],
+      },
+    },
+  );
+  const lastText = blocksToText(req.messages.at(-1).content);
+  assert.match(lastText, /SIZE BUDGET CONSTRAINT:/);
+  assert.match(lastText, /maxSummaryBytes=640/);
+});
+
 const passed = rows.filter((r) => r.pass).length;
 const failed = rows.filter((r) => !r.pass).length;
 console.log(JSON.stringify({ passed, failed, results: rows }, null, 2));

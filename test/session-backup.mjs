@@ -9,6 +9,7 @@ import {
   createSessionBackup,
   verifySessionBackup,
   listSessionBackups,
+  summarizeBackups,
   restoreSessionBackup,
   readPendingRestore,
   applyPendingRestoreBeforeOpen,
@@ -444,6 +445,75 @@ await test('list-backups-returns-newest-first-and-applyPendingRestoreBeforeOpen-
 
   const noop = await applyPendingRestoreBeforeOpen(ws.backupStore, sessionId, {});
   assert.equal(noop, null);
+});
+
+await test('summarizeBackups-pins-baseline-reuses-identical-sha-and-defaults-restore-to-original', async () => {
+  const ws = makeTempWorkspace('baseline');
+  const sessionId = 'sess-baseline-1';
+  const logPath = join(ws.dshSessionDir, 'session.v4.jsonl.zstd');
+  const bytesOriginal = makeFakeZstdBytes('clean-pre-migration-1173');
+  const bytesPartial = makeFakeZstdBytes('partial-retry-962');
+  fs.writeFileSync(logPath, bytesOriginal);
+
+  const sessionClean = {
+    id: sessionId,
+    seq: 1173,
+    header: { version: 4, id: sessionId, createdAt: 1, isSeeded: false, delegationDepth: 0 },
+    surface: { nodes: Array.from({ length: 1173 }, (_, i) => i), replaceGeneration: 0 },
+  };
+  const b1 = await createSessionBackup(ws.backupStore, {
+    session: sessionClean,
+    logPath,
+    reason: 'bili-migration',
+    reuseIdentical: true,
+  });
+  assert.equal(b1.manifest.isBaseline, true);
+  assert.equal(b1.manifest.source.surfaceNodeCount, 1173);
+
+  // Identical-SHA call reuses b1 without creating a duplicate backup
+  const b1Reused = await createSessionBackup(ws.backupStore, {
+    session: sessionClean,
+    logPath,
+    reason: 'bili-migration',
+    reuseIdentical: true,
+  });
+  assert.equal(b1Reused.reused, true);
+  assert.equal(b1Reused.backupId, b1.backupId);
+  assert.equal(listSessionBackups(ws.backupStore, sessionId).length, 1);
+
+  // Simulate partial migration -> second backup must NOT be baseline and MUST NOT clobber originalBackupId
+  fs.writeFileSync(logPath, bytesPartial);
+  const sessionPartial = {
+    id: sessionId,
+    seq: 1200,
+    header: { version: 4, id: sessionId, createdAt: 1, isSeeded: false, delegationDepth: 0 },
+    surface: { nodes: Array.from({ length: 962 }, (_, i) => i), replaceGeneration: 12 },
+  };
+  const b2 = await createSessionBackup(ws.backupStore, {
+    session: sessionPartial,
+    logPath,
+    reason: 'bili-migration',
+    reuseIdentical: true,
+  });
+  assert.equal(b2.reused, undefined);
+  assert.equal(b2.manifest.isBaseline, false);
+
+  const summary = summarizeBackups(ws.backupStore, sessionId);
+  assert.equal(summary.count, 2);
+  assert.equal(summary.originalBackupId, b1.backupId);
+  assert.equal(summary.latestBackupId, b2.backupId);
+  assert.equal(summary.backupPath, b1.backupPath);
+  assert.equal(summary.items.length, 2);
+  assert.equal(summary.items.find((x) => x.backupId === b1.backupId).isBaseline, true);
+  assert.equal(summary.items.find((x) => x.backupId === b1.backupId).surfaceNodeCount, 1173);
+  assert.equal(summary.items.find((x) => x.backupId === b2.backupId).isBaseline, false);
+  assert.equal(summary.items.find((x) => x.backupId === b2.backupId).surfaceNodeCount, 962);
+
+  // Default restore (no backupId) restores clean original baseline b1, NOT b2!
+  fs.writeFileSync(logPath, makeFakeZstdBytes('broken-live'));
+  const restored = await restoreSessionBackup(ws.backupStore, { sessionId, logPath });
+  assert.equal(restored.backupId, b1.backupId);
+  assert.deepEqual(fs.readFileSync(logPath), bytesOriginal);
 });
 
 console.log(

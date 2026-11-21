@@ -251,7 +251,7 @@ function textOf(tree) {
 async function mount({ file, language = 'zh', initial, failSet = false } = {}) {
   file ??= await newFile();
   if (initial !== undefined) await handleSummaryConfigRpc({ method: 'set', params: initial }, file);
-  let module, Section, dictionaries;
+  let module, Section, sectionDescriptor, dictionaries;
   let stateIndex = 0, effectIndex = 0;
   const state = [], effects = [], pending = new Set(), requests = [], responses = [];
   const React = {
@@ -296,7 +296,13 @@ async function mount({ file, language = 'zh', initial, failSet = false } = {}) {
   module.apply({
     slots: {
       inject: (_name, callback) => callback(),
-      register: (descriptor, component) => { if (descriptor.name === 'settings.section') Section = component; return () => {}; },
+      register: (descriptor, component) => {
+        if (descriptor.name === 'settings.section') {
+          sectionDescriptor = descriptor;
+          Section = component;
+        }
+        return () => {};
+      },
     },
     effect: callback => callback(),
     locale: {
@@ -326,7 +332,7 @@ async function mount({ file, language = 'zh', initial, failSet = false } = {}) {
     await settle();
   };
   return {
-    file, requests, responses, render, field, click, dispose,
+    file, requests, responses, render, field, button, click, dispose, sectionDescriptor, dictionaries,
     status: () => textOf(find(render(), node => node.props.role === 'status')),
     change: (id, value) => field(id).props.onChange({ target: { value: String(value) } }),
     select: value => field('weave-idle-compaction').props.onChange({ target: { value: String(value) } }),
@@ -588,6 +594,38 @@ for (const language of ['zh', 'en']) {
       : [/1–43200 whole minutes/, /7 days \(10080 minutes\) \/ 30 days \(43200 minutes\)/, /1 month is fixed at 30 days, or 43200 minutes/, /Custom input starts at 1/, /Claude 5 \/ 60-minute.*GPT.*Gemini 30-minute/, /7-day and 30-day.*do not imply that provider caches/, /Saving or clearing settings on this page needs no DSH restart/, /summary model, output limit, trigger ratio, minimum reduction, retry and idle settings/, /subsequent compaction or request boundaries/, /A compaction already in progress keeps the configuration snapshot it started with/, /First installation or plugin upgrades still require a host reload as prompted by DSH/, /including unsaved edits/];
     for (const term of terms) assert.match(guide, term);
     assert.doesNotMatch(guide, /525600|重启 DSH 后生效|保存后需要重启|保存后重启 DSH|Restart DSH after saving|Restart DSH to apply/);
+  });
+
+  await test(`${language}-ui-section-renamed-compact-grid-and-dsh-theme-tokens`, async () => {
+    const h = await mount({ language });
+    const tree = h.render();
+    assert.equal(h.sectionDescriptor.label(), language === 'zh' ? '上下文压缩' : 'Compaction');
+    const heading = find(tree, node => node.type === 'h2');
+    assert.ok(heading);
+    assert.equal(textOf(heading), language === 'zh' ? '上下文压缩（Weave）' : 'Context Compaction (Weave)');
+    assert.match(
+      textOf(tree),
+      language === 'zh'
+        ? /配置 Weave 的摘要模型、触发阈值、闲置压缩与保留检查策略。/
+        : /Configure summary model, compaction thresholds, idle compaction, and retention checks\./,
+    );
+    assert.equal(tree.props.style.padding, '12px 16px');
+    assert.equal(tree.props.style.gap, 10);
+    const twoColGrid = find(tree, node => node.props?.style?.display === 'grid' && node.props?.style?.gridTemplateColumns === 'repeat(2, minmax(0, 1fr))');
+    assert.ok(twoColGrid, 'Settings section must use compact 2-column grid rows');
+    const details = find(tree, node => node.type === 'details');
+    assert.ok(details && details.props.open === undefined, 'Vendor cache reference details must start collapsed');
+
+    const saveBtn = h.button(h.dictionaries[language].save);
+    assert.equal(saveBtn.props.style.background, 'var(--dsw-alias-button-info-fill, var(--dsw-alias-state-business-primary, #2f6fed))');
+    assert.equal(saveBtn.props.style.borderColor, 'transparent');
+    assert.equal(saveBtn.props.style.color, 'var(--dsw-alias-label-primary-foreground, #ffffff)');
+
+    const clearBtn = h.button(h.dictionaries[language].clear);
+    assert.equal(clearBtn.props.style.background, 'var(--dsw-alias-bg-layer-2, transparent)');
+    assert.equal(clearBtn.props.style.borderColor, 'var(--dsw-alias-border-l2, rgba(127,127,127,0.35))');
+    assert.equal(clearBtn.props.style.color, 'var(--dsw-alias-label-primary, inherit)');
+    h.dispose();
   });
 }
 

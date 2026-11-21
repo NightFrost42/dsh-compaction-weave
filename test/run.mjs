@@ -1808,7 +1808,7 @@ await atest('C04: 九节齐全但缺第 6 节时也要判不合格', async () =>
   assert.match(error.message, /All User Messages/, '错误信息要点名缺的是哪一节');
 });
 
-await atest('C04: 校验器按语言各认一套小节标题', async () => {
+await atest('C04: 校验器同时接受中英文白名单九节标题并拒绝任意非白名单标题', async () => {
   const zh = [
     '## 1. 用户的核心请求与意图',
     'x',
@@ -1830,8 +1830,12 @@ await atest('C04: 校验器按语言各认一套小节标题', async () => {
     'x',
   ].join('\n');
   assert.equal(validateSummaryStructure(zh, { language: 'zh' }).ok, true, '中文模板应通过中文校验');
-  assert.equal(validateSummaryStructure(zh, { language: 'en' }).ok, false, '中文模板不该通过英文校验');
+  assert.equal(validateSummaryStructure(zh, { language: 'en' }).ok, true, '中文白名单模板在英文检测下也应通过双语校验');
   assert.equal(validateSummaryStructure(VALID_SUMMARY, { language: 'en' }).ok, true, '英文模板应通过英文校验');
+  assert.equal(validateSummaryStructure(VALID_SUMMARY, { language: 'zh' }).ok, true, '英文白名单模板在中文检测下也应通过双语校验');
+  const arbitrary = zh.replace('## 1. 用户的核心请求与意图', '## 1. Foo');
+  assert.equal(validateSummaryStructure(arbitrary, { language: 'zh' }).ok, false, '非白名单标题必须被拒（zh）');
+  assert.equal(validateSummaryStructure(arbitrary, { language: 'en' }).ok, false, '非白名单标题必须被拒（en）');
 });
 
 await atest('C04: 原话覆盖检查比对的是拼好的检查点，不依赖模型守规矩', async () => {

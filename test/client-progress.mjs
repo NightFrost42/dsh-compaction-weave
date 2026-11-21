@@ -867,6 +867,277 @@ await test('bili-migrate-rpc-error-displays-error-and-preserves-convert-button',
   h.unmount();
 });
 
+await test('dsh-real-css-tokens-compact-card-and-zero-dead-alias-tokens', async () => {
+  // Guardrail: never use non-existent or white-on-white DSH CSS tokens.
+  assert.doesNotMatch(
+    clientSource,
+    /--dsw-alias-(?:brand-primary|text-[a-z-]+|bg-elevated|bg-base|border-secondary|border-subtle)/,
+    'lib/client.js must only reference real DSH CSS tokens',
+  );
+  assert.match(clientSource, /--dsw-alias-button-info-fill/);
+  assert.match(clientSource, /--dsw-alias-label-primary-foreground/);
+
+  const backupId = 'bkp-20261122T010000Z-aaaa1111';
+  const backupPath = `/home/user/.dsh/storages/dsh-compaction-weave/backups/s-tok/${backupId}/session.v4.jsonl.zstd`;
+  const h = mountProgressCard({
+    language: 'zh',
+    handler: () => ({
+      active: false,
+      phase: 'idle',
+      bili: { detected: true, variant: 'ranxianglei-proxy-raw', foldBlockCount: 0, biliToolCount: 4, hasBrokenToolPairing: false, canConvert: true, needsBackup: true, hasOpenTurn: false, reasons: [] },
+      backup: {
+        count: 1,
+        originalBackupId: backupId,
+        latestBackupId: backupId,
+        backupPath,
+        createdAt: '2026-11-22T01:00:00.000Z',
+        pendingRestore: null,
+        items: [{ backupId, createdAt: '2026-11-22T01:00:00.000Z', bytes: 2048, eventCount: 40, surfaceNodeCount: 36, reason: 'bili-migration', isBaseline: true, backupPath }],
+      },
+    }),
+  });
+  h.render({ sessionId: 'sess-tokens' });
+  let tree = await h.settle();
+
+  // Compact card metrics
+  assert.equal(tree.props.style.padding, '6px 10px');
+  assert.equal(tree.props.style.gap, 5);
+  assert.equal(tree.props.style.fontSize, 12);
+
+  // Single backup omits select and uses truncated code path with full path title tooltip
+  assert.equal(find(tree, n => n.props?.['data-backup-select'] === 'true'), null);
+  const codeNode = find(tree, n => n.props?.['data-backup-path'] === 'true');
+  assert.ok(codeNode);
+  assert.equal(codeNode.props.title, backupPath);
+  assert.equal(codeNode.props.style.textOverflow, 'ellipsis');
+
+  // Primary convert button + confirm button use real DSH button-info-fill + label-primary-foreground
+  const convertBtn = h.byAction(tree, 'bili-convert');
+  assert.equal(convertBtn.props.style.background, 'var(--dsw-alias-button-info-fill, var(--dsw-alias-state-business-primary, #2f6fed))');
+  assert.equal(convertBtn.props.style.borderColor, 'transparent');
+  assert.equal(convertBtn.props.style.color, 'var(--dsw-alias-label-primary-foreground, #ffffff)');
+
+  convertBtn.props.onClick();
+  tree = h.render();
+  const convertConfirmBtn = h.byAction(tree, 'bili-convert-confirm');
+  assert.equal(convertConfirmBtn.props.style.background, 'var(--dsw-alias-button-info-fill, var(--dsw-alias-state-business-primary, #2f6fed))');
+  assert.equal(convertConfirmBtn.props.style.borderColor, 'transparent');
+  assert.equal(convertConfirmBtn.props.style.color, 'var(--dsw-alias-label-primary-foreground, #ffffff)');
+  const convertCancelBtn = h.byAction(tree, 'bili-convert-cancel');
+  assert.equal(convertCancelBtn.props.style.background, 'var(--dsw-alias-bg-layer-2, transparent)');
+  assert.equal(convertCancelBtn.props.style.borderColor, 'var(--dsw-alias-border-l2, rgba(127,127,127,0.35))');
+  assert.equal(convertCancelBtn.props.style.color, 'var(--dsw-alias-label-primary, inherit)');
+
+  // Restore button (secondary) + confirm restore button (primary)
+  const restoreBtn = h.byAction(tree, 'backup-restore');
+  assert.equal(restoreBtn.props.style.background, 'var(--dsw-alias-bg-layer-2, transparent)');
+  assert.equal(restoreBtn.props.style.borderColor, 'var(--dsw-alias-border-l2, rgba(127,127,127,0.35))');
+  assert.equal(restoreBtn.props.style.color, 'var(--dsw-alias-label-primary, inherit)');
+  restoreBtn.props.onClick();
+  tree = h.render();
+  const restoreConfirmBtn = h.byAction(tree, 'backup-restore-confirm');
+  assert.equal(restoreConfirmBtn.props.style.background, 'var(--dsw-alias-button-info-fill, var(--dsw-alias-state-business-primary, #2f6fed))');
+  assert.equal(restoreConfirmBtn.props.style.borderColor, 'transparent');
+  assert.equal(restoreConfirmBtn.props.style.color, 'var(--dsw-alias-label-primary-foreground, #ffffff)');
+  h.unmount();
+});
+
+for (const language of ['zh', 'en']) {
+  await test(`${language}-overall-percent-drives-primary-progress-bar-and-token-telemetry-across-waves`, async () => {
+    let stage = 0;
+    const snapshots = [
+      {
+        active: true,
+        runId: 'run-overall',
+        seq: 1,
+        phase: 'detecting',
+        elapsedMs: 400,
+        overallPercent: 0,
+        overallProcessedTokens: 0,
+        overallTotalTokens: 1180000,
+        overallProcessedNodes: 0,
+        overallTotalNodes: 1173,
+        bili: { detected: false },
+      },
+      {
+        active: true,
+        runId: 'run-overall',
+        seq: 8,
+        phase: 'summarizing',
+        elapsedMs: 18500,
+        overallPercent: 42,
+        overallProcessedTokens: 510000,
+        overallTotalTokens: 1180000,
+        overallProcessedNodes: 492,
+        overallTotalNodes: 1173,
+        waveIndex: 1,
+        waveTotal: 2,
+        chunkIndex: 1,
+        chunkTotal: 6,
+        stream: { chunks: 40, textChars: 640, reasoningChars: 0 },
+        bili: { detected: false },
+      },
+      {
+        active: true,
+        runId: 'run-overall',
+        seq: 16,
+        phase: 'continuing',
+        elapsedMs: 44000,
+        overallPercent: 78,
+        overallProcessedTokens: 920000,
+        overallTotalTokens: 1180000,
+        overallProcessedNodes: 915,
+        overallTotalNodes: 1173,
+        waveIndex: 2,
+        waveTotal: 2,
+        chunkIndex: 1,
+        chunkTotal: 4,
+        pageIndex: 1,
+        pageTotal: 3,
+        bili: { detected: false },
+      },
+    ];
+    const h = mountProgressCard({ language, handler: () => snapshots[stage] });
+    h.render({ sessionId: 'sess-overall' });
+
+    // 0% must still be determinate (not falsy/indeterminate)
+    let tree = await h.settle();
+    let bar = find(tree, n => n.props?.role === 'progressbar');
+    assert.equal(bar.props['data-progress-mode'], 'determinate');
+    assert.equal(bar.props['aria-valuenow'], 0);
+    assert.equal(bar.children[0].props.style.width, '0%');
+    assert.ok(find(tree, n => n.props?.['data-overall-percent'] === '0'));
+
+    // 42% takes precedence over chunkIndex 1/6 (which alone would be ~8%)
+    stage = 1;
+    tree = await h.fireNextTimer();
+    bar = find(tree, n => n.props?.role === 'progressbar');
+    assert.equal(bar.props['data-progress-mode'], 'determinate');
+    assert.equal(bar.props['aria-valuenow'], 42);
+    assert.equal(bar.children[0].props.style.width, '42%');
+    const text1 = textOf(tree);
+    if (language === 'zh') {
+      assert.match(text1, /总进度 42%/);
+      assert.match(text1, /已处理 510k \/ 1\.18M tok/);
+    } else {
+      assert.match(text1, /Overall 42%/);
+      assert.match(text1, /Processed 510k \/ 1\.18M tok/);
+    }
+
+    // Wave 2 resets chunkIndex=1/4 and pageIndex=1/3, but progress bar monotonically stays at 78%
+    stage = 2;
+    tree = await h.fireNextTimer();
+    bar = find(tree, n => n.props?.role === 'progressbar');
+    assert.equal(bar.props['aria-valuenow'], 78);
+    assert.equal(bar.children[0].props.style.width, '78%');
+    assert.ok(find(tree, n => n.props?.['data-overall-percent'] === '78'));
+    h.unmount();
+  });
+
+  await test(`${language}-multi-backup-defaults-to-original-baseline-and-supports-select-switching`, async () => {
+    const origId = 'bkp-20261122T010000Z-1111aaaa';
+    const retryId = 'bkp-20261122T011200Z-2222bbbb';
+    const origPath = `/home/user/.dsh/storages/dsh-compaction-weave/backups/s-multi/${origId}/session.v4.jsonl.zstd`;
+    const retryPath = `/home/user/.dsh/storages/dsh-compaction-weave/backups/s-multi/${retryId}/session.v4.jsonl.zstd`;
+    const restoredIds = [];
+    let retried = false;
+
+    const h = mountProgressCard({
+      language,
+      handler: payload => {
+        if (payload.method === 'bili-migrate') {
+          retried = true;
+          // Retry returns the newer backupId, but UI must still default restore to originalBackupId!
+          return { accepted: true, completed: true, runId: 'run-retry', backupId: retryId, backupPath: retryPath };
+        }
+        if (payload.method === 'backup-restore') {
+          restoredIds.push(payload.params.backupId);
+          return { status: 'restored', requiresReopen: false, backupId: payload.params.backupId, backupPath: payload.params.backupId === origId ? origPath : retryPath };
+        }
+        return {
+          active: false,
+          runId: retried ? 'run-retry' : 'run-attempt1',
+          seq: retried ? 40 : 20,
+          phase: retried ? 'done' : 'error',
+          trigger: 'migration',
+          finishedAt: retried ? 1763740900000 : 1763740500000,
+          error: retried ? null : { code: 'SUMMARY_NOT_SMALLER', message: 'Attempt 1 failed' },
+          bili: {
+            detected: !retried,
+            variant: retried ? null : 'ranxianglei-proxy-raw',
+            foldBlockCount: 0,
+            biliToolCount: retried ? 0 : 10,
+            hasBrokenToolPairing: false,
+            canConvert: !retried,
+            needsBackup: !retried,
+            hasOpenTurn: false,
+            reasons: [],
+          },
+          backup: {
+            count: 2,
+            originalBackupId: origId,
+            latestBackupId: retryId,
+            backupPath: origPath,
+            createdAt: '2026-11-22T01:00:00.000Z',
+            pendingRestore: null,
+            items: [
+              { backupId: retryId, createdAt: '2026-11-22T01:12:00.000Z', bytes: 5120000, eventCount: 980, surfaceNodeCount: 962, reason: 'bili-migration', isBaseline: false, backupPath: retryPath },
+              { backupId: origId, createdAt: '2026-11-22T01:00:00.000Z', bytes: 7100000, eventCount: 1200, surfaceNodeCount: 1173, reason: 'bili-migration', isBaseline: true, backupPath: origPath },
+            ],
+          },
+        };
+      },
+    });
+
+    h.render({ sessionId: 'sess-multi' });
+    let tree = await h.settle();
+
+    // Even after clicking Retry migration (whose RPC receipt returns retryId), default restore target MUST stay origId!
+    h.byAction(tree, 'bili-convert').props.onClick();
+    tree = h.render();
+    h.byAction(tree, 'bili-convert-confirm').props.onClick();
+    tree = await h.settle();
+
+    const select = find(tree, n => n.props?.['data-backup-select'] === 'true');
+    assert.ok(select, 'Multi-backup selector must render when items.length > 1');
+    assert.equal(select.props.value, origId, 'Default selected backup must be originalBackupId');
+    assert.equal(select.children.length, 2);
+    assert.equal(select.children[0].props.value, origId, 'Original baseline backup listed first');
+    if (language === 'zh') {
+      assert.match(textOf(select.children[0]), /原始备份 · 1173条/);
+      assert.match(textOf(select.children[1]), /快照 · 962条/);
+    } else {
+      assert.match(textOf(select.children[0]), /Original backup · 1173 nodes/);
+      assert.match(textOf(select.children[1]), /Snapshot · 962 nodes/);
+    }
+
+    // Confirming restore without changing selector restores original baseline backup
+    assert.ok(find(tree, n => n.props?.['data-backup-receipt'] === origId));
+    assert.equal(textOf(find(tree, n => n.props?.['data-backup-path'] === 'true')), origPath);
+    h.byAction(tree, 'backup-restore').props.onClick();
+    tree = h.render();
+    h.byAction(tree, 'backup-restore-confirm').props.onClick();
+    tree = await h.settle();
+    assert.deepEqual(restoredIds, [origId]);
+
+    // Dismiss restored banner and switch selector to newer snapshot -> restores retryId
+    h.byAction(tree, 'dismiss-backup').props.onClick();
+    tree = h.render();
+    const select2 = find(tree, n => n.props?.['data-backup-select'] === 'true');
+    assert.ok(select2);
+    select2.props.onChange({ target: { value: retryId } });
+    tree = h.render();
+    assert.ok(find(tree, n => n.props?.['data-backup-receipt'] === retryId));
+    assert.equal(textOf(find(tree, n => n.props?.['data-backup-path'] === 'true')), retryPath);
+    h.byAction(tree, 'backup-restore').props.onClick();
+    tree = h.render();
+    h.byAction(tree, 'backup-restore-confirm').props.onClick();
+    tree = await h.settle();
+    assert.deepEqual(restoredIds, [origId, retryId]);
+    h.unmount();
+  });
+}
+
 console.log(JSON.stringify({
   passed: results.filter(r => r.pass).length,
   failed: results.filter(r => !r.pass).length,
