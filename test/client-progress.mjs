@@ -65,7 +65,7 @@ function depsChanged(prev, next) {
  * Dependency-aware minimal React hook harness supporting ONLY
  * `{ createElement, useState, useEffect }` to match DSH client guardrails.
  */
-function mountProgressCard({ language = 'zh', handler, initialVisibility = 'visible' } = {}) {
+function mountProgressCard({ language = 'zh', handler, initialVisibility = 'visible', clipboard } = {}) {
   let mod;
   let dictionaries;
   const registeredSlots = new Map();
@@ -130,6 +130,7 @@ function mountProgressCard({ language = 'zh', handler, initialVisibility = 'visi
       },
     },
     document: doc,
+    ...(clipboard !== undefined ? { navigator: { clipboard } } : {}),
     console,
     AbortController,
     setTimeout: (fn, delay) => {
@@ -229,6 +230,17 @@ function mountProgressCard({ language = 'zh', handler, initialVisibility = 'visi
     return settle();
   };
 
+  const fireTimerWithDelay = async targetDelay => {
+    for (const [id, entryTimer] of timers.entries()) {
+      if (entryTimer.delay === targetDelay) {
+        timers.delete(id);
+        entryTimer.fn();
+        return settle();
+      }
+    }
+    throw new Error(`Expected scheduled timer with delay ${targetDelay}`);
+  };
+
   const setVisibility = state => {
     doc.visibilityState = state;
     doc.hidden = state === 'hidden';
@@ -250,10 +262,158 @@ function mountProgressCard({ language = 'zh', handler, initialVisibility = 'visi
     render,
     settle,
     fireNextTimer,
+    fireTimerWithDelay,
     setVisibility,
     unmount,
     byAction: (tree, action) => find(tree, n => n.props?.['data-action'] === action),
   };
+}
+
+async function mountSettingsSection({ language = 'zh', initialConfig = null, providers = [{ provider: 'p', name: 'Provider P', models: [{ id: 'm' }] }] } = {}) {
+  let mod;
+  let Section;
+  let dictionaries;
+  let savedConfig = initialConfig ? { ...initialConfig } : null;
+  let stateIndex = 0;
+  let effectIndex = 0;
+  const states = [];
+  const effects = [];
+  const pendingFetches = new Set();
+  const requests = [];
+
+  const React = {
+    createElement: (type, props, ...children) => ({
+      type,
+      props: props ?? {},
+      children: children.flat(Infinity).filter(c => c !== null && c !== undefined && c !== false && c !== true),
+    }),
+    useState: initialState => {
+      const index = stateIndex++;
+      if (!(index in states)) {
+        states[index] = typeof initialState === 'function' ? initialState() : initialState;
+      }
+      return [
+        states[index],
+        value => {
+          states[index] = typeof value === 'function' ? value(states[index]) : value;
+        },
+      ];
+    },
+    useEffect: (callback, deps) => {
+      const index = effectIndex++;
+      const prev = effects[index];
+      if (!prev || depsChanged(prev.deps, deps)) {
+        effects[index] = { callback, deps, pending: true, cleanup: prev?.cleanup };
+      }
+    },
+  };
+
+  const sandbox = {
+    window: {
+      __ModuleLoader__: {
+        load: declaration => {
+          mod = declaration.factory(name => {
+            assert.equal(name, 'react', 'lib/client.js must only require react');
+            return React;
+          });
+        },
+      },
+    },
+    console,
+    AbortController,
+    setTimeout,
+    clearTimeout,
+    setInterval: () => {
+      throw new Error('Settings section must never call setInterval');
+    },
+    clearInterval: () => {},
+    fetch: (url, options) => {
+      assert.equal(url, '/plugins/dsh-compaction-weave/rpc');
+      assert.equal(options.method, 'POST');
+      const payload = JSON.parse(options.body);
+      requests.push(payload);
+      const task = (async () => {
+        if (payload.method === 'get') {
+          return { status: 200, text: async () => JSON.stringify({ ok: true, value: { config: savedConfig, cleared: false, restartRequired: false } }) };
+        }
+        if (payload.method === 'models') {
+          return { status: 200, text: async () => JSON.stringify({ ok: true, value: { providers } }) };
+        }
+        if (payload.method === 'set') {
+          savedConfig = { ...(payload.params ?? {}) };
+          return { status: 200, text: async () => JSON.stringify({ ok: true, value: { config: savedConfig, cleared: false, restartRequired: false } }) };
+        }
+        return { status: 200, text: async () => JSON.stringify({ ok: false, error: { code: 'UNKNOWN_METHOD', message: payload.method } }) };
+      })();
+      pendingFetches.add(task);
+      void task.finally(() => pendingFetches.delete(task));
+      return task;
+    },
+  };
+
+  vm.runInNewContext(clientSource, sandbox);
+  mod.apply({
+    slots: {
+      inject: (_name, callback) => callback(),
+      register: (descriptor, component) => {
+        if (descriptor.name === 'settings.section') Section = component;
+        return () => {};
+      },
+    },
+    effect: callback => callback(),
+    locale: {
+      register: (_ns, values) => {
+        dictionaries = values;
+        return () => {};
+      },
+      bind: () => key => {
+        assert.equal(typeof dictionaries?.[language]?.[key], 'string', `Missing ${language} translation: ${key}`);
+        return dictionaries[language][key];
+      },
+    },
+  });
+
+  const render = () => {
+    stateIndex = 0;
+    effectIndex = 0;
+    const tree = Section();
+    for (const slot of effects) {
+      if (slot && slot.pending) {
+        slot.pending = false;
+        if (typeof slot.cleanup === 'function') slot.cleanup();
+        slot.cleanup = slot.callback();
+      }
+    }
+    return tree;
+  };
+
+  const settle = async () => {
+    for (let i = 0; i < 4; i += 1) {
+      if (pendingFetches.size > 0) await Promise.all([...pendingFetches]);
+      await new Promise(resolve => setImmediate(resolve));
+      render();
+    }
+    return render();
+  };
+
+  render();
+  await settle();
+  const field = id => find(render(), node => node.props?.id === id);
+  const button = key => find(render(), node => node.type === 'button' && node.children.includes(dictionaries[language][key]));
+  const click = async key => {
+    const btn = button(key);
+    assert.ok(btn, `Missing button ${key}`);
+    btn.props.onClick();
+    return settle();
+  };
+  const change = (id, value) => {
+    const node = field(id);
+    assert.ok(node, `Missing field ${id}`);
+    node.props.onChange({ target: { value: String(value) } });
+    return render();
+  };
+  const statusText = () => textOf(find(render(), node => node.props?.role === 'status'));
+  return { dictionaries, requests, render, settle, field, button, click, change, statusText, getSaved: () => savedConfig };
 }
 
 await test('package-manifest-injects-conversation-ui-and-locales-valid', () => {
@@ -285,7 +445,7 @@ await test('dictionaries-zh-and-en-are-100-percent-key-symmetric-and-slots-regis
   h.unmount();
 });
 
-await test('idle-non-bili-session-renders-null-and-polls-at-1500ms', async () => {
+await test('idle-non-bili-session-renders-null-and-polls-at-3000ms', async () => {
   const h = mountProgressCard({
     handler: () => ({
       active: false,
@@ -300,7 +460,7 @@ await test('idle-non-bili-session-renders-null-and-polls-at-1500ms', async () =>
   assert.equal(tree, null, 'Idle non-bili session must render null');
   assert.equal(h.requests.length, 1);
   assert.deepEqual(h.requests[0], { method: 'status', params: { sessionId: 'sess-normal' } });
-  assert.equal(h.scheduledDelays.at(-1), 1500);
+  assert.equal(h.scheduledDelays.at(-1), 3000);
   h.unmount();
 });
 
@@ -632,7 +792,7 @@ await test('backup-restore-2step-confirm-armed-requiresReopen-and-cold-restored'
   assert.equal(h.requests.filter(r => r.method === 'backup-restore').length, 1);
   const pendingBanner = find(tree, n => n.props?.['data-backup-pending-restore'] === backupId);
   assert.ok(pendingBanner);
-  assert.match(textOf(pendingBanner), /关闭并重新打开当前会话/);
+  assert.match(textOf(pendingBanner), /请完全重启 DSH 以加载还原后的历史/);
   h.unmount();
 
   // Cold restored path (requiresReopen: false)
@@ -807,7 +967,7 @@ await test('async-rolling-wave-bili-migrate-tracks-live-progress-and-unlocks-res
   tree = await h.fireNextTimer();
   assert.equal(h.byAction(tree, 'bili-convert'), null, 'Convert button gone after async migration finishes');
   assert.equal(h.byAction(tree, 'backup-restore').props.disabled, false, 'Restore unlocked once done');
-  assert.equal(h.scheduledDelays.at(-1), 1500);
+  assert.equal(h.scheduledDelays.at(-1), 3000);
   h.unmount();
 });
 
@@ -1141,7 +1301,608 @@ for (const language of ['zh', 'en']) {
     assert.deepEqual(restoredIds, [origId, retryId]);
     h.unmount();
   });
+
+  await test(`${language}-active-pause-button-cancel-rpc-error-and-concurrency-rate-limit-chips`, async () => {
+    let releaseCancel;
+    let failNextCancel = false;
+    let rateLimited = false;
+    let paused = false;
+
+    const h = mountProgressCard({
+      language,
+      handler: payload => {
+        if (payload.method === 'cancel-compaction') {
+          assert.deepEqual(payload.params, { sessionId: 'sess-cancel' });
+          if (failNextCancel) {
+            return { __error: { code: 'CANCEL_BUSY', message: 'Cancel channel busy' } };
+          }
+          return new Promise(resolve => {
+            releaseCancel = () => {
+              paused = true;
+              resolve({ cancelled: true, runId: 'run-c1' });
+            };
+          });
+        }
+        if (paused) {
+          return {
+            active: false,
+            phase: 'idle',
+            cancellable: false,
+            bili: { detected: false },
+            resumable: {
+              jobId: 'job-paused-1',
+              trigger: 'manual',
+              status: 'paused_user',
+              interruptReason: 'user_cancel',
+              overallPercent: 35,
+              completedChunks: 2,
+              remainingNodes: 140,
+              remainingTokens: 210000,
+              initialTotalTokens: 320000,
+              completedTokens: 110000,
+              updatedAt: 1763741000000,
+              canAutoResume: false,
+              lastErrorCode: null,
+              lastErrorMessage: null,
+            },
+          };
+        }
+        return {
+          active: true,
+          runId: 'run-c1',
+          seq: rateLimited ? 9 : 4,
+          phase: 'summarizing',
+          trigger: 'manual',
+          elapsedMs: 12000,
+          overallPercent: 35,
+          cancellable: true,
+          concurrency: rateLimited ? 1 : 3,
+          activeWorkers: rateLimited ? 1 : 3,
+          rateLimited,
+          bili: { detected: false },
+        };
+      },
+    });
+
+    h.render({ sessionId: 'sess-cancel' });
+    let tree = await h.settle();
+
+    // Concurrency chip shows 并发 3 / 3× and Pause button sits next to elapsed timer
+    const chip1 = find(tree, n => n.props?.['data-compaction-concurrency'] === '3');
+    assert.ok(chip1);
+    assert.equal(textOf(chip1), language === 'zh' ? '并发 3' : '3×');
+
+    const pauseBtn = h.byAction(tree, 'cancel-compaction');
+    assert.ok(pauseBtn);
+    assert.equal(pauseBtn.props.disabled, false);
+    assert.equal(textOf(pauseBtn), language === 'zh' ? '暂停' : 'Pause');
+    assert.equal(pauseBtn.props.style.background, 'var(--dsw-alias-bg-layer-2, transparent)');
+    assert.equal(pauseBtn.props.style.borderColor, 'var(--dsw-alias-border-l2, rgba(127,127,127,0.35))');
+
+    // Rate-limited telemetry chip flips to 限流降速 / rate-limited even when concurrency dropped to 1
+    rateLimited = true;
+    tree = await h.fireNextTimer();
+    const chip2 = find(tree, n => n.props?.['data-compaction-concurrency'] === 'rate-limited');
+    assert.ok(chip2);
+    assert.equal(textOf(chip2), language === 'zh' ? '限流降速' : 'rate-limited');
+
+    // RPC error on cancel surfaces cleanly in error row without crashing
+    failNextCancel = true;
+    h.byAction(tree, 'cancel-compaction').props.onClick();
+    tree = await h.settle();
+    assert.match(textOf(tree), /Cancel channel busy/);
+    assert.equal(h.byAction(tree, 'cancel-compaction').props.disabled, false);
+
+    // Successful cancel shows busy label while in flight, then transitions to resumable banner
+    failNextCancel = false;
+    h.byAction(tree, 'cancel-compaction').props.onClick();
+    tree = h.render();
+    const busyBtn = h.byAction(tree, 'cancel-compaction');
+    assert.ok(busyBtn);
+    assert.equal(busyBtn.props.disabled, true);
+    assert.equal(textOf(busyBtn), language === 'zh' ? '正在暂停…' : 'Pausing…');
+
+    releaseCancel();
+    tree = await h.settle();
+    assert.equal(h.byAction(tree, 'cancel-compaction'), null);
+    assert.ok(find(tree, n => n.props?.['data-compaction-resumable'] === 'job-paused-1'));
+    assert.equal(h.byAction(tree, 'bili-convert'), null);
+    h.unmount();
+  });
+
+  await test(`${language}-resumable-banner-status-notes-resume-and-2step-discard`, async () => {
+    let resumable = {
+      jobId: 'job-res-1',
+      trigger: 'manual',
+      status: 'paused_budget',
+      interruptReason: 'call_budget',
+      overallPercent: 45,
+      completedChunks: 3,
+      remainingNodes: 180,
+      remainingTokens: 240000,
+      initialTotalTokens: 440000,
+      completedTokens: 200000,
+      updatedAt: 1763741200000,
+      canAutoResume: true,
+      lastErrorCode: null,
+      lastErrorMessage: null,
+    };
+    let active = false;
+    let failResume = false;
+
+    const h = mountProgressCard({
+      language,
+      handler: payload => {
+        if (payload.method === 'resume-compaction') {
+          assert.deepEqual(payload.params, { sessionId: 'sess-res' });
+          if (failResume) return { __error: { code: 'BUSY', message: 'Resume blocked' } };
+          active = true;
+          return { accepted: true, runId: 'run-res-2' };
+        }
+        if (payload.method === 'discard-resume') {
+          assert.deepEqual(payload.params, { sessionId: 'sess-res', confirmDiscard: true });
+          resumable = null;
+          return { discarded: true };
+        }
+        return {
+          active,
+          phase: active ? 'continuing' : 'idle',
+          elapsedMs: active ? 2000 : 0,
+          overallPercent: active ? 50 : null,
+          bili: { detected: false },
+          backup: { count: 0, items: [] },
+          resumable: active ? null : resumable,
+        };
+      },
+    });
+
+    h.render({ sessionId: 'sess-res' });
+    let tree = await h.settle();
+    const banner = find(tree, n => n.props?.['data-compaction-resumable'] === 'job-res-1');
+    assert.ok(banner);
+    assert.equal(tree.props['data-compaction-progress'], 'resumable');
+    assert.equal(h.byAction(tree, 'bili-convert'), null);
+    assert.equal(find(tree, n => n.props?.['data-bili-compat'] !== undefined), null);
+
+    const text = textOf(banner);
+    if (language === 'zh') {
+      assert.match(text, /上次压缩未完成/);
+      assert.match(text, /已完成 45% · 剩 180 条/);
+      assert.match(text, /预算/);
+      assert.match(text, /发消息自动继续/);
+      assert.equal(textOf(h.byAction(banner, 'resume-compaction')), '继续压缩');
+      assert.equal(textOf(h.byAction(banner, 'discard-resume')), '放弃');
+    } else {
+      assert.match(text, /Compaction paused/);
+      assert.match(text, /45% done · 180 remaining/);
+      assert.match(text, /budget/i);
+      assert.match(text, /Auto-resumes on next message/);
+      assert.equal(textOf(h.byAction(banner, 'resume-compaction')), 'Continue compaction');
+      assert.equal(textOf(h.byAction(banner, 'discard-resume')), 'Discard');
+    }
+
+    // paused_failure note renders when status switches to paused_failure
+    resumable = {
+      ...resumable,
+      status: 'paused_failure',
+      canAutoResume: false,
+      lastErrorCode: 'SUMMARY_TIMEOUT',
+      lastErrorMessage: 'Model timed out',
+    };
+    tree = await h.fireNextTimer();
+    const failText = textOf(find(tree, n => n.props?.['data-compaction-resumable'] === 'job-res-1'));
+    if (language === 'zh') {
+      assert.match(failText, /连续失败已暂停/);
+      assert.doesNotMatch(failText, /发消息自动继续/);
+    } else {
+      assert.match(failText, /paused after failures/);
+      assert.doesNotMatch(failText, /Auto-resumes on next message/);
+    }
+
+    // Resume RPC failure surfaces error and keeps banner visible
+    failResume = true;
+    h.byAction(tree, 'resume-compaction').props.onClick();
+    tree = await h.settle();
+    assert.match(textOf(tree), /Resume blocked/);
+    assert.ok(find(tree, n => n.props?.['data-compaction-resumable'] === 'job-res-1'));
+
+    // 2-step discard confirmation: step 1 opens confirm box without RPC, cancel closes without RPC
+    h.byAction(tree, 'discard-resume').props.onClick();
+    tree = h.render();
+    const confirmBox = find(tree, n => n.props?.['data-confirm'] === 'discard-resume');
+    assert.ok(confirmBox);
+    assert.equal(h.requests.some(r => r.method === 'discard-resume'), false);
+    assert.match(textOf(confirmBox), language === 'zh' ? /备份仍会保留/ : /backup remains intact/);
+
+    h.byAction(tree, 'discard-resume-cancel').props.onClick();
+    tree = h.render();
+    assert.equal(find(tree, n => n.props?.['data-confirm'] === 'discard-resume'), null);
+    assert.equal(h.requests.some(r => r.method === 'discard-resume'), false);
+
+    // Resume succeeds and transitions to active progress
+    failResume = false;
+    h.byAction(tree, 'resume-compaction').props.onClick();
+    tree = await h.settle();
+    assert.equal(h.requests.filter(r => r.method === 'resume-compaction').length, 2);
+    assert.equal(tree.props['data-compaction-progress'], 'continuing');
+
+    // Return to paused and confirm discard -> sends confirmDiscard: true and clears card to null
+    active = false;
+    tree = await h.fireNextTimer();
+    h.byAction(tree, 'discard-resume').props.onClick();
+    tree = h.render();
+    h.byAction(tree, 'discard-resume-confirm').props.onClick();
+    tree = await h.settle();
+    assert.equal(h.requests.filter(r => r.method === 'discard-resume').length, 1);
+    assert.equal(tree, null);
+    h.unmount();
+  });
+
+  await test(`${language}-migration-resume-suppresses-duplicate-bili-convert-and-keeps-restore`, async () => {
+    const backupId = 'bkp-20261122T010000Z-migbase1';
+    const backupPath = `/home/user/.dsh/storages/dsh-compaction-weave/backups/s-mig/${backupId}/session.v4.jsonl.zstd`;
+    let resumable = {
+      jobId: 'job-mig-1',
+      trigger: 'migration',
+      status: 'interrupted',
+      interruptReason: 'crash',
+      overallPercent: 60,
+      completedChunks: 5,
+      remainingNodes: 210,
+      remainingTokens: 310000,
+      initialTotalTokens: 780000,
+      completedTokens: 470000,
+      updatedAt: 1763741500000,
+      canAutoResume: false,
+      lastErrorCode: null,
+      lastErrorMessage: null,
+    };
+
+    const h = mountProgressCard({
+      language,
+      handler: payload => {
+        if (payload.method === 'discard-resume') {
+          resumable = null;
+          return { discarded: true };
+        }
+        return {
+          active: false,
+          phase: 'idle',
+          bili: {
+            detected: true,
+            variant: 'ranxianglei-proxy-raw',
+            foldBlockCount: 0,
+            biliToolCount: 30,
+            hasBrokenToolPairing: false,
+            canConvert: true,
+            needsBackup: true,
+            hasOpenTurn: false,
+            reasons: [],
+          },
+          backup: {
+            count: 1,
+            originalBackupId: backupId,
+            latestBackupId: backupId,
+            backupPath,
+            createdAt: '2026-11-22T01:00:00.000Z',
+            pendingRestore: null,
+            items: [{ backupId, createdAt: '2026-11-22T01:00:00.000Z', bytes: 4096, eventCount: 400, surfaceNodeCount: 380, reason: 'bili-migration', isBaseline: true, backupPath }],
+          },
+          resumable,
+        };
+      },
+    });
+
+    h.render({ sessionId: 'sess-mig-res' });
+    let tree = await h.settle();
+
+    // Migration resume banner is shown with migration-specific labels
+    const banner = find(tree, n => n.props?.['data-compaction-resumable'] === 'job-mig-1');
+    assert.ok(banner);
+    assert.match(textOf(banner), language === 'zh' ? /上次兼容转换未完成/ : /Migration paused/);
+    assert.equal(
+      textOf(h.byAction(banner, 'resume-compaction')),
+      language === 'zh' ? '继续转换' : 'Continue migration',
+    );
+
+    // STRICT MUTUAL EXCLUSION: duplicate bili-convert row MUST be suppressed!
+    assert.equal(h.byAction(tree, 'bili-convert'), null);
+    assert.equal(find(tree, n => n.props?.['data-bili-compat'] !== undefined), null);
+
+    // Restore Backup controls MUST remain available alongside Continue / Discard!
+    assert.ok(find(tree, n => n.props?.['data-backup-receipt'] === backupId));
+    assert.ok(h.byAction(tree, 'backup-restore'));
+
+    // After discarding the paused migration checkpoint, bili-convert cleanly reappears
+    h.byAction(tree, 'discard-resume').props.onClick();
+    tree = h.render();
+    h.byAction(tree, 'discard-resume-confirm').props.onClick();
+    tree = await h.settle();
+    assert.equal(find(tree, n => n.props?.['data-compaction-resumable'] !== undefined), null);
+    assert.ok(h.byAction(tree, 'bili-convert'));
+    h.unmount();
+  });
+
+  await test(`${language}-p2-polish-local-time-dedup-banner-restart-wording-and-copy-path`, async () => {
+    const origIso = '2026-11-22T01:05:00.000Z';
+    const d = new Date(origIso);
+    const pad = n => String(n).padStart(2, '0');
+    const expectedLocalTime = `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+    const origId = 'bkp-20261122T010500Z-aaaa1111';
+    const badDateId = 'bkp-20261122T011500Z-bbbb2222';
+    const origPath = `/home/user/.dsh/storages/dsh-compaction-weave/backups/s-p2/${origId}/session.v4.jsonl.zstd`;
+    const badDatePath = `/home/user/.dsh/storages/dsh-compaction-weave/backups/s-p2/${badDateId}/session.v4.jsonl.zstd`;
+    const copied = [];
+    let migrated = false;
+    let armed = false;
+
+    const h = mountProgressCard({
+      language,
+      clipboard: {
+        writeText: async value => {
+          copied.push(value);
+        },
+      },
+      handler: payload => {
+        if (payload.method === 'bili-migrate') {
+          migrated = true;
+          return { accepted: true, completed: true, runId: 'run-p2', backupId: origId, backupPath: origPath };
+        }
+        if (payload.method === 'backup-restore') {
+          armed = true;
+          return { status: 'armed', requiresReopen: true, backupId: origId, backupPath: origPath };
+        }
+        return {
+          active: false,
+          runId: migrated ? 'run-p2' : null,
+          seq: migrated ? 10 : 1,
+          phase: migrated && !armed ? 'done' : 'idle',
+          trigger: migrated ? 'migration' : null,
+          finishedAt: migrated ? 1763742000000 : null,
+          bili: { detected: !migrated, variant: !migrated ? 'ranxianglei-proxy-raw' : null, foldBlockCount: 0, biliToolCount: !migrated ? 4 : 0, hasBrokenToolPairing: false, canConvert: !migrated, needsBackup: !migrated, hasOpenTurn: false, reasons: [] },
+          backup: {
+            count: 2,
+            originalBackupId: origId,
+            latestBackupId: badDateId,
+            backupPath: origPath,
+            createdAt: origIso,
+            pendingRestore: armed ? { backupId: origId, backupPath: origPath } : null,
+            items: [
+              { backupId: origId, createdAt: origIso, bytes: 3000, eventCount: 50, surfaceNodeCount: 48, reason: 'bili-migration', isBaseline: true, backupPath: origPath },
+              { backupId: badDateId, createdAt: 'not-a-date', bytes: 2000, eventCount: 30, surfaceNodeCount: 28, reason: 'bili-migration', isBaseline: false, backupPath: badDatePath },
+            ],
+          },
+        };
+      },
+    });
+
+    h.render({ sessionId: 'sess-p2' });
+    let tree = await h.settle();
+
+    // Local timezone MM-DD HH:MM formatting and invalid-date fallback
+    const select = find(tree, n => n.props?.['data-backup-select'] === 'true');
+    assert.ok(select);
+    assert.ok(textOf(select.children[0]).includes(expectedLocalTime), `Expected local time ${expectedLocalTime} in "${textOf(select.children[0])}"`);
+    assert.ok(textOf(select.children[1]).includes('bbbb2222'), 'Invalid date must fall back to backupId suffix');
+
+    // Run migration -> done banner must appear ONCE (not duplicated inside backup-receipt)
+    h.byAction(tree, 'bili-convert').props.onClick();
+    tree = h.render();
+    h.byAction(tree, 'bili-convert-confirm').props.onClick();
+    tree = await h.settle();
+
+    const doneText = h.dictionaries[language].biliConvertDone;
+    const receipt = find(tree, n => n.props?.['data-backup-receipt'] === origId);
+    assert.ok(receipt);
+    assert.equal(textOf(tree).split(doneText).length - 1, 1, 'Migration completion banner must appear exactly once');
+    assert.equal(textOf(receipt).includes(doneText), false, 'Duplicate receiptLead must not render inside backup row');
+
+    // Dismissing terminal banner must NOT cause receiptLead to reappear inside backup row
+    h.byAction(tree, 'dismiss-terminal').props.onClick();
+    tree = h.render();
+    const receiptAfterDismiss = find(tree, n => n.props?.['data-backup-receipt'] === origId);
+    assert.ok(receiptAfterDismiss);
+    assert.equal(textOf(receiptAfterDismiss).includes(doneText), false);
+
+    // Copy-path button copies exact path, toggles to Copied / 已复制, then resets after timer
+    const copyBtn = h.byAction(receiptAfterDismiss, 'copy-backup-path');
+    assert.ok(copyBtn);
+    assert.equal(textOf(copyBtn), language === 'zh' ? '复制' : 'Copy');
+    copyBtn.props.onClick();
+    tree = await h.settle();
+    assert.deepEqual(copied, [origPath]);
+    assert.equal(textOf(h.byAction(tree, 'copy-backup-path')), language === 'zh' ? '已复制' : 'Copied');
+
+    tree = await h.fireTimerWithDelay(1800);
+    assert.equal(textOf(h.byAction(tree, 'copy-backup-path')), language === 'zh' ? '复制' : 'Copy');
+
+    // Online armed restore clearly instructs full DSH restart and keeps copy-path button
+    h.byAction(tree, 'backup-restore').props.onClick();
+    tree = h.render();
+    h.byAction(tree, 'backup-restore-confirm').props.onClick();
+    tree = await h.settle();
+    const armedBanner = find(tree, n => n.props?.['data-backup-pending-restore'] === origId);
+    assert.ok(armedBanner);
+    assert.match(
+      textOf(armedBanner),
+      language === 'zh' ? /请完全重启 DSH 以加载还原后的历史/ : /Fully restart DSH to load the restored history/,
+    );
+    assert.ok(h.byAction(armedBanner, 'copy-backup-path'));
+    h.unmount();
+
+    // Missing / throwing clipboard fails safely without crashing or flipping label
+    const hFailClip = mountProgressCard({
+      language,
+      clipboard: { writeText: async () => { throw new Error('clipboard denied'); } },
+      handler: () => ({
+        active: false,
+        phase: 'done',
+        trigger: 'migration',
+        finishedAt: 1763742100000,
+        bili: { detected: false },
+        backup: { count: 1, originalBackupId: origId, latestBackupId: origId, backupPath: origPath, items: [] },
+      }),
+    });
+    hFailClip.render({ sessionId: 'sess-clip-err' });
+    let failTree = await hFailClip.settle();
+    hFailClip.byAction(failTree, 'copy-backup-path').props.onClick();
+    failTree = await hFailClip.settle();
+    assert.equal(textOf(hFailClip.byAction(failTree, 'copy-backup-path')), language === 'zh' ? '复制' : 'Copy');
+    hFailClip.unmount();
+  });
+
+  await test(`${language}-settings-concurrency-reasoning-effort-and-per-field-validation`, async () => {
+    const h = await mountSettingsSection({ language });
+
+    // Defaults render cleanly in compact 2-column grid
+    assert.equal(h.field('weave-summary-concurrency').props.value, '2');
+    assert.equal(h.field('weave-summary-concurrency').props.min, 1);
+    assert.equal(h.field('weave-summary-concurrency').props.max, 6);
+    const reasoningField = h.field('weave-summary-reasoning-effort');
+    assert.equal(reasoningField.props.value, 'low');
+    assert.deepEqual(reasoningField.children.map(o => o.props.value), ['low', 'none', 'inherit']);
+
+    const fullText = textOf(h.render());
+    assert.match(fullText, /429/);
+    assert.match(fullText, language === 'zh' ? /摘要并发数/ : /Summary concurrency/);
+    assert.match(fullText, language === 'zh' ? /摘要推理强度/ : /Summary reasoning effort/);
+
+    // Per-field validation produces 4 distinct messages and blocks set RPC
+    const seenErrors = new Set();
+    const checkInvalid = async (fieldId, badValue, restoreValue) => {
+      const beforeSets = h.requests.filter(r => r.method === 'set').length;
+      h.change(fieldId, badValue);
+      await h.click('save');
+      assert.equal(h.requests.filter(r => r.method === 'set').length, beforeSets, `${fieldId}=${badValue} must block save`);
+      const err = h.statusText();
+      assert.ok(err.length > 0, `Expected validation error for ${fieldId}=${badValue}`);
+      seenErrors.add(err);
+      h.change(fieldId, restoreValue);
+    };
+
+    await checkInvalid('weave-summary-retry-count', '5', '2');
+    await checkInvalid('weave-summary-retry-delay', '31', '1');
+    await checkInvalid('weave-summary-timeout', '4', '180');
+    await checkInvalid('weave-summary-concurrency', '0', '2');
+    assert.equal(seenErrors.size, 4, 'retryCount, retryDelay, summaryTimeout, and summaryConcurrency must have distinct validation messages');
+
+    // Additional concurrency invalid bounds (7, 1.5, empty)
+    for (const bad of ['7', '1.5', '']) {
+      const beforeSets = h.requests.filter(r => r.method === 'set').length;
+      h.change('weave-summary-concurrency', bad);
+      await h.click('save');
+      assert.equal(h.requests.filter(r => r.method === 'set').length, beforeSets);
+    }
+
+    // Valid save sends summaryConcurrency + summaryReasoningEffort
+    h.change('weave-summary-provider', 'p');
+    h.change('weave-summary-model', 'm');
+    h.change('weave-summary-concurrency', '4');
+    h.change('weave-summary-reasoning-effort', 'none');
+    await h.click('save');
+    const setParams = h.requests.filter(r => r.method === 'set').at(-1).params;
+    assert.equal(setParams.summaryConcurrency, 4);
+    assert.equal(setParams.summaryReasoningEffort, 'none');
+    assert.equal(setParams.provider, 'p');
+    assert.equal(setParams.model, 'm');
+
+    // Clear resets only provider/model/maxTokens and preserves concurrency + reasoning effort
+    await h.click('clear');
+    const clearParams = h.requests.filter(r => r.method === 'set').at(-1).params;
+    assert.equal(clearParams.provider, '');
+    assert.equal(clearParams.model, '');
+    assert.equal(clearParams.maxTokens, null);
+    assert.equal(clearParams.summaryConcurrency, 4);
+    assert.equal(clearParams.summaryReasoningEffort, 'none');
+
+    // Reload from saved config populates and preserves both without re-editing
+    const hReload = await mountSettingsSection({
+      language,
+      initialConfig: { provider: 'p', model: 'm', summaryConcurrency: 5, summaryReasoningEffort: 'inherit' },
+    });
+    assert.equal(hReload.field('weave-summary-concurrency').props.value, '5');
+    assert.equal(hReload.field('weave-summary-reasoning-effort').props.value, 'inherit');
+    await hReload.click('clear');
+    const reloadClearParams = hReload.requests.filter(r => r.method === 'set').at(-1).params;
+    assert.equal(reloadClearParams.summaryConcurrency, 5);
+    assert.equal(reloadClearParams.summaryReasoningEffort, 'inherit');
+  });
 }
+
+await test('session-switch-resets-resumable-confirm-copied-path-and-action-error', async () => {
+  const backupId = 'bkp-20261122T010000Z-reset001';
+  const backupPath = `/home/user/.dsh/storages/dsh-compaction-weave/backups/s-rst/${backupId}`;
+  const copied = [];
+  const h = mountProgressCard({
+    language: 'zh',
+    clipboard: { writeText: async p => { copied.push(p); } },
+    handler: payload => {
+      if (payload.method === 'resume-compaction') {
+        return { __error: { code: 'ERR', message: 'Resume failed on s-1' } };
+      }
+      if (payload.params.sessionId === 's-1') {
+        return {
+          active: false,
+          phase: 'idle',
+          bili: { detected: true, variant: 'ranxianglei-proxy-raw', foldBlockCount: 0, biliToolCount: 3, hasBrokenToolPairing: false, canConvert: true, needsBackup: true, hasOpenTurn: false, reasons: [] },
+          backup: { count: 1, originalBackupId: backupId, latestBackupId: backupId, backupPath, items: [] },
+          resumable: {
+            jobId: 'job-s1',
+            trigger: 'migration',
+            status: 'paused_user',
+            interruptReason: 'user_cancel',
+            overallPercent: 50,
+            completedChunks: 2,
+            remainingNodes: 80,
+            remainingTokens: 90000,
+            initialTotalTokens: 180000,
+            completedTokens: 90000,
+            updatedAt: 1763741600000,
+            canAutoResume: false,
+            lastErrorCode: null,
+            lastErrorMessage: null,
+          },
+        };
+      }
+      return {
+        active: false,
+        phase: 'idle',
+        bili: { detected: false },
+        backup: { count: 0, items: [] },
+        resumable: null,
+      };
+    },
+  });
+
+  h.render({ sessionId: 's-1' });
+  let tree = await h.settle();
+  // Trigger error, copy path, and open discard-resume confirmation
+  h.byAction(tree, 'resume-compaction').props.onClick();
+  tree = await h.settle();
+  assert.match(textOf(tree), /Resume failed on s-1/);
+
+  h.byAction(tree, 'copy-backup-path').props.onClick();
+  tree = await h.settle();
+  assert.equal(textOf(h.byAction(tree, 'copy-backup-path')), '已复制');
+
+  h.byAction(tree, 'discard-resume').props.onClick();
+  tree = h.render();
+  assert.ok(find(tree, n => n.props?.['data-confirm'] === 'discard-resume'));
+
+  // Switch to clean idle session -> all state cleared, card becomes null
+  h.render({ sessionId: 's-2' });
+  tree = await h.settle();
+  assert.equal(tree, null);
+
+  // Switch back to s-1 -> confirm box, copied state, and old error remain cleanly reset
+  h.render({ sessionId: 's-1' });
+  tree = await h.settle();
+  assert.equal(find(tree, n => n.props?.['data-confirm'] === 'discard-resume'), null);
+  assert.equal(textOf(h.byAction(tree, 'copy-backup-path')), '复制');
+  assert.doesNotMatch(textOf(tree), /Resume failed on s-1/);
+  h.unmount();
+});
 
 console.log(JSON.stringify({
   passed: results.filter(r => r.pass).length,
