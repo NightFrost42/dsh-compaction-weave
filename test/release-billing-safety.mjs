@@ -402,9 +402,27 @@ await test('same-route-overflow-falls-back-cleanly-and-cross-route-strips-reason
     assert.equal(f.calls.length, 2, 'must overflow once on verbatim and succeed immediately on projected fallback');
     assert.ok(!JSON.stringify(f.calls[0].messages.slice(0, -1)).includes('External content omitted'));
     assert.match(JSON.stringify(f.calls[1].messages.slice(0, -1)), /External content omitted from working memory/);
-    assert.equal(f.calls[0].reasoningEffort, 'high', 'same-route preserves primary reasoningEffort');
+    assert.equal(f.calls[0].reasoningEffort, 'low', 'same-route default summaryReasoningEffort="low" downgrades high effort');
   } finally {
     await rm(f.root, { recursive: true, force: true });
+  }
+
+  // (a2) Explicit summaryReasoningEffort="inherit" preserves primary reasoningEffort verbatim on same-route.
+  const inheritFx = createEngineFixture({
+    extraConfig: { summaryInputMaxBytes: 120000, summaryReasoningEffort: 'inherit' },
+  });
+  try {
+    inheritFx.addSystem('Stable system.');
+    inheritFx.addUser('Keep integer cents.');
+    inheritFx.addAssistant('Details. '.repeat(300));
+    await inheritFx.engine._compactRegionCore(inheritFx.surface.nodes[1], inheritFx.surface.nodes.at(-1), inheritFx.agent, new AbortController().signal, {
+      manual: true,
+      policy: inheritFx.engine.config,
+    });
+    assert.equal(inheritFx.calls.length, 1);
+    assert.equal(inheritFx.calls[0].reasoningEffort, 'high', 'same-route with summaryReasoningEffort="inherit" preserves primary reasoningEffort');
+  } finally {
+    await rm(inheritFx.root, { recursive: true, force: true });
   }
 
   // (b) Cross-route summary model NEVER receives unsupported primary reasoningEffort and disables verbatim prefix.

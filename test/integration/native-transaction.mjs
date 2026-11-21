@@ -5,6 +5,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {StockTransactionAdapter} from '../../lib/transaction.js';
 import {WeaveCompactionEngine} from '../../lib/engine.js';
+import {readResumableCompaction,writeResumableCompaction} from '../../lib/state.js';
 import {detectBiliSession} from '../../lib/foreign-fold.js';
 import {planObservationMask,commitObservationMask} from '../../lib/observation-mask.js';
 import {resolveConfig} from '../../lib/config.js';
@@ -428,6 +429,108 @@ await test('native-transaction-idle-proxy-raw-bili-migrate-and-mask-outside-turn
       const restoredReplay=Session.fromRestore(f.session.id,restoredStored.events,verifyHandle.header,verifyHandle.inheritedEventCount,'detached',f.store.messageProjections);
       assert.equal(detectBiliSession(restoredReplay).detected,true);
     }finally{await verifyHandle.close();}
+  }finally{await f.close();}
+});
+await test('native-transaction-started-crash-cold-recovery-closes-lock-before-end-seed-and-resumes',async()=>{
+  const f=await fixture({compression:'zstd',seedDefaultTurn:true});
+  try{
+    const targetPath=f.backend.locate(f.session.header).path;
+    assert.ok(targetPath.endsWith('.v4.jsonl.zstd'));
+    const remainingSeqs=f.session.surface.nodes.slice(1);
+    assert.ok(remainingSeqs.length>=3);
+
+    // Simulate hard process crash mid-summarization (phase: 'started'):
+    // 1. Live session appended compaction/start and flushed to .v4.jsonl.zstd.
+    // 2. Journal recorded phase: 'started' (no atomic rollback files yet).
+    // 3. Session state recorded resumableCompaction with status: 'running'.
+    const crashId='weave-crash-started-'+randomUUID();
+    const startEv=f.session.append('compaction/start',{compactionId:crashId,turn:null});
+    await f.store.flush(f.session);
+    f.engine.journal.recordSync({
+      sessionId:f.session.id,
+      compactionId:crashId,
+      phase:'started',
+      startEventSeq:startEv.seq,
+      failuresBefore:0,
+      startSeq:remainingSeqs[0],
+      endSeq:remainingSeqs.at(-1),
+    });
+    writeResumableCompaction(f.engine.sessionState,f.session.id,{
+      jobId:'job-crash-zstd-1',
+      trigger:'manual',
+      status:'running',
+      remainingSeqs,
+      remainingSourceSha256:f.engine._sourceHashForSeqs(f.session,remainingSeqs),
+      initialTotalNodes:remainingSeqs.length,
+      completedNodes:0,
+      initialTotalTokens:10000,
+      completedTokens:0,
+      completedChunks:0,
+      waveCount:0,
+      batchCheckpointSeqs:[],
+      consecutiveFailures:0,
+    });
+
+    // Crash / hard exit: detach live session and close writer without closing compaction/start.
+    f.detach();
+    await f.closeHandle();
+
+    // Cold reopen: StockTransactionAdapter.recoverBeforeOpen MUST close compaction/start
+    // before DSH can append session/end-seed, clear the started journal, and mark resumableCompaction interrupted/crash.
+    const reopenedHandle=await f.backend.open(f.session.id,'write');
+    let detachReopened=null;
+    try{
+      const storedAfterRecovery=await reopenedHandle.read();
+      const closedEnd=storedAfterRecovery.events.find(e=>e.type==='compaction/end'&&e.data?.compactionId===crashId);
+      assert.ok(closedEnd,'recoverBeforeOpen must append compaction/end for phase=started crash');
+      assert.equal(storedAfterRecovery.events.some(e=>e.type==='session/end-seed'&&e.seq<closedEnd.seq&&e.seq>startEv.seq),false,'compaction/end must precede any session/end-seed');
+      assert.equal((await f.engine.journal.pending(f.session.id)).length,0,'started journal must be cleared on cold recovery');
+
+      const resumable=readResumableCompaction(f.engine.sessionState,f.session.id);
+      assert.ok(resumable,'resumableCompaction must survive cold crash recovery');
+      assert.equal(resumable.status,'interrupted');
+      assert.equal(resumable.interruptReason,'crash');
+
+      // Re-mount the recovered live session on SessionStore (mirroring real DSH restore:
+      // Session.fromRestore appends session/end-seed, then persistence appends that marker
+      // before entering & announcing the live session) and resume cleanly via resumeCompactionFor!
+      const liveSession=Session.fromRestore(
+        f.session.id,
+        storedAfterRecovery.events,
+        reopenedHandle.header,
+        reopenedHandle.inheritedEventCount,
+        'detached',
+        f.store.messageProjections,
+      );
+      const restoreDelta=liveSession.snapshotEvents(storedAfterRecovery.events.length);
+      if(restoreDelta.length>0)await reopenedHandle.append(restoreDelta);
+      detachReopened=f.store.enter(liveSession);
+      f.store.announce(liveSession);
+      const liveAgent={session:liveSession,options:{provider:'p',model:'m'},runMaintenance:fn=>fn(new AbortController().signal)};
+
+      const resumed=await f.engine.resumeCompactionFor(liveSession,{agent:liveAgent,manualRetry:true});
+      assert.ok(resumed,'resumeCompactionFor must complete the crashed job cleanly');
+      assert.equal(readResumableCompaction(f.engine.sessionState,f.session.id),null,'resumableCompaction must be cleared on clean completion');
+      assert.equal(liveSession.surface.nodes.length,2,'surface should now hold [system, compact-checkpoint]');
+      assert.equal((await f.engine.journal.pending(f.session.id)).length,0);
+
+      // Final cold reopen verifies the resumed .v4.jsonl.zstd log replays cleanly under DSH V4 validation.
+      const finalEvents=liveSession.snapshotEvents();
+      const finalNodes=[...liveSession.surface.nodes];
+      detachReopened();detachReopened=null;
+      await reopenedHandle.close();
+
+      const verifyHandle=await f.backend.open(f.session.id,'write');
+      try{
+        const finalStored=await verifyHandle.read();
+        assert.deepEqual(finalStored.events,finalEvents);
+        const replay=Session.fromRestore(f.session.id,finalStored.events,verifyHandle.header,verifyHandle.inheritedEventCount,'detached',f.store.messageProjections);
+        assert.deepEqual(replay.surface.nodes,finalNodes);
+      }finally{await verifyHandle.close();}
+    }finally{
+      detachReopened?.();
+      try{await reopenedHandle.close();}catch{}
+    }
   }finally{await f.close();}
 });
 

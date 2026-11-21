@@ -436,12 +436,12 @@ await test('state-resumable-compaction-schema-helpers-and-public-summary', () =>
   assert.equal('remainingSourceSha256' in pub, false);
   assert.equal('checkpointMeta' in pub, false);
 
-  // running -> null; paused / migration / consecutiveFailures>=3 -> canAutoResume=false.
+  // running -> null; paused / consecutiveFailures>=3 -> canAutoResume=false; interrupted migration -> canAutoResume=true.
   assert.equal(publicResumableSummary({ ...written, status: 'running' }), null);
   assert.equal(publicResumableSummary({ ...written, status: 'paused' }).canAutoResume, false);
   assert.equal(publicResumableSummary({ ...written, status: 'paused_budget' }).canAutoResume, false);
   assert.equal(publicResumableSummary({ ...written, status: 'paused_failure' }).canAutoResume, false);
-  assert.equal(publicResumableSummary({ ...written, trigger: 'migration' }).canAutoResume, false);
+  assert.equal(publicResumableSummary({ ...written, trigger: 'migration' }).canAutoResume, true);
   assert.equal(publicResumableSummary({ ...written, consecutiveFailures: 3 }).canAutoResume, false);
 
   // Corrupt or unknown version returns null and NEVER breaks SessionStateStore.read()!
