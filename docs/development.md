@@ -48,12 +48,13 @@ test/              活动回归测试与样本
   archived-regex/  已归档的旧正则与合成词表测试（退出默认运行）
 scripts/           测试、检查与打包工具
 docs/              配置、架构、测试与发布文档
+.github/workflows/ Windows/Linux CI 与自动发版工作流
 cordis.patch.yml   DSH 插件组合包入口
 ```
 
 `.local/` 保存本地验证输出，`dist/` 保存生成的交付物，二者已加入 `.gitignore`。
 
-GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、项目检查、发布打包，以及针对 DSH `0.2.2-rc.1` 与 `0.2.2-rc.3` 的隔离宿主测试矩阵。
+GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、项目检查、发布打包，以及针对 DSH `0.2.2-rc.1` 与 `0.2.2-rc.3` 的隔离宿主测试矩阵；推送 `v<version>` 标签后还会由发布工作流自动执行 npm Trusted Publishing 与 GitHub Release 发布。
 
 ## 构建交付物
 
@@ -73,13 +74,19 @@ GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、�
 2. 运行离线测试和宿主集成测试，查看所有失败日志。
 3. 运行发布打包，在独立目录解压源码包后再次执行测试。
 4. 将源码提交到项目仓库，创建同版本标签，并上传安装包、源码包和校验清单。
-5. 如发布到 npm，发布已验证的 tarball：
+5. 如需本机手动发布到 npm，发布已验证的 tarball（npm 11+ 对本地相对路径要求保留 `./` 前缀，否则会被误解析为 GitHub `owner/repo` 简写）：
 
 ```bash
-npm publish dist/dsh-compaction-weave-0.3.3.tgz --tag latest --access public
+npm publish ./dist/dsh-compaction-weave-0.3.3.tgz --tag latest --access public
 ```
 
 正式版默认发布标签为 `latest`（如需发布预览候选版，则改用预发布版本号并将 `publishConfig.tag` 设为 `next`）。
+
+### 自动发版（GitHub Actions + npm Trusted Publishing）
+
+仓库已配置 [`.github/workflows/release.yml`](../.github/workflows/release.yml)：推送与 `package.json` 一致的 `v<version>` 标签时，会在 Windows 与 Linux 上完成全量校验、打包与 DSH 宿主兼容测试，并通过 OIDC Trusted Publishing（无需 `NPM_TOKEN` Secret，自动附带 Provenance 溯源证明）将 `./dist/dsh-compaction-weave-<version>.tgz` 发布到 npm（正式版绑定 `latest`，含 `-` 的预发布版绑定 `next`），同时自动创建/更新对应的 GitHub Release（正式版标记 `--latest`，附带无版本号 `dsh-compaction-weave.tgz` 等全部 5 个产物）。
+
+一次性启用步骤：首次手动发包上线后，在 npmjs.com 包页面的 **Settings → Trusted Publisher** 中添加 GitHub Actions（Organization/user 填 `NightFrost42`，Repository 填 `dsh-compaction-weave`，Workflow filename 填 `release.yml`，Environment 留空）。日常改动前也可用 GitHub Actions 的 `workflow_dispatch`（默认 `dry_run=true`）空跑预演发布流程。
 
 ## 新增语义回归
 

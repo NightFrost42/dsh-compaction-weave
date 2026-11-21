@@ -45,11 +45,11 @@ test/                 Active regression suites and fixtures
 scripts/              Test, validation, and packaging tools
 docs/                 Chinese guides and test records
   en/                 English guides
-.github/workflows/    Windows and Linux CI
+.github/workflows/    Windows and Linux CI and automated release workflows
 cordis.patch.yml      DSH plugin bundle entry
 ```
 
-`.local/` and `dist/` are ignored by Git. The CI workflow runs offline tests, source checks, packaging, and an isolated host matrix against DSH `0.2.2-rc.1` and `0.2.2-rc.3` on Windows and Linux using Node.js 24.
+`.local/` and `dist/` are ignored by Git. The CI workflow runs offline tests, source checks, packaging, and an isolated host matrix against DSH `0.2.2-rc.1` and `0.2.2-rc.3` on Windows and Linux using Node.js 24, and pushing a matching `v<version>` tag triggers the automated npm + GitHub Release workflow.
 
 ## Artifacts
 
@@ -71,13 +71,19 @@ The runtime package follows `package.json.files`; the source archive uses an exp
 2. Run offline and host integration tests and resolve failures.
 3. Build and verify the archives, including checks from an independently extracted source package.
 4. Push the source, create the matching `v<version>` tag, and attach the packages and checksum files to its GitHub Release.
-5. If publishing to npm, publish the verified tarball:
+5. If publishing to npm manually from a local machine, publish the verified tarball (keep the leading `./` on npm 11+ so relative tarball paths are not parsed as GitHub `owner/repo` shorthand):
 
 ```bash
-npm publish dist/dsh-compaction-weave-0.3.3.tgz --tag latest --access public
+npm publish ./dist/dsh-compaction-weave-0.3.3.tgz --tag latest --access public
 ```
 
 Stable releases publish under the `latest` npm tag (prereleases use `next` in `publishConfig.tag`).
+
+### Automated releases (GitHub Actions + npm Trusted Publishing)
+
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml) automates full releases whenever a `v<version>` tag matching `package.json` is pushed: it runs checks, offline tests, packaging, and the DSH host compatibility matrix across Windows and Linux, then publishes `./dist/dsh-compaction-weave-<version>.tgz` to npm via OIDC Trusted Publishing (no `NPM_TOKEN` secret required, provenance generated automatically; bound to `latest` for stable versions or `next` for prereleases) and creates or updates the GitHub Release (`--latest` or `--prerelease`) with all five `dist/` artifacts including the versionless `dsh-compaction-weave.tgz`.
+
+One-time setup: after publishing the initial package manually, open **Settings → Trusted Publisher** on npmjs.com and link GitHub Actions with owner `NightFrost42`, repository `dsh-compaction-weave`, workflow filename `release.yml`, and an empty environment. You can also test the workflow anytime via `workflow_dispatch` with `dry_run=true`.
 
 ## Semantic regression cases
 

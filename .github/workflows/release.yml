@@ -1,0 +1,186 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run verification and npm publish --dry-run without creating a release'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Node 24 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check source and documentation
+        run: npm run check
+      - name: Run offline regression suites
+        run: npm test
+      - name: Verify release packaging
+        run: npm run pack:release
+
+  host-compatibility:
+    name: DSH ${{ matrix.dsh }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        dsh: ['0.2.2-rc.1', '0.2.2-rc.3']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install isolated host dependencies
+        run: npm install --prefix .local/dsh-host --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh-session@${{ matrix.dsh }} @deepseek-ai/dsh-session-persistence-jsonl@${{ matrix.dsh }} @deepseek-ai/dsh-tools@${{ matrix.dsh }} @deepseek-ai/dsh-app-boot@${{ matrix.dsh }}
+      - name: Verify host integration and durable transactions
+        run: node scripts/test.mjs --host-modules .local/dsh-host/node_modules
+
+  publish:
+    name: Publish npm & GitHub Release
+    needs: [verify, host-compatibility]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+          # Omit registry-url so setup-node does not inject a placeholder
+          # NODE_AUTH_TOKEN into .npmrc and bypass OIDC Trusted Publishing.
+
+      - name: Ensure npm >= 11.5.1 for Trusted Publishing
+        shell: bash
+        run: |
+          npm_version="$(npm --version)"
+          echo "Detected npm $npm_version"
+          if ! node -e 'const [M,m,p]=process.argv[1].split("-")[0].split(".").map(Number); if (M>11 || (M===11 && (m>5 || (m===5 && p>=1)))) process.exit(0); process.exit(1);' "$npm_version"; then
+            npm install -g npm@latest
+            echo "Upgraded npm to $(npm --version)"
+          fi
+
+      - name: Build release artifacts
+        run: npm run pack:release
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          node --input-type=module - <<'EOF'
+          import fs from 'node:fs';
+
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const name = pkg.name;
+          const version = pkg.version;
+          const eventName = process.env.EVENT_NAME;
+          const dryRunInput = process.env.INPUT_DRY_RUN;
+          const ref = process.env.GITHUB_REF || '';
+          const dryRun = eventName === 'workflow_dispatch' && dryRunInput !== 'false';
+          const expectedTag = 'v' + version;
+          const expectedRef = 'refs/tags/' + expectedTag;
+
+          if (!dryRun && ref !== expectedRef) {
+            console.error(`Ref "${ref}" does not match package.json version "${expectedRef}".`);
+            process.exit(1);
+          }
+
+          const isPrerelease = version.includes('-');
+          const npmTag = isPrerelease ? 'next' : 'latest';
+          const tarball = `./dist/${name}-${version}.tgz`;
+          if (!fs.existsSync(tarball)) {
+            console.error(`Missing built tarball: ${tarball}`);
+            process.exit(1);
+          }
+
+          const lines = [
+            `name=${name}`,
+            `version=${version}`,
+            `tag=${expectedTag}`,
+            `tarball=${tarball}`,
+            `npm_tag=${npmTag}`,
+            `is_prerelease=${isPrerelease}`,
+            `dry_run=${dryRun}`
+          ];
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, lines.join('\n') + '\n');
+          console.log(lines.join('\n'));
+          EOF
+
+      - name: Dry-run npm publish
+        if: steps.meta.outputs.dry_run == 'true'
+        env:
+          NODE_AUTH_TOKEN: ''
+        run: npm publish "${{ steps.meta.outputs.tarball }}" --tag "${{ steps.meta.outputs.npm_tag }}" --access public --dry-run
+
+      - name: Publish to npm via Trusted Publishing
+        if: steps.meta.outputs.dry_run == 'false'
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ''
+        run: |
+          if npm view "${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }}" version >/dev/null 2>&1; then
+            echo "${{ steps.meta.outputs.name }}@${{ steps.meta.outputs.version }} is already published on npm; skipping publish."
+          else
+            npm publish "${{ steps.meta.outputs.tarball }}" --tag "${{ steps.meta.outputs.npm_tag }}" --access public
+          fi
+          npm view "${{ steps.meta.outputs.name }}" version dist-tags --json
+
+      - name: Create or update GitHub Release
+        if: steps.meta.outputs.dry_run == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          NAME="${{ steps.meta.outputs.name }}"
+          IS_PRERELEASE="${{ steps.meta.outputs.is_prerelease }}"
+          ASSETS=(
+            "dist/${NAME}.tgz"
+            "dist/${NAME}-${VERSION}.tgz"
+            "dist/${NAME}-${VERSION}-source.tar.gz"
+            "dist/manifest.json"
+            "dist/SHA256SUMS.txt"
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              gh release edit "$TAG" --prerelease
+            else
+              gh release edit "$TAG" --prerelease=false --latest
+            fi
+          else
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              gh release create "$TAG" "${ASSETS[@]}" --verify-tag --title "DSH Compaction Weave $TAG" --generate-notes --prerelease
+            else
+              gh release create "$TAG" "${ASSETS[@]}" --verify-tag --title "DSH Compaction Weave $TAG" --generate-notes --latest
+            fi
+          fi
