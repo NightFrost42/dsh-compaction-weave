@@ -511,6 +511,7 @@ for (const language of ['zh', 'en']) {
       ['weave-summary-retry-count', '4'],
       ['weave-summary-retry-delay', '1.25'],
       ['weave-summary-timeout', '240'],
+      ['weave-audit-block-on-loss', 'false'],
     ]) h.change(id, value);
     h.select(43200);
     const savedValues = {
@@ -518,6 +519,7 @@ for (const language of ['zh', 'en']) {
       thresholdRatio: 0.85, minimumReductionRatio: 0.35,
       summaryRetryCount: 4, summaryRetryDelayMs: 1250, summaryTimeoutMs: 240000,
       idleCompactionMinutes: 43200,
+      auditBlockOnLoss: false,
     };
     await h.click('save');
     assert.deepEqual(h.requests.filter(request => request.method === 'set').at(-1).params, savedValues);
@@ -531,6 +533,7 @@ for (const language of ['zh', 'en']) {
       ['weave-summary-retry-count', '0'],
       ['weave-summary-retry-delay', '0'],
       ['weave-summary-timeout', '60'],
+      ['weave-audit-block-on-loss', 'true'],
     ]) h.change(id, value);
     h.select('custom');
     h.custom(43199);
@@ -540,6 +543,7 @@ for (const language of ['zh', 'en']) {
       thresholdRatio: 0.75, minimumReductionRatio: 0.25,
       summaryRetryCount: 0, summaryRetryDelayMs: 0, summaryTimeoutMs: 60000,
       idleCompactionMinutes: 43199,
+      auditBlockOnLoss: true,
     };
     assert.deepEqual(h.requests.filter(request => request.method === 'set').at(-1).params, clearedValues);
     assert.deepEqual(readSummaryConfig(h.file), clearedValues);
@@ -556,6 +560,7 @@ for (const language of ['zh', 'en']) {
       ['weave-summary-threshold', 75], ['weave-minimum-reduction', 25],
       ['weave-summary-retry-count', '0'], ['weave-summary-retry-delay', '0'], ['weave-summary-timeout', '60'],
       ['weave-idle-compaction', 'custom'], ['weave-idle-custom-minutes', '43199'],
+      ['weave-audit-block-on-loss', 'true'],
     ]) assert.equal(reloaded.field(id).props.value, value, id);
   });
 
