@@ -35,13 +35,13 @@
 
 ## 安装与升级
 
-支持 **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`**（`0.2.2-rc.1` 起的 `0.2.x–0.x` 系列），原生原子事务已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，并在默认 `strictHostFingerprints: false` 下支持宿主后续小版本调整私有持久化方法时平顺降级至公开 `Session.append(replace)` + `sessions.flush()`（同时继续拦截未恢复 `.rollback`/`.tail` 日志），运行环境需 **Node.js 24.9+**。以下以正式版 `0.3.2` 为例，可使用 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest) 提供的 `dsh-compaction-weave.tgz`（无版本号最新包）或 `dsh-compaction-weave-0.3.2.tgz`，或本地打包生成的 `.tgz` 文件。
+支持 **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`**（`0.2.2-rc.1` 起的 `0.2.x–0.x` 系列），原生原子事务已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，并在默认 `strictHostFingerprints: false` 下支持宿主后续小版本调整私有持久化方法时平顺降级至公开 `Session.append(replace)` + `sessions.flush()`（同时继续拦截未恢复 `.rollback`/`.tail` 日志），运行环境需 **Node.js 24.9+**。以下以正式版 `0.3.3` 为例，可使用 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest) 提供的 `dsh-compaction-weave.tgz`（无版本号最新包）或 `dsh-compaction-weave-0.3.3.tgz`，或本地打包生成的 `.tgz` 文件。
 
 ### 桌面端
 
-1. 下载 `dsh-compaction-weave.tgz` 或 `dsh-compaction-weave-0.3.2.tgz`。
+1. 下载 `dsh-compaction-weave.tgz` 或 `dsh-compaction-weave-0.3.3.tgz`。
 2. 升级安装时，先在 **插件** 页面卸载旧版 Weave，保留独立存储目录中的历史归档与设置；首次安装可跳过此步。
-3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.3.2.tgz`），完成安装并启用。
+3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.3.3.tgz`），完成安装并启用。
 4. **重启 DSH**，在插件详情页确认版本号已更新。
 
 ### 命令行
@@ -49,7 +49,7 @@
 停止目标 profile 后执行安装或覆盖升级：
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.2.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.3.tgz
 ```
 
 请将 `web` 替换为实际使用的命令行 profile 名称，完成后重新启动该 profile。桌面端用户请使用上方的插件管理页流程。

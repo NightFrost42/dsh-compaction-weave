@@ -1,5 +1,10 @@
 # 更新记录
 
+## 0.3.3 — 2026-11-21
+
+- **修复技术术语被误判为数值约束（[#1](https://github.com/NightFrost42/dsh-compaction-weave/issues/1)）**：在 `lib/audit.js` 中为 `numericFacts` 与 `scalarRequirement` 增加 `isNonQuantityTechTerm` 校验：紧贴数字的大写单字母时长符号（如 `3D`、`2D`、`3M`、`6S`、`2H`）不再被当作时长单位（小写 `3d`/`30s`/`5m`/`2h` 与 `3 days`/`3天` 保持不变）；缺少存储/内存/配额类上下文的独立 `5G` 不再被当作 `5gb`（`备份上限 5G`、`5GB` 及 `25G`/`8GB` 等真实容量约束不受影响）。
+- **回归测试**：在 `test/constraint-scope.mjs` 新增 14 项针对 `3D`/`2D`/`5G` 等术语与真实容量/时长边界的回归用例，离线全量测试 **955 项 0 失败**。
+
 ## 0.3.2 — 2026-11-19
 
 - **正式稳定版发布与渠道调整**：将包版本升级为 `0.3.2` 正式版，将 `publishConfig.tag` 调整为 `latest`；同时更新发布脚本 `scripts/release.mjs`，每次打包同步输出无版本号副本 `dsh-compaction-weave.tgz` 与带版本号 `dsh-compaction-weave-0.3.2.tgz`，支持 `releases/latest/download/dsh-compaction-weave.tgz` 固定升级入口。

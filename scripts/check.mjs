@@ -36,7 +36,7 @@ for(const relative of files) {
       const target=path.resolve(path.dirname(absolute),decodeURIComponent(link));
       if(!fs.existsSync(target))errors.push(relative+': broken link '+link);
     }
-    for(const match of text.matchAll(/dsh-compaction-weave-(\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?)\.tgz/g)) {
+    if(relative!=='CHANGELOG.md')for(const match of text.matchAll(/dsh-compaction-weave-(\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?)\.tgz/g)) {
       if(match[1]!==pkg.version)errors.push(relative+': install example version differs from package');
     }
   }
