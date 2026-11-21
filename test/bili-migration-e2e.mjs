@@ -779,14 +779,17 @@ await test('e2e-ranxianglei-proxy-raw-premask-and-rolling-wave-fold', async () =
     assert.ok(migrated.compactionIds.length >= 2);
     assert.ok(migrated.afterTokens < migrated.beforeTokens);
 
-    // Stage 1 pre-masking ran before rolling-wave summarization
-    assert.ok(
+    // Idle migration (openTurn === null) must NEVER append tool/result or compaction/prune
+    // outside an open turn (DSH V4 payload validator rejects tool/result outside a turn).
+    assert.equal(
       s.events.some((e) => e.type === 'compaction/prune'),
-      'expected Stage 1 observation pre-masking on oversized proxy-raw session',
+      false,
+      'idle proxy-raw migration must not emit disk compaction/prune or tool/result rewrites outside an open turn',
     );
-    assert.ok(
+    assert.equal(
       s.events.some((e) => e.type === 'tool/result' && blocksToText(e.data?.message?.content).includes(OBSERVATION_MASK_MARKER)),
-      'expected masked tool output marker',
+      false,
+      'idle proxy-raw migration must rely on in-request tool projection instead of outside-turn tool/result writes',
     );
 
     // Rolling-wave hierarchical fold ran (`phase: 'folding'` observed!)
@@ -1281,6 +1284,79 @@ await test('e2e-workstream-b-no-double-breaker-count-and-partial-commit-preserva
     assert.match(caught.message, /1 summary chunk\(s\) committed/);
     const preservedIds = caught.compactionIds ?? caught.cause?.compactionIds;
     assert.equal(preservedIds?.length, 1, 'committed chunk compactionId must be preserved on continuation error');
+  } finally {
+    host.cleanup();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+// 10. Multi-wave continuation loops cleanly across waves until oversized proxy-raw bili session has bili.detected === false
+await test('e2e-multi-wave-continuation-drains-oversized-bili-session', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'weave-e2e-multiwave-'));
+  const sessionDir = join(home, 'sessions', 'multiwave');
+  const wavesObserved = new Set();
+  const continuationNotes = [
+    '## Goal\nPreserve strict API schema while draining all oversized billion-context waves.',
+    '## State\nMulti-wave continuation archived historical tool outputs.',
+    '## Next\nContinue task cleanly after full migration.',
+    '## Uncertain\nRe-verify archived details via history_read as needed.',
+  ].join('\n\n');
+
+  const host = makeFullHostFixture({
+    home,
+    windowTokens: 120000,
+    extraEngineConfig: {
+      summaryInputMaxBytes: 36000,
+      maxSummaryChunks: 2,
+      summaryRetryCount: 0,
+      continuationEnabled: true,
+    },
+    streamHandler: async function* () {
+      const sid = [...host.sessionsMap.keys()][0];
+      const snap = host.engine.progressTracker.snapshot(sid);
+      if (snap?.waveIndex) wavesObserved.add(snap.waveIndex);
+      yield { type: 'text-delta', text: continuationNotes };
+      yield { type: 'finish', kind: 'stop' };
+    },
+  });
+  try {
+    const s = makeSessionFixture({ sessionDir, rawFilename: 'session.v4.jsonl.zstd' });
+    // Large requestHeader().tools (>36 KB) forces planSummaryRange -> SUMMARY_GROUP_TOO_LARGE -> continuation waves,
+    // mirroring real DSH profiles with 160+ registered MCP/plugin tools on a 200k-window model.
+    const bigTools = Array.from({ length: 40 }, (_, i) => ({
+      name: `tool_${i}`,
+      description: 'D'.repeat(1100),
+      parameters: { type: 'object', properties: {} },
+    }));
+    s.session.requestHeader = () => ({ config: { provider: 'p', model: 'm' }, tools: bigTools });
+    s.addSystem('System.');
+    s.addUser('Preserve strict API schema.');
+    for (let i = 0; i < 6; i += 1) {
+      s.addToolPair('acp_status', { step: i }, `[ACP] wave batch ${i}\n` + 'log-entry '.repeat(450));
+      s.addAssistant(`Batch ${i} output: ` + 'analysis-record '.repeat(600));
+    }
+    s.addToolPair('acp_read_original_image', { ref: 'm999' }, '[bili] final tool output\n' + 'tail-data '.repeat(350));
+    s.addAssistant('Final assistant summary: ' + 'closing-detail '.repeat(400));
+    await host.sessions.flush(s.session);
+    host.registerSession(s);
+
+    const detBefore = detectBiliSession(s.session);
+    assert.equal(detBefore.detected, true);
+    assert.equal(detBefore.variant, 'ranxianglei-proxy-raw');
+    assert.ok(detBefore.biliToolCount >= 7);
+
+    const migrated = await host.engine.migrateBiliSession(s.session, {
+      sessions: host.sessions,
+      backend: host.backend,
+      sessionPersistence: host.backend,
+      asyncRollingWave: false,
+    });
+    assert.equal(migrated.accepted, true);
+    assert.equal(migrated.completed, true);
+    assert.ok(migrated.compactionIds.length >= 2, `expected multi-wave continuation (>=2 waves), got ${migrated.compactionIds.length}`);
+    assert.ok(wavesObserved.has(1) && wavesObserved.has(2), `expected waveIndex 1 and 2, observed ${[...wavesObserved]}`);
+    assert.equal(detectBiliSession(s.session).detected, false, 'multi-wave continuation must clear all bili tools');
+    assert.equal(s.events.some((e) => e.type === 'compaction/prune'), false, 'idle multi-wave must not emit outside-turn compaction/prune');
   } finally {
     host.cleanup();
     await rm(home, { recursive: true, force: true });

@@ -218,6 +218,8 @@ await test('observation-mask-batched-over-3840-refs-multipass', async () => {
     f.addAssistant('Latest assistant reply in retained tail.');
 
     const archive = new CompactionArchive({ root: join(root, 'archive') });
+    // DSH V4 requires an open turn for disk tool/result replacement events.
+    f.session.append('turn/start', { turn: 1 });
 
     // Pass 1: should select exactly MAX_MASK_STAGE_REFS (3840) and signal hasMore: true
     const m1 = f.measure();
@@ -384,6 +386,14 @@ await test('observation-mask-skips-invalid-and-unmappable-nodes', async () => {
     );
 
     const archive = new CompactionArchive({ root: join(root, 'archive') });
+    // Idle (openTurn === null) must safely skip disk tool/result replacement without mutating the log.
+    const eventsBeforeIdle = f.events.length;
+    const idleResult = await commitObservationMask({ session: f.session, plan, archive });
+    assert.equal(idleResult, null, 'commitObservationMask must return null when openTurn === null');
+    assert.equal(f.events.length, eventsBeforeIdle, 'idle observation mask must not emit prune or tool/result events');
+
+    // Inside an open turn, observation masking commits cleanly.
+    f.session.append('turn/start', { turn: 1 });
     const committed = await commitObservationMask({ session: f.session, plan, archive });
     assert.ok(committed);
     assert.equal(committed.maskedCount, 2);

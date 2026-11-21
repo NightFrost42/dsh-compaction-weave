@@ -6,6 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {StockTransactionAdapter} from '../../lib/transaction.js';
 import {WeaveCompactionEngine} from '../../lib/engine.js';
 import {detectBiliSession} from '../../lib/foreign-fold.js';
+import {planObservationMask,commitObservationMask} from '../../lib/observation-mask.js';
 import {resolveConfig} from '../../lib/config.js';
 import {approxTokens,blocksToText} from '../../lib/meter.js';
 
@@ -334,6 +335,99 @@ await test('native-transaction-bili-fold-adopt-zstd-reopen-and-backup-restore',a
     }finally{
       await restoredHandle.close();
     }
+  }finally{await f.close();}
+});
+await test('native-transaction-idle-proxy-raw-bili-migrate-and-mask-outside-turn-safety',async()=>{
+  const f=await fixture({compression:'zstd',seedDefaultTurn:false});
+  const sha=buf=>createHash('sha256').update(buf).digest('hex');
+  try{
+    // Seed a realistic idle ranxianglei-proxy-raw session with oversized acp_* tool outputs inside closed turns
+    f.session.append('turn/start',{turn:1});
+    f.session.append('step/start',{turn:1,step:1});
+    f.add('system','Stable system prefix.',1,1);
+    f.add('user','Continue the test task.',1,1);
+    const call1Id='call-acp-1',call2Id='call-acp-2';
+    f.session.append('assistant/message',{turn:1,step:1,stream:[],usage:{inputTokens:0,outputTokens:0},message:{
+      id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},
+      content:[
+        {type:'tool-call',id:call1Id,name:'acp_status',arguments:'{}'},
+        {type:'tool-call',id:call2Id,name:'acp_read_original_image',arguments:'{"ref":"m001"}'},
+      ],
+    }},{surfaceOp:'append'});
+    const tc1=f.session.append('tool/call',{turn:1,step:1,callId:call1Id,name:'acp_status',arguments:'{}'});
+    f.session.append('tool/result',{turn:1,step:1,message:{
+      id:randomUUID(),role:'tool',toolCallId:call1Id,source:{kind:'tool',callId:call1Id},
+      content:[{type:'text',text:'[ACP] acp_status result: active=true\n'+'status-detail '.repeat(800)}],
+    }},{surfaceOp:'append',sourceEventSeqs:[tc1.seq]});
+    const tc2=f.session.append('tool/call',{turn:1,step:1,callId:call2Id,name:'acp_read_original_image',arguments:'{"ref":"m001"}'});
+    f.session.append('tool/result',{turn:1,step:1,message:{
+      id:randomUUID(),role:'tool',toolCallId:call2Id,source:{kind:'tool',callId:call2Id},
+      content:[{type:'text',text:'[bili] original image metadata\n'+'image-meta '.repeat(800)}],
+    }},{surfaceOp:'append',sourceEventSeqs:[tc2.seq]});
+    f.session.append('step/end',{turn:1,step:1});
+    f.session.append('step/start',{turn:1,step:2});
+    f.add('assistant','Work notes. '.repeat(2500),1,2);
+    f.session.append('step/end',{turn:1,step:2});
+    f.session.append('turn/end',{turn:1});
+
+    f.session.append('turn/start',{turn:2});
+    f.session.append('step/start',{turn:2,step:1});
+    f.add('user','Keep the tail turn intact.',2,1);
+    f.add('assistant','Acknowledged.',2,1);
+    f.session.append('step/end',{turn:2,step:1});
+    f.session.append('turn/end',{turn:2});
+    await f.store.flush(f.session);
+
+    const targetPath=f.backend.locate(f.session.header).path;
+    assert.ok(targetPath.endsWith('.v4.jsonl.zstd'));
+    const preMigrateSha=sha(fs.readFileSync(targetPath));
+
+    // Direct guard check: commitObservationMask MUST return null when openTurn === null (DSH V4 forbids outside-turn tool/result)
+    const idleMeas=await f.engine._measure(f.session);
+    const maskPlan=planObservationMask(f.session,idleMeas,20,{compactionId:'weave-idle-guard-check',thresholdChars:1000});
+    assert.ok(maskPlan&&maskPlan.targets.length>=2,'expected eligible tool results for planObservationMask');
+    const eventsBeforeMask=f.session.seq;
+    const idleMaskResult=await commitObservationMask({session:f.session,plan:maskPlan,archive:f.engine.archive});
+    assert.equal(idleMaskResult,null,'commitObservationMask must skip disk writes outside an open turn');
+    assert.equal(f.session.seq,eventsBeforeMask,'idle session log must remain untouched by commitObservationMask');
+
+    // Idle proxy-raw-rolling migrateBiliSession must succeed without outside-turn tool/result writes
+    assert.equal(detectBiliSession(f.session).variant,'ranxianglei-proxy-raw');
+    const migrated=await f.engine.migrateBiliSession(f.session,{
+      agent:f.agent,sessions:f.store,backend:f.backend,sessionPersistence:f.backend,asyncRollingWave:false,
+    });
+    assert.equal(migrated.completed,true);
+    assert.equal(detectBiliSession(f.session).detected,false);
+    assert.equal(f.session.snapshotEvents().some(e=>e.type==='compaction/prune'),false,'idle proxy-raw migration must not write compaction/prune');
+    assert.equal(sha(fs.readFileSync(migrated.backupPath)),preMigrateSha);
+    assert.deepEqual(fs.readdirSync(path.dirname(targetPath)),[path.basename(targetPath)]);
+
+    // Real DSH V4 cold reopen + payload/relationship validation (would throw SessionFormatError if any tool/result landed outside a turn!)
+    const expectedEvents=f.session.snapshotEvents();
+    const expectedNodes=[...f.session.surface.nodes];
+    f.detach();
+    await f.closeHandle();
+    const reopened=await f.backend.open(f.session.id,'write');
+    try{
+      const stored=await reopened.read();
+      assert.deepEqual(stored.events,expectedEvents);
+      const replay=Session.fromRestore(f.session.id,stored.events,reopened.header,reopened.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.deepEqual(replay.surface.nodes,expectedNodes);
+      assert.equal(detectBiliSession(replay).detected,false);
+    }finally{await reopened.close();}
+
+    // Path A cold backup restore verifies byte-for-byte restoration of .v4.jsonl.zstd
+    const restored=await f.engine.restoreSessionBackupFor(f.session.id,{
+      backupId:migrated.backupId,sessions:f.store,backend:f.backend,sessionPersistence:f.backend,stockAdapter:f.adapter,
+    });
+    assert.equal(restored.status,'restored');
+    assert.equal(sha(fs.readFileSync(targetPath)),preMigrateSha);
+    const verifyHandle=await f.backend.open(f.session.id,'write');
+    try{
+      const restoredStored=await verifyHandle.read();
+      const restoredReplay=Session.fromRestore(f.session.id,restoredStored.events,verifyHandle.header,verifyHandle.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.equal(detectBiliSession(restoredReplay).detected,true);
+    }finally{await verifyHandle.close();}
   }finally{await f.close();}
 });
 

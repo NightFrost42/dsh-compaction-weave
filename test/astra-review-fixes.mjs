@@ -181,6 +181,7 @@ await test('stage1-skips-deep-provenance-chains-and-cleans-up-empty-ready', asyn
     assert.equal(plan, null);
 
     // Also test empty ready cleanup in commitObservationMask when surface shrinks mid-archive
+    f.session.append('turn/start', { turn: 1 });
     const { resEvent: res2 } = f.addToolResult('bash', { command: 'cat other.log' }, 'Z'.repeat(6000));
     f.addUser('Keep tail outside range.');
     f.addAssistant('Tail assistant outside range.');

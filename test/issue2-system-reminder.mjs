@@ -109,6 +109,8 @@ const ALL_20_NEW_DSH_KINDS = [
   'webhook',
   'goal',
   'tool-goal',
+  'working-directory',
+  'agent-teams',
 ];
 
 await test('issue2-repro-300-rule-agents-md-repeated-9x-ignored-while-real-rules-enforced', () => {
