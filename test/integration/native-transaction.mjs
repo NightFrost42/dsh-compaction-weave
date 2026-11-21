@@ -5,6 +5,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {StockTransactionAdapter} from '../../lib/transaction.js';
 import {WeaveCompactionEngine} from '../../lib/engine.js';
+import {detectBiliSession} from '../../lib/foreign-fold.js';
 import {resolveConfig} from '../../lib/config.js';
 import {approxTokens,blocksToText} from '../../lib/meter.js';
 
@@ -23,44 +24,47 @@ async function test(name,fn){
   catch(error){results.push({name,pass:false,error:error.message,stack:error.stack});}
 }
 
-async function fixture(){
+async function fixture({compression='none',seedDefaultTurn=true}={}){
   const directory=fs.mkdtempSync(path.join(process.env.WEAVE_TEST_ROOT,'test-tmp','transaction-'));
   const root=new Context();
   const mounting=root.plugin({name:'weave-transaction-fixture',async apply(ctx){
     new SessionStore(ctx);
-    await persistence.apply(ctx,{root:path.join(directory,'host-sessions'),compression:'none'});
+    await persistence.apply(ctx,{root:path.join(directory,'host-sessions'),compression});
   }});
   await mounting.await();
   const backend=root.sessionPersistence,store=root.sessions;
   const session=Session.create('transaction-'+randomUUID());
   const handle=await backend.create(session.header);
-  let detach=store.enter(session),expectedHandleCloseFailure=false;store.announce(session);
-  const add=(role,text)=>session.append(role+'/message',role==='user'
+  let detach=store.enter(session),expectedHandleCloseFailure=false,handleClosed=false;store.announce(session);
+  const add=(role,text,turn=1,step=1)=>session.append(role+'/message',role==='user'
     ?{id:randomUUID(),role,content:[{type:'text',text}],source:{kind:'user'}}
-    :{turn:1,step:1,...(role==='assistant'?{stream:[],usage:{inputTokens:0,outputTokens:0}}:{}),message:{id:randomUUID(),role,content:[{type:'text',text}],source:role==='system'?{kind:'system-prompt'}:{kind:'model',provider:'p',model:'m'}}},{surfaceOp:'append'});
-  session.append('turn/start',{turn:1});
-  session.append('step/start',{turn:1,step:1});
-  add('system','Stable system prefix.');
-  add('user','Timeout must be 35 seconds.');
-  add('user','Timeout must be 55 seconds.');
-  add('assistant','Work notes. '.repeat(6000));
-  session.append('step/end',{turn:1,step:1});
-  session.append('turn/end',{turn:1});
-  await store.flush(session);
+    :{turn,step,...(role==='assistant'?{stream:[],usage:{inputTokens:0,outputTokens:0}}:{}),message:{id:randomUUID(),role,content:[{type:'text',text}],source:role==='system'?{kind:'system-prompt'}:{kind:'model',provider:'p',model:'m'}}},{surfaceOp:'append'});
+  if(seedDefaultTurn){
+    session.append('turn/start',{turn:1});
+    session.append('step/start',{turn:1,step:1});
+    add('system','Stable system prefix.');
+    add('user','Timeout must be 35 seconds.');
+    add('user','Timeout must be 55 seconds.');
+    add('assistant','Work notes. '.repeat(6000));
+    session.append('step/end',{turn:1,step:1});
+    session.append('turn/end',{turn:1});
+    await store.flush(session);
+  }
   let calls=0;const warnings=[];
-  const ctx={on(){},provide(){},logger:{info(){},warn(m){warnings.push(String(m));}},sessions:{flush:s=>store.flush(s)},
+  const ctx={on(){},provide(){},logger:{info(){},warn(m){warnings.push(String(m));}},sessions:{flush:s=>store.flush(s),get:id=>store.get(id)},sessionPersistence:backend,
     tokenMeter:{measure(s){const nodes=s.surface.nodes.map(seq=>({seq,tokens:approxTokens(blocksToText(s.deriveEventMessage(s.eventAt(seq))?.content))}));return {nodes,totalTokens:nodes.reduce((n,x)=>n+x.tokens,0)};}},
     llm:{async resolveModelInfo(){return {contextWindow:1000000};},async *stream(){calls++;yield {type:'text-delta',text:summary};yield {type:'finish',kind:'stop'};}}};
   const engine=new WeaveCompactionEngine(ctx,resolveConfig({archiveDir:path.join(directory,'weave','archive'),language:'en'}).config);
   const adapter=new StockTransactionAdapter(backend,store,ctx.logger);
-  adapter.register(engine.journal,engine.sessionState,engine.config.failureThreshold);
+  adapter.register(engine.journal,engine.sessionState,engine.config.failureThreshold,engine.backupStore);
   engine.transactionAdapter=adapter;engine.requireTransactionAdapter=true;engine.historyToolsAvailable=true;
   const agent={session,options:{provider:'p',model:'m'},runMaintenance:fn=>fn(new AbortController().signal)};
   return {directory,root,backend,store,session,handle,engine,adapter,agent,add,calls:()=>calls,warnings:()=>warnings,
     async compact(){const seqs=session.surface.nodes.slice(1);return engine._compactRegionCore(seqs[0],seqs.at(-1),agent,new AbortController().signal,{manual:true,policy:engine.config});},
     detach(){detach?.();detach=null;},
+    async closeHandle(){if(!handleClosed){handleClosed=true;await handle.close();}},
     expectQuarantinedClose(){expectedHandleCloseFailure=true;},
-    async close(){delete adapter.checkpoint;engine.dispose();adapter.dispose();detach?.();if(expectedHandleCloseFailure)await assert.rejects(handle.close(),/writer quarantined/);else await handle.close();await mounting.dispose();}};
+    async close(){delete adapter.checkpoint;engine.dispose();adapter.dispose();detach?.();if(!handleClosed){handleClosed=true;if(expectedHandleCloseFailure)await assert.rejects(handle.close(),/writer quarantined/);else await handle.close();}await mounting.dispose();}};
 }
 
 await test('host-version-range-admits-rc1-rc2-rc3-and-03x-until-10',()=>{
@@ -202,6 +206,134 @@ await test('native-transaction-adapter-unavailable-falls-back-by-default',async(
     const stored=await f.backend.readStoredLog(f.backend.locate(f.session.header).path,f.session.id);
     assert.deepEqual(stored.events,f.session.snapshotEvents());
     assert.equal((await f.engine.journal.pending(f.session.id)).length,0);
+  }finally{await f.close();}
+});
+await test('native-transaction-bili-fold-adopt-zstd-reopen-and-backup-restore',async()=>{
+  const f=await fixture({compression:'zstd',seedDefaultTurn:false});
+  const sha=buf=>createHash('sha256').update(buf).digest('hex');
+  try{
+    // Turn 1: initial history later replaced by a foreign ranxianglei-authored-checkpoint
+    f.session.append('turn/start',{turn:1});
+    f.session.append('step/start',{turn:1,step:1});
+    f.add('system','Stable system prefix.',1,1);
+    const oldUser=f.add('user','Original pre-fold detail: secret-ticket-7741.',1,1);
+    const oldAsst=f.add('assistant','Handled secret-ticket-7741.',1,1);
+    f.session.append('step/end',{turn:1,step:1});
+    f.session.append('turn/end',{turn:1});
+
+    // Foreign ranxianglei-authored-checkpoint lifecycle (<bili-snapshot v1 ... /> in content[1])
+    const biliId='bili-authored-zstd-1';
+    const biliStart=f.session.append('compaction/start',{compactionId:biliId,turn:null});
+    const biliSummary=f.session.append('compaction/summary',{
+      compactionId:biliId,
+      summary:[{type:'text',text:'[Compressed conversation section]\nWorked on ticket 7741.'}],
+      shadowedRange:{start:oldUser.seq,end:oldAsst.seq},
+      shadowedSeqs:[oldUser.seq,oldAsst.seq],
+      shadowedTokenCount:120,
+      provider:'p',
+      model:'m',
+    });
+    f.session.append('user/message',{
+      id:randomUUID(),
+      role:'user',
+      content:[
+        {type:'text',text:'[Compressed conversation section]\nWorked on ticket 7741.'},
+        {type:'text',text:'<bili-snapshot v1 blocks="1" tokens="42000" />'},
+      ],
+      source:{kind:'compact-checkpoint',compactionId:biliId},
+    },{
+      surfaceOp:{op:'replace',startSeq:oldUser.seq,endSeq:oldAsst.seq},
+      sourceEventSeqs:[biliStart.seq,biliSummary.seq,oldUser.seq,oldAsst.seq],
+    });
+    f.session.append('compaction/end',{compactionId:biliId,turn:null});
+
+    // Turn 2: verified post-fold user message that must remain intact on the surface
+    f.session.append('turn/start',{turn:2});
+    f.session.append('step/start',{turn:2,step:1});
+    const postFoldUser=f.add('user','Post-fold verified requirement: keep audit logs enabled.',2,1);
+    f.add('assistant','Acknowledged.',2,1);
+    f.session.append('step/end',{turn:2,step:1});
+    f.session.append('turn/end',{turn:2});
+    await f.store.flush(f.session);
+
+    const targetPath=f.backend.locate(f.session.header).path;
+    assert.ok(targetPath.endsWith('.v4.jsonl.zstd'),`expected .v4.jsonl.zstd, got ${targetPath}`);
+    const preMigrateBytes=fs.readFileSync(targetPath);
+    assert.deepEqual([...preMigrateBytes.subarray(0,4)],[0x28,0xb5,0x2f,0xfd],'must be a real Zstandard frame');
+    const preMigrateSha=sha(preMigrateBytes);
+
+    const beforeDet=detectBiliSession(f.session);
+    assert.equal(beforeDet.detected,true);
+    assert.equal(beforeDet.variant,'ranxianglei-authored-checkpoint');
+
+    // Run real fold-adopt migration under StockTransactionAdapter
+    const migrated=await f.engine.migrateBiliSession(f.session,{
+      agent:f.agent,
+      sessions:f.store,
+      backend:f.backend,
+      sessionPersistence:f.backend,
+    });
+    assert.equal(migrated.completed,true);
+    assert.equal(f.calls(),0,'fold-adopt must use 0 LLM calls');
+    assert.equal(sha(fs.readFileSync(migrated.backupPath)),preMigrateSha,'backup SHA-256 must match pre-migration .v4.jsonl.zstd');
+    assert.deepEqual(fs.readdirSync(path.dirname(targetPath)),[path.basename(targetPath)],'zero foreign files allowed inside DSH session dir');
+
+    // Verify emitted compaction/summary omits llmStreamCall (DSH V4 payload validator rejects false)
+    const migratedCpId=migrated.compactionIds[0];
+    const summaryEv=f.session.snapshotEvents().find(e=>e.type==='compaction/summary'&&e.data?.compactionId===migratedCpId);
+    assert.ok(summaryEv,'fold-adopt must emit compaction/summary');
+    assert.equal(summaryEv.data.llmStreamCall,undefined);
+    assert.equal('llmStreamCall' in summaryEv.data,false);
+    assert.equal(detectBiliSession(f.session).detected,false);
+    assert.ok(f.session.surface.nodes.includes(postFoldUser.seq));
+    const archived=await f.engine.archive.readSpan(f.session.id,migratedCpId);
+    assert.equal(archived.ok,true);
+    assert.ok(archived.entries.some(e=>e.text.includes('secret-ticket-7741')));
+    assert.equal((await f.engine.journal.pending(f.session.id)).length,0);
+
+    // Real cold reopen through DSH V4 Zstandard decoder + V4 payload/relationship validator!
+    const expectedEvents=f.session.snapshotEvents();
+    const expectedNodes=[...f.session.surface.nodes];
+    f.detach();
+    await f.closeHandle();
+    const reopened=await f.backend.open(f.session.id,'write');
+    let reopenedClosed=false;
+    try{
+      const stored=await reopened.read();
+      assert.deepEqual(stored.events,expectedEvents);
+      const replay=Session.fromRestore(f.session.id,stored.events,reopened.header,reopened.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.deepEqual(replay.surface.nodes,expectedNodes);
+      assert.equal(detectBiliSession(replay).detected,false);
+
+      // Path B armed restore while writer is open -> close -> StockTransactionAdapter.recoverBeforeOpen restores .v4.jsonl.zstd byte-for-byte
+      const armed=await f.engine.restoreSessionBackupFor(f.session.id,{
+        backupId:migrated.backupId,
+        sessions:f.store,
+        backend:f.backend,
+        sessionPersistence:f.backend,
+        stockAdapter:f.adapter,
+      });
+      assert.equal(armed.status,'armed');
+      assert.equal(armed.requiresReopen,true);
+      assert.equal(f.adapter.blocked.has(f.session.id),true,'live writer must be quarantined while restore is armed');
+      await assert.rejects(reopened.persistContiguous(),/writer quarantined/);
+      reopenedClosed=true;
+      await reopened.close();
+    }finally{
+      if(!reopenedClosed)await reopened.close();
+    }
+
+    const restoredHandle=await f.backend.open(f.session.id,'write');
+    try{
+      assert.equal(f.adapter.blocked.has(f.session.id),false,'cold restore on reopen must clear quarantine');
+      assert.equal(sha(fs.readFileSync(targetPath)),preMigrateSha,'cold reopen must restore pre-migration .v4.jsonl.zstd byte-for-byte');
+      assert.deepEqual(fs.readdirSync(path.dirname(targetPath)),[path.basename(targetPath)],'zero foreign files after backup restore');
+      const restoredStored=await restoredHandle.read();
+      const restoredReplay=Session.fromRestore(f.session.id,restoredStored.events,restoredHandle.header,restoredHandle.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.equal(detectBiliSession(restoredReplay).detected,true);
+    }finally{
+      await restoredHandle.close();
+    }
   }finally{await f.close();}
 });
 

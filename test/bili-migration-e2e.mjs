@@ -599,6 +599,13 @@ await test('e2e-ranxianglei-authored-checkpoint-backup-migrate-and-recall', asyn
     assert.equal(cpSource.migrationVariant, 'ranxianglei-authored-checkpoint');
     assert.equal(cpSource.migrationBackupId, migrated.body.value.backupId);
     assert.equal(cpSource.externalSummaryUnverified, true);
+    // DSH V4 compaction/summary validator only allows llmStreamCall === true or omitted (never false)
+    const summaryEv = s.events.find(
+      (e) => e.type === 'compaction/summary' && e.data?.compactionId === cpSource.compactionId,
+    );
+    assert.ok(summaryEv, 'fold-adopt must emit compaction/summary');
+    assert.equal(summaryEv.data.llmStreamCall, undefined);
+    assert.equal('llmStreamCall' in summaryEv.data, false);
     // Post-fold verified user message still preserved on surface tail (outside replaced span)
     assert.ok(s.surface.nodes.includes(postFoldUser.seq));
 
@@ -701,6 +708,12 @@ await test('e2e-billion-context-dsh-heals-broken-pairing-closes-stale-lock-and-r
     // Archive is readable despite foreign non-sha256 image placeholder (allowForeignFallback)
     const span = await host.engine.archive.readSpan(s.session.id, res.body.value.compactionIds[0]);
     assert.equal(span.ok, true);
+    const dshSummaryEv = s.events.find(
+      (e) => e.type === 'compaction/summary' && e.data?.compactionId === res.body.value.compactionIds[0],
+    );
+    assert.ok(dshSummaryEv);
+    assert.equal(dshSummaryEv.data.llmStreamCall, undefined);
+    assert.equal('llmStreamCall' in dshSummaryEv.data, false);
 
     // Tripped breaker reset on success
     assert.equal(host.engine.sessionState.read(s.session.id).stopped, false);
