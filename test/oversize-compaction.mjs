@@ -675,10 +675,14 @@ await test('continuation-guards-content-and-dedupes-system-reminders', () => {
     },
     { surfaceOp: 'append' },
   );
-  // Tool result containing literal <system-reminder> must NOT be deduplicated/mutated
+  // Non-user (assistant) messages repeating <system-reminder> are deduplicated by sourcePages
+  const a1 = f.addAssistant(`${repeatedReminder}\nAssistant step one.`);
+  const a2 = f.addAssistant(`${repeatedReminder}\nAssistant step two.`);
+  const a3 = f.addAssistant(`${repeatedReminder}\nAssistant step three.`);
+  // Tool result containing literal <system-reminder> must NOT be deduplicated/mutated by deduplicateSystemReminders
   const tool1 = f.addToolTurn(`${repeatedReminder}\nraw tool output`, { callId: 'tool-rem' });
 
-  const seqs = [u1.seq, u2.seq, u3.seq, u4.seq, u5.seq, tool1.resEvent.seq];
+  const seqs = [u1.seq, u2.seq, u3.seq, u4.seq, u5.seq, a1.seq, a2.seq, a3.seq, tool1.resEvent.seq];
   const pages = sourcePages(f.session, seqs, 10000);
   const joined = pages.join('\n');
 
@@ -687,11 +691,15 @@ await test('continuation-guards-content-and-dedupes-system-reminders', () => {
   assert.ok(joined.includes('Third real user task.'));
   assert.ok(joined.includes('Plain string user content.'));
   assert.ok(joined.includes('After null blocks.'));
-  assert.ok(joined.includes(`Repeated system-reminder; identical content at seq ${u1.seq}`));
+  assert.ok(joined.includes('Assistant step one.'));
+  assert.ok(joined.includes('Assistant step two.'));
+  assert.ok(joined.includes('Assistant step three.'));
+  assert.ok(joined.includes(`External system-reminder (Instructions from: AGENTS.md) omitted at source seq ${u1.seq}`));
+  assert.ok(joined.includes(`Repeated system-reminder; identical content at seq ${a1.seq}`));
   assert.ok(joined.includes('raw tool output'));
 
-  // Without deduplication, 3 user copies + 1 tool copy of 5KB reminder = ~20KB;
-  // deduplicating u2 and u3 removes ~10KB of duplicate reminder text.
+  // Assistant copies a2 and a3 are deduplicated down to short pointers while u1..u3 are
+  // compacted even more tightly by projectSummaryMessage.
   const repeatedCount = (joined.match(/Repeated system-reminder; identical content/g) ?? []).length;
   assert.equal(repeatedCount, 2);
 });

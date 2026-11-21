@@ -17,12 +17,19 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 | Additional retries | `summaryRetryCount` | 2 | 0–4 |
 | Base delay | `summaryRetryDelayMs` | 1000 | 0–30000 ms |
 | Per-request timeout | `summaryTimeoutMs` | 180000 | 5000–3600000 ms |
+| Block on requirement loss | `auditBlockOnLoss` | `true` (on) | On / Off |
 
 The UI displays timing in seconds; configuration fields use milliseconds. A retry count of 2 allows up to 3 attempts for each unfinished summary or page. Consecutive retries use exponential backoff, capped at 30 seconds.
 
-Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry and idle settings, including unsaved edits.
+Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry, idle, and audit-blocking settings, including unsaved edits.
 
-**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings all apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
+**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings (as well as `auditBlockOnLoss`) all hot-apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
+
+### Requirement audit & live progress card
+
+- **`auditBlockOnLoss` (on by default)**: Retries and blocks summaries or continuations that drop active user requirements. Weave automatically filters `<system-reminder>`, `AGENTS.md`, and first-party DSH V4 host reminders (while preserving real user prose in mixed messages) to prevent false rejections. If a long session still hits retention rejections, you can toggle this off live in Settings; Section 6 verbatim quotes, polarity-flip blocking, approval provenance checks, and progress-fact conflict checks remain strictly enforced.
+- **Live compaction progress card**: During automatic compaction, manual `/compact`, paged continuation, or compatibility conversion, a live progress card appears above the composer showing the current phase, progress bar, wave/chunk/page counters, attempt count, summary model, token delta, masked tool count, stream liveness, and elapsed timer. When idle (and no migration is needed), the card stays hidden.
+- **`billion-context` compatibility conversion & verified backups**: The **Convert to Weave** row appears ONLY when unmigrated `billion-context` / `billion-context-dsh` fold blocks or tool artifacts are actually detected in the current session (strictly absent on ordinary or already-converted sessions). Before any irreversible conversion mutates the session, Weave creates and SHA-256 verifies a raw-byte full-session backup under `<DSH_HOME>/storages/dsh-compaction-weave/backups/` (preserving exact `.v4.jsonl.zstd` / `.v4.jsonl` encoding with zero foreign files written into DSH's session directory). Equivalent slash subcommands are available via `/compact migrate`, `/compact backups`, and `/compact restore [backupId]`.
 
 First installation or plugin upgrades still require a host reload as prompted by DSH to load the new code. The no-restart behavior above applies to changes on the summary settings page.
 
