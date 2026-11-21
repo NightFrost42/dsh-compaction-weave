@@ -49,10 +49,11 @@ Diagnostic files and logs are optional. For errors, you can attach a reviewed co
 
 To update a local package in Desktop, uninstall the existing Weave package on the Plugins page, install the new package via “Add plugin,” and restart DSH. Archives and summary settings in the independent storage directory are preserved.
 
-For a command-line profile, stop the profile before upgrading or removing the package:
+For a command-line profile, stop the profile before upgrading from npm or a local `.tgz` package, or removing it:
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.3.tgz
+dsh plugin --profile web add dsh-compaction-weave
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.4.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

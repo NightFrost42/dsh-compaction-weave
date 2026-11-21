@@ -1,5 +1,11 @@
 # 更新记录
 
+## 0.3.4 — 2026-11-21
+
+- **npm `latest` 分发渠道与双语文档更新**：在 `README.md` 与 `README.en.md` 顶部加入绑定 `latest` 标签的 npm 徽章，将推荐安装与升级方式调整为直接安装 npm 包 `dsh-compaction-weave`（`dsh plugin --profile web add dsh-compaction-weave`，自动接收更新提示并免 `allowBuilds`），保留离线 `.tgz` 方案并同步更新 `docs/troubleshooting.md`、`docs/en/troubleshooting.md` 升级命令示例。
+- **自动发版工作流（`.github/workflows/release.yml`）**：推送与 `package.json` 匹配的 `v<version>` 标签后自动运行 Windows / Linux 校验与 DSH 宿主兼容矩阵，并通过 npm OIDC Trusted Publishing（自动生成 Provenance 溯源证明，免长期 `NPM_TOKEN`）发布到 `latest`（或预发布 `next`），同时创建或更新 GitHub Release（`--latest` + 全部 5 个产物含无版本号 `dsh-compaction-weave.tgz`）；支持 `workflow_dispatch` 的 `dry_run` 预演。
+- **发布文档路径修正**：更新 `docs/development.md` 与 `docs/en/development.md` 中的手动发布命令示例为 `./dist/...` 相对路径前缀（适配 npm 11+），并补充 Trusted Publishing 配置说明。
+
 ## 0.3.3 — 2026-11-21
 
 - **修复技术术语被误判为数值约束（[#1](https://github.com/NightFrost42/dsh-compaction-weave/issues/1)）**：在 `lib/audit.js` 中为 `numericFacts` 与 `scalarRequirement` 增加 `isNonQuantityTechTerm` 校验：紧贴数字的大写单字母时长符号（如 `3D`、`2D`、`3M`、`6S`、`2H`）不再被当作时长单位（小写 `3d`/`30s`/`5m`/`2h` 与 `3 days`/`3天` 保持不变）；缺少存储/内存/配额类上下文的独立 `5G` 不再被当作 `5gb`（`备份上限 5G`、`5GB` 及 `25G`/`8GB` 等真实容量约束不受影响）。

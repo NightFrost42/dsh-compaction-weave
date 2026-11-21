@@ -49,10 +49,11 @@
 
 桌面端更新本地安装包时，先在“插件”页卸载已安装的旧版 Weave，再通过“添加插件”安装新包并重启 DSH。独立存储目录中的历史归档与摘要设置会自动保留。
 
-命令行 profile 停止后可执行覆盖升级或卸载：
+命令行 profile 停止后可通过 npm 覆盖升级，或指定本地 `.tgz` 路径卸载/升级：
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.3.tgz
+dsh plugin --profile web add dsh-compaction-weave
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.4.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 
