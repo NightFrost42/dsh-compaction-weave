@@ -899,7 +899,12 @@ await test('dsh-real-css-tokens-compact-card-and-zero-dead-alias-tokens', async 
   h.render({ sessionId: 'sess-tokens' });
   let tree = await h.settle();
 
-  // Compact card metrics
+  // Compact card metrics & composer width alignment
+  assert.equal(tree.props.style.width, 'calc(100% - 2 * var(--dsh-composer-side-clearance, 16px))');
+  assert.equal(tree.props.style.maxWidth, 'var(--dsh-composer-card-max-width, 760px)');
+  assert.equal(tree.props.style.margin, '0 auto');
+  assert.equal(tree.props.style.alignSelf, 'center');
+  assert.equal(tree.props.style.boxSizing, 'border-box');
   assert.equal(tree.props.style.padding, '6px 10px');
   assert.equal(tree.props.style.gap, 5);
   assert.equal(tree.props.style.fontSize, 12);
