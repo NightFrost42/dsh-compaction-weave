@@ -841,6 +841,18 @@ await test('w4-08-concurrent-overlap-ordered-commit-429-aimd-401-abort-and-effor
     },
   });
   try {
+    const chunkUpdates = [];
+    const tokenUpdates = [];
+    const origUpdateA = fxA.engine.progressTracker.update.bind(fxA.engine.progressTracker);
+    fxA.engine.progressTracker.update = (sid, patch, opts) => {
+      if (Number.isInteger(patch?.chunkIndex)) {
+        chunkUpdates.push({ index: patch.chunkIndex, total: patch.chunkTotal ?? null, phase: patch.phase ?? null });
+      }
+      if (Number.isFinite(patch?.currentTokens)) {
+        tokenUpdates.push(patch.currentTokens);
+      }
+      return origUpdateA(sid, patch, opts);
+    };
     const res = await fxA.engine.compactNow(fxA.agent, new AbortController().signal);
     assert.ok(res);
     assert.ok(fxA.calls.length >= 4, `expected >= 4 chunks, got ${fxA.calls.length}`);
@@ -848,6 +860,25 @@ await test('w4-08-concurrent-overlap-ordered-commit-429-aimd-401-abort-and-effor
     assert.ok(
       fxA.calls.every((c) => c.reasoningEffort === 'low'),
       `all same-route summary calls must downgrade reasoningEffort high->low, got ${fxA.calls.map((c) => c.reasoningEffort)}`,
+    );
+
+    // Verify chunkIndex/chunkTotal and currentTokens advance monotonically as concurrent chunks commit
+    const concurrentIndices = chunkUpdates.filter((u) => u.total !== null && u.total >= 4);
+    const distinctIndices = [...new Set(concurrentIndices.map((u) => u.index))];
+    assert.ok(
+      distinctIndices.length >= 3 && distinctIndices.includes(2) && distinctIndices.includes(3) && distinctIndices.includes(4),
+      `chunkIndex must advance monotonically (2 -> 3 -> 4...), got ${JSON.stringify(concurrentIndices)}`,
+    );
+    for (let i = 1; i < concurrentIndices.length; i += 1) {
+      assert.ok(
+        concurrentIndices[i].index >= concurrentIndices[i - 1].index,
+        `chunkIndex must never regress during concurrent commits: ${JSON.stringify(concurrentIndices)}`,
+      );
+      assert.equal(concurrentIndices[i].total, concurrentIndices[0].total, 'chunkTotal must stay stable across concurrent wave');
+    }
+    assert.ok(
+      tokenUpdates.length >= 2 && tokenUpdates.at(-1) < tokenUpdates[0],
+      `currentTokens must refresh downward across commits, got ${JSON.stringify(tokenUpdates)}`,
     );
 
     // Verify strictly ascending shadowedRange commit order in session event log
