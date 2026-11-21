@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Weave Context Compaction",
-    "description": "Cache-friendly incremental summaries with requirement and progress retention, history lookup, resumable pages, and failure retries."
+    "description": "Cache-friendly incremental summaries with requirement and progress retention, live progress display, history lookup, resumable pages, failure retries, and billion-context migration with full backup."
   }
 }
