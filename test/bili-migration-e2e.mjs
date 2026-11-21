@@ -1012,7 +1012,19 @@ await test('e2e-slash-compact-migrate-backups-restore-and-preserve-default', asy
     assert.match(listOut.text, /共有 1 份/);
     assert.match(listOut.text, /bkp-/);
 
-    // /compact restore (live session -> armed + requiresReopen guidance)
+    // /compact restore on live session without transactionAdapter rejects with BACKUP_RESTORE_UNAVAILABLE
+    const unavailableOut = await decorated.handler({ rawInput: '/compact restore', agent, signal: new AbortController().signal });
+    assert.equal(unavailableOut.kind, 'error');
+    assert.match(unavailableOut.text, /BACKUP_RESTORE_UNAVAILABLE|离线还原/);
+
+    // /compact restore with transactionAdapter attached arms cleanly + requiresReopen guidance
+    host.engine.transactionAdapter = {
+      blocked: new Set(),
+      quarantine(id, handle) {
+        this.blocked.add(id);
+        if (handle) handle.persistContiguous = async () => { throw new Error('quarantined'); };
+      },
+    };
     const restoreOut = await decorated.handler({ rawInput: '/compact restore', agent, signal: new AbortController().signal });
     assert.equal(restoreOut.kind, 'success');
     assert.match(restoreOut.text, /备份还原已就绪/);
