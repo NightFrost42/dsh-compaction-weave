@@ -57,7 +57,7 @@
 
 ```bash
 dsh plugin --profile web add dsh-compaction-weave
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.0.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.1.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

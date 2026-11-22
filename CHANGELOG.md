@@ -1,5 +1,12 @@
 # 更新记录
 
+## [0.4.1] - 2026-11-22
+
+- **修复多块自动压缩过早触发接续死锁（`compactIfNeeded`）**：在 `compactIfNeeded` 串行与并发多块压缩路径中，只有当上下文降至 `<= reductionTarget`（或剩余可压分块耗尽 / 未能继续缩减）时才结束批处理，并将 `_compactChunksConcurrent` 的 `stopBelowTokens` 设为 `reductionTarget + 1`；避免第 0 块刚跌破 `thresholdTokens` 但仍高于 `reductionTarget` 时提前退出批处理并误触发分页接续。
+- **修复零进度 `continuationPending` 锁死普通 `/compact`**：新增 `_readPendingContinuationAcceptedPages` 读取磁盘 `continuation-progress` 已接受页数（损坏或校验异常时严格 fail-closed 不清理）；当普通手动 `/compact`（非接续/闲置/主动/显式范围且非既有接续会话）遇到 `acceptedPages === 0` 的残留锁时自动解除内存状态锁（保留磁盘账本）并按普通分块压缩完成；当自动压缩已提交分块后可选接续在 Page 0（`acceptedPages === 0`）失败且上下文低于 `thresholdTokens` 时同步清理零进度锁。
+- **修复已暂停/耗尽接续状态低于阈值时误阻断日常对话（`agent/pre-step`）**：当 `resumableCompaction` 处于 `paused_budget`/`paused_failure` 或遭遇零新请求耗尽的 `CONTINUATION_CALL_BUDGET` / `COMPACTION_STOPPED` 时，只要当前上下文低于 `thresholdTokens` 即记录告警并放行用户消息正常对话（零额外模型调用），同时严格保持 `>= thresholdTokens` 与直接调用 `compactIfNeeded('pressure')` 的阻断与预算校验不变。
+- **回归测试**：新增 `test/hotfix-continuation-trap.mjs`，离线与宿主集成测试扩展至 **64 套**。
+
 ## 0.4.0 — 2026-11-22
 
 - **实时压缩进度卡片与统一中断续压（方案 A）**：在对话输入框上方（`conversation.input.dock`）新增与输入框等宽、适配 DSH 主题变量的实时进度卡片，支持单调总进度、块号/Token 实时刷新与主动 `[暂停]`；手动、自动、闲置压缩或迁移中断后均持久化断点，打开会话即见进度与 `[继续压缩]/[继续转换]`/`[放弃]`，继续发消息自动从断点接续（严格遵守分页预算与失败熔断红线）；新增 `/compact resume`、`/compact cancel`、`/compact discard`。
