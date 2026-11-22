@@ -8,7 +8,7 @@ import {StockTransactionAdapter} from '../../lib/transaction.js';
 import {WeaveCompactionEngine} from '../../lib/engine.js';
 import {readResumableCompaction,writeResumableCompaction} from '../../lib/state.js';
 import {detectBiliSession} from '../../lib/foreign-fold.js';
-import {planObservationMask,commitObservationMask} from '../../lib/observation-mask.js';
+import {planObservationMask,commitObservationMask,PERSISTED_OUTPUT_MARKER,MICROCOMPACT_SUPERSEDED_MARKER,OBSERVATION_MASK_MARKER} from '../../lib/observation-mask.js';
 import {resolveConfig} from '../../lib/config.js';
 import {approxTokens,blocksToText} from '../../lib/meter.js';
 
@@ -760,6 +760,211 @@ await test('native-transaction-zstd-phase-a-reinject-focus-and-cordis-hooks-reop
       await f.close();
     }
   }finally{fs.rmSync(workspaceDir,{recursive:true,force:true});}
+});
+await test('native-transaction-zstd-phase-b-persisted-output-and-microcompact-reopen',async()=>{
+  const f=await fixture({compression:'zstd',seedDefaultTurn:false});
+  const realNow=Date.now;
+  let phaseBEngine=null;
+  try{
+    const hooks=new Map();
+    let llmCalls=0;
+    const phaseBCtx={
+      on(name,fn){hooks.set(name,fn);return ()=>hooks.delete(name);},
+      provide(){},
+      get(){return undefined;},
+      logger:{info(){},warn(){}},
+      sessions:{flush:s=>f.store.flush(s),get:id=>f.store.get(id)},
+      sessionPersistence:f.backend,
+      tokenMeter:{
+        measure(s){
+          const nodes=s.surface.nodes.map(seq=>{
+            const tokens=Math.max(1,approxTokens(blocksToText(s.deriveEventMessage(s.eventAt(seq))?.content)));
+            return {seq,tokens,heuristicTokens:tokens};
+          });
+          return {nodes,totalTokens:nodes.reduce((n,x)=>n+x.tokens,0),baseline:{kind:'heuristic'}};
+        },
+        estimateMessage(m){return Math.max(1,approxTokens(blocksToText(m?.content)));},
+      },
+      llm:{
+        async resolveModelInfo(){return {contextWindow:200000,maxOutputTokens:4096};},
+        async *stream(){llmCalls++;yield {type:'text-delta',text:summary};yield {type:'finish',kind:'stop'};},
+      },
+    };
+    const cfg=resolveConfig({
+      archiveDir:path.join(f.directory,'weave-phase-b','archive'),
+      language:'en',
+      auto:false,
+      proactiveEnabled:false,
+      idleCompactionMinutes:30,
+      persistedOutputEnabled:true,
+      persistedOutputThresholdChars:32768,
+      persistedOutputHeadChars:1200,
+      persistedOutputTailChars:1200,
+      microcompactEnabled:true,
+      microcompactKeepRecentTools:2,
+      microcompactThresholdChars:2000,
+      microcompactHeadChars:200,
+      microcompactTailChars:200,
+      microcompactRepeatedReadMinChars:2000,
+      minimumReductionRatio:0.2,
+      idleFullSummaryEnabled:true,
+    }).config;
+    phaseBEngine=new WeaveCompactionEngine(phaseBCtx,cfg);
+    phaseBEngine.transactionAdapter=f.adapter;
+    phaseBEngine.requireTransactionAdapter=true;
+    phaseBEngine.historyToolsAvailable=true;
+
+    const agent={
+      session:f.session,
+      inbox:{nextStep:[],nextTurn:[],prepend(target,m){this.nextStep.unshift(m);}},
+      options:{provider:'p',model:'m'},
+      runMaintenance:fn=>fn(new AbortController().signal),
+    };
+    const preStep=hooks.get('agent/pre-step');
+    assert.equal(typeof preStep,'function');
+
+    const dupOldText='V4_DUP_OLD_V1_'+'D'.repeat(6000);
+    const oldShellText='V4_OLD_SHELL_HEAD_'+'S'.repeat(6000)+'_V4_OLD_SHELL_TAIL';
+    const dupNewText='V4_DUP_NEW_V2_'+'N'.repeat(2500);
+    const hugeTailText='V4_TAIL_SPILL_HEAD_'+'X'.repeat(38000)+'_V4_TAIL_SPILL_TAIL';
+
+    let trDupOld,trOldShell,trDupNew,trHugeTail;
+    const callDupOld='call-v4-dup-old',callOldShell='call-v4-old-shell',callDupNew='call-v4-dup-new',callHugeTail='call-v4-huge-tail';
+
+    // Turn 1 runs 40 minutes ago: test Persisted-Output tail spill against real DSH V4 Session.append!
+    Date.now=()=>realNow()-40*60_000;
+    try{
+      f.session.append('turn/start',{turn:1});
+      f.session.append('step/start',{turn:1,step:1});
+      f.add('system','Stable system prefix.',1,1);
+      f.add('user','Inspect workspace logs and source files.',1,1);
+      f.session.append('assistant/message',{turn:1,step:1,stream:[],usage:{inputTokens:0,outputTokens:0},message:{
+        id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},
+        content:[
+          {type:'tool-call',id:callDupOld,name:'read_file',arguments:JSON.stringify({path:'src/dup.js'})},
+          {type:'tool-call',id:callOldShell,name:'run_command',arguments:JSON.stringify({command:'npm run lint'})},
+        ],
+      }},{surfaceOp:'append'});
+      const tcDupOld=f.session.append('tool/call',{turn:1,step:1,callId:callDupOld,name:'read_file',arguments:JSON.stringify({path:'src/dup.js'})});
+      trDupOld=f.session.append('tool/result',{turn:1,step:1,message:{
+        id:randomUUID(),role:'tool',toolCallId:callDupOld,source:{kind:'tool',callId:callDupOld},
+        content:[{type:'text',text:dupOldText}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcDupOld.seq]});
+      const tcOldShell=f.session.append('tool/call',{turn:1,step:1,callId:callOldShell,name:'run_command',arguments:JSON.stringify({command:'npm run lint'})});
+      trOldShell=f.session.append('tool/result',{turn:1,step:1,message:{
+        id:randomUUID(),role:'tool',toolCallId:callOldShell,source:{kind:'tool',callId:callOldShell},
+        content:[{type:'text',text:oldShellText}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcOldShell.seq]});
+      f.session.append('step/end',{turn:1,step:1});
+
+      f.session.append('step/start',{turn:1,step:2});
+      f.session.append('assistant/message',{turn:1,step:2,stream:[],usage:{inputTokens:0,outputTokens:0},message:{
+        id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},
+        content:[
+          {type:'tool-call',id:callDupNew,name:'read_file',arguments:JSON.stringify({path:'src/dup.js'})},
+          {type:'tool-call',id:callHugeTail,name:'run_command',arguments:JSON.stringify({command:'cat huge.log'})},
+        ],
+      }},{surfaceOp:'append'});
+      const tcDupNew=f.session.append('tool/call',{turn:1,step:2,callId:callDupNew,name:'read_file',arguments:JSON.stringify({path:'src/dup.js'})});
+      trDupNew=f.session.append('tool/result',{turn:1,step:2,message:{
+        id:randomUUID(),role:'tool',toolCallId:callDupNew,source:{kind:'tool',callId:callDupNew},
+        content:[{type:'text',text:dupNewText}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcDupNew.seq]});
+      const tcHugeTail=f.session.append('tool/call',{turn:1,step:2,callId:callHugeTail,name:'run_command',arguments:JSON.stringify({command:'cat huge.log'})});
+      trHugeTail=f.session.append('tool/result',{turn:1,step:2,message:{
+        id:randomUUID(),role:'tool',toolCallId:callHugeTail,source:{kind:'tool',callId:callHugeTail},
+        content:[{type:'text',text:hugeTailText}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcHugeTail.seq]});
+
+      // Fire real agent/pre-step inside open Turn 1 right after Step 2 tool results landed -> Persisted-Output spills hugeTail!
+      let step1Entered=false;
+      await preStep({agent,signal:new AbortController().signal,messages:[]},async()=>{step1Entered=true;return {kind:'enter'};});
+      assert.equal(step1Entered,true);
+      assert.equal(llmCalls,0);
+      // Historical step 1 tool results untouched; huge tail spilled!
+      assert.ok(f.session.surface.nodes.includes(trDupOld.seq),'prior step dup read must stay untouched by Persisted-Output');
+      assert.ok(f.session.surface.nodes.includes(trOldShell.seq),'prior step shell must stay untouched by Persisted-Output');
+      assert.ok(f.session.surface.nodes.includes(trDupNew.seq),'under-threshold tail read must stay untouched');
+      assert.ok(!f.session.surface.nodes.includes(trHugeTail.seq),'huge tail tool/result must be spilled');
+
+      f.session.append('step/end',{turn:1,step:2});
+      f.session.append('step/start',{turn:1,step:3});
+      f.add('assistant','Turn 1 complete.',1,3);
+      f.session.append('step/end',{turn:1,step:3});
+      f.session.append('turn/end',{turn:1});
+      await f.store.flush(f.session);
+    }finally{
+      Date.now=realNow;
+    }
+
+    // Turn 2 arrives 40 minutes later -> Time-Based Microcompact folds dupOld + oldShell with 0 LLM calls!
+    const resumeMsg={id:randomUUID(),role:'user',source:{kind:'user'},content:[{type:'text',text:'Resume after 40 minutes.'}]};
+    f.session.append('agent/inbox/spliced',{target:'next-turn',start:0,removedCount:0,inserted:[resumeMsg]});
+    f.session.append('turn/start',{turn:2});
+    let step2Entered=false;
+    await preStep({agent,signal:new AbortController().signal,messages:[resumeMsg]},async()=>{step2Entered=true;return {kind:'enter'};});
+    assert.equal(step2Entered,true);
+    assert.equal(llmCalls,0,'Time-Based Microcompact must skip full idle LLM summary (0 LLM calls)');
+    f.session.append('step/start',{turn:2,step:1});
+    f.add('assistant','Continuing cleanly after microcompact.',2,1);
+    f.session.append('step/end',{turn:2,step:1});
+    f.session.append('turn/end',{turn:2});
+    await f.store.flush(f.session);
+
+    const targetPath=f.backend.locate(f.session.header).path;
+    assert.ok(targetPath.endsWith('.v4.jsonl.zstd'),`expected .v4.jsonl.zstd, got ${targetPath}`);
+    assert.deepEqual([...fs.readFileSync(targetPath).subarray(0,4)],[0x28,0xb5,0x2f,0xfd],'must persist a real Zstandard frame');
+
+    // Verify all 3 rewritten tool results + preserved hot tool result on live surface AND exact archived originals!
+    const findToolText=(callId)=>{
+      const seq=f.session.surface.nodes.find(s=>{
+        const ev=f.session.eventAt(s);
+        return ev?.type==='tool/result'&&ev.data?.message?.toolCallId===callId;
+      });
+      assert.ok(typeof seq==='number',`expected live tool/result for ${callId}`);
+      return blocksToText(f.session.deriveEventMessage(f.session.eventAt(seq)).content);
+    };
+    const spilledStub=findToolText(callHugeTail);
+    const dupStub=findToolText(callDupOld);
+    const shellStub=findToolText(callOldShell);
+    const hotDupText=findToolText(callDupNew);
+
+    assert.ok(spilledStub.includes(PERSISTED_OUTPUT_MARKER),'huge tail must have PERSISTED_OUTPUT_MARKER');
+    assert.ok(spilledStub.includes('V4_TAIL_SPILL_HEAD_')&&spilledStub.includes('_V4_TAIL_SPILL_TAIL'));
+    assert.ok(dupStub.includes(MICROCOMPACT_SUPERSEDED_MARKER),'older duplicate read must have MICROCOMPACT_SUPERSEDED_MARKER');
+    assert.ok(shellStub.includes(OBSERVATION_MASK_MARKER),'older oversized shell must have OBSERVATION_MASK_MARKER');
+    assert.equal(hotDupText,dupNewText,'newest hot read must stay verbatim on surface');
+
+    const spillId=/compactionId:\s*"([^"]+)"/.exec(spilledStub)?.[1];
+    const microId=/compactionId:\s*"([^"]+)"/.exec(dupStub)?.[1];
+    assert.ok(spillId&&microId);
+    const spillArchive=await phaseBEngine.archive.readSpan(f.session.id,spillId);
+    assert.equal(spillArchive.ok,true);
+    assert.equal(spillArchive.entries.find(e=>e.seq===trHugeTail.seq)?.text,hugeTailText);
+    const microArchive=await phaseBEngine.archive.readSpan(f.session.id,microId);
+    assert.equal(microArchive.ok,true);
+    assert.equal(microArchive.entries.find(e=>e.seq===trDupOld.seq)?.text,dupOldText);
+    assert.equal(microArchive.entries.find(e=>e.seq===trOldShell.seq)?.text,oldShellText);
+
+    assert.deepEqual(nonLockEntries(path.dirname(targetPath)),[path.basename(targetPath)],'zero leftover plugin files allowed inside DSH session dir');
+
+    // Reopen from real .v4.jsonl.zstd and verify exact Session.fromRestore replay!
+    const expectedEvents=f.session.snapshotEvents();
+    const expectedNodes=[...f.session.surface.nodes];
+    f.detach();
+    await f.closeHandle();
+    const reopened=await f.backend.open(f.session.id,'write');
+    try{
+      const stored=await reopened.read();
+      assert.deepEqual(stored.events,expectedEvents);
+      const replay=Session.fromRestore(f.session.id,stored.events,reopened.header,reopened.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.deepEqual(replay.surface.nodes,expectedNodes);
+    }finally{await reopened.close();}
+  }finally{
+    Date.now=realNow;
+    phaseBEngine?.dispose();
+    await f.close();
+  }
 });
 
 console.log(JSON.stringify({passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,results},null,2));
