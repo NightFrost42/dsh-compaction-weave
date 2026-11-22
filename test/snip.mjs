@@ -609,10 +609,39 @@ await test('archive-first-ordering-abort-cleanup-drift-and-commit-error-tagging'
     assert.equal(flushed, 1);
     assert.deepEqual(trace, [
       `archive:${plan1.spans[0].compactionId}`,
-      'append:compaction/prune',
+      'append:compaction/start',
+      'append:compaction/summary',
       'append:user/message',
+      'append:compaction/end',
       'flush',
     ]);
+
+    // 1b. Active unmatched compaction/start prevents snipping with zero archive writes or event appends
+    const fOpenComp = makeFixture({ openTurn: 1 });
+    fOpenComp.addSystem('System');
+    fOpenComp.addUser('Turn 1');
+    const tcOpen = fOpenComp.addAssistantToolCalls([{ name: 'read_file', args: { path: 'lib/open.js' } }]);
+    fOpenComp.addToolResult(tcOpen.callEvents[0], tokStr(2500));
+    fOpenComp.addUser('Turn 2 ' + tokStr(5000));
+    fOpenComp.addAssistant('Reply 2 ' + tokStr(5000));
+    const planOpen = planSnip(fOpenComp.session, fOpenComp.measure(), { keepRecentTurns: 1 });
+    assert.ok(planOpen);
+    fOpenComp.session.append('compaction/start', { compactionId: 'weave-existing-open', turn: 1 });
+    let openArchiveWrites = 0;
+    const eventsBeforeOpen = fOpenComp.events.length;
+    const openRes = await commitSnip({
+      session: fOpenComp.session,
+      plan: planOpen,
+      archive: {
+        async writeSpan() {
+          openArchiveWrites += 1;
+          return 'unexpected';
+        },
+      },
+    });
+    assert.equal(openRes, null, 'unmatchedCompactionStart must refuse commitSnip');
+    assert.equal(openArchiveWrites, 0, 'unmatchedCompactionStart must perform zero archive writes');
+    assert.equal(fOpenComp.events.length, eventsBeforeOpen, 'unmatchedCompactionStart must append zero events');
 
     // 2. Abort DURING archive.writeSpan deletes orphan archive file & leaves surface untouched
     const f2 = makeFixture({ openTurn: 1 });

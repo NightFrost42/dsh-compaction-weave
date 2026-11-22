@@ -9,6 +9,7 @@ import {WeaveCompactionEngine} from '../../lib/engine.js';
 import {readResumableCompaction,writeResumableCompaction} from '../../lib/state.js';
 import {detectBiliSession} from '../../lib/foreign-fold.js';
 import {planObservationMask,commitObservationMask,PERSISTED_OUTPUT_MARKER,MICROCOMPACT_SUPERSEDED_MARKER,OBSERVATION_MASK_MARKER} from '../../lib/observation-mask.js';
+import {planSnip,commitSnip} from '../../lib/snip.js';
 import {resolveConfig} from '../../lib/config.js';
 import {approxTokens,blocksToText} from '../../lib/meter.js';
 
@@ -1287,6 +1288,126 @@ await test('native-transaction-zstd-phase-c-expired-ttl-context-collapse-and-reo
   }finally{
     Date.now=realNow;
     phaseCEngine?.dispose();
+    await f.close();
+  }
+});
+
+await test('native-transaction-phase-d-snip-v4-zstd-reopen-and-archive',async()=>{
+  const f=await fixture({compression:'zstd',seedDefaultTurn:false});
+  try{
+    const call1='call-snip-v4-1';
+    const call2='call-snip-v4-2';
+    // Turn 1 (closed): system head + verified user rule + large old tool loop
+    f.session.append('turn/start',{turn:1});
+    f.session.append('step/start',{turn:1,step:1});
+    const sys=f.add('system','Stable system prefix.',1,1);
+    const ruleUser=f.add('user','Never disable strict WAL durability.',1,1);
+    f.session.append('assistant/message',{turn:1,step:1,stream:[],usage:{inputTokens:0,outputTokens:0},message:{
+      id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},
+      content:[{type:'tool-call',id:call1,name:'read_file',arguments:JSON.stringify({path:'src/db.js'})}],
+    }},{surfaceOp:'append'});
+    const tc1=f.session.append('tool/call',{turn:1,step:1,callId:call1,name:'read_file',arguments:JSON.stringify({path:'src/db.js'})});
+    const tr1=f.session.append('tool/result',{turn:1,step:1,message:{
+      id:randomUUID(),role:'tool',toolCallId:call1,source:{kind:'tool',callId:call1},
+      content:[{type:'text',text:'V4_SNIP_TOOL_ONE_'+'A'.repeat(16000)+'_END_ONE'}],
+    }},{surfaceOp:'append',sourceEventSeqs:[tc1.seq]});
+    f.session.append('assistant/message',{turn:1,step:1,stream:[],usage:{inputTokens:0,outputTokens:0},message:{
+      id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},
+      content:[{type:'tool-call',id:call2,name:'run_command',arguments:JSON.stringify({command:'npm test'})}],
+    }},{surfaceOp:'append'});
+    const tc2=f.session.append('tool/call',{turn:1,step:1,callId:call2,name:'run_command',arguments:JSON.stringify({command:'npm test'})});
+    const tr2=f.session.append('tool/result',{turn:1,step:1,message:{
+      id:randomUUID(),role:'tool',toolCallId:call2,source:{kind:'tool',callId:call2},
+      content:[{type:'text',text:'V4_SNIP_TOOL_TWO_'+'B'.repeat(16000)+'_END_TWO'}],
+    }},{surfaceOp:'append',sourceEventSeqs:[tc2.seq]});
+    f.session.append('step/end',{turn:1,step:1});
+    f.session.append('turn/end',{turn:1});
+
+    // Turn 2 (closed): protected recent turn 1
+    f.session.append('turn/start',{turn:2});
+    f.session.append('step/start',{turn:2,step:1});
+    const recentU1=f.add('user','Recent user turn 1: verify schema checksums. '+'T1 '.repeat(1200),2,1);
+    const recentA1=f.add('assistant','Checked schema checksums cleanly. '+'R1 '.repeat(1200),2,1);
+    f.session.append('step/end',{turn:2,step:1});
+    f.session.append('turn/end',{turn:2});
+
+    // Turn 3 (OPEN): protected recent turn 2 — Snip runs inside an open turn
+    f.session.append('turn/start',{turn:3});
+    f.session.append('step/start',{turn:3,step:1});
+    const recentU2=f.add('user','Recent user turn 2: finalize migration. '+'T2 '.repeat(1200),3,1);
+    await f.store.flush(f.session);
+
+    const measurement=f.engine.ctx.tokenMeter.measure(f.session);
+    const plan=planSnip(f.session,measurement,{
+      targetTokens:Math.max(1,measurement.totalTokens-6000),
+      keepRecentTurns:2,
+      keepRecentTokens:2048,
+      minSavingsTokens:1024,
+      maxSpansPerRescue:4,
+      compactionIdPrefix:'weave-snip',
+    });
+    assert.ok(plan && plan.spans.length>=1,'planSnip must select the old tool loop');
+
+    const committed=await commitSnip({
+      session:f.session,
+      plan,
+      archive:f.engine.archive,
+      log(){},
+      flushSession:s=>f.store.flush(s),
+      signal:new AbortController().signal,
+    });
+    assert.ok(committed,'commitSnip must succeed inside an open turn');
+    assert.equal(committed.mode,'snip');
+    assert.equal(f.calls(),0,'commitSnip must invoke 0 LLM calls');
+    assert.ok(committed.compactionId.startsWith('weave-snip-'));
+
+    // Verify surface invariants: system, verified user rule, and recent turns intact; old tool loop snipped
+    assert.ok(f.session.surface.nodes.includes(sys.seq));
+    assert.ok(f.session.surface.nodes.includes(ruleUser.seq));
+    assert.ok(f.session.surface.nodes.includes(recentU1.seq));
+    assert.ok(f.session.surface.nodes.includes(recentA1.seq));
+    assert.ok(f.session.surface.nodes.includes(recentU2.seq));
+    assert.equal(f.session.surface.nodes.includes(tr1.seq),false);
+    assert.equal(f.session.surface.nodes.includes(tr2.seq),false);
+    const stubSeq=committed.stubSeqs[0];
+    assert.ok(f.session.surface.nodes.includes(stubSeq));
+    const stubMsg=f.session.deriveEventMessage(f.session.eventAt(stubSeq));
+    assert.equal(stubMsg.source?.kind,'compact-checkpoint');
+    assert.equal(stubMsg.source?.snip,true);
+
+    // Verify archive recovers exact snipped entries (surface nodes + tool/call source events)
+    const archived=await f.engine.archive.readSpan(f.session.id,committed.compactionId);
+    assert.equal(archived.ok,true);
+    const archivedSeqs=new Set(archived.entries.map(e=>e.seq));
+    for(const seq of committed.shadowedSeqs)assert.ok(archivedSeqs.has(seq),`missing shadowed seq ${seq} in archive`);
+    assert.ok(archivedSeqs.has(tc1.seq)&&archivedSeqs.has(tc2.seq),'tool/call source events must also be archived');
+    assert.ok(archived.entries.some(e=>e.text.includes('V4_SNIP_TOOL_ONE_')));
+    assert.ok(archived.entries.some(e=>e.text.includes('V4_SNIP_TOOL_TWO_')));
+
+    // Finish turn 3 and flush to real .v4.jsonl.zstd
+    f.add('assistant','Continuing cleanly after emergency Snip.',3,1);
+    f.session.append('step/end',{turn:3,step:1});
+    f.session.append('turn/end',{turn:3});
+    await f.store.flush(f.session);
+
+    const targetPath=f.backend.locate(f.session.header).path;
+    assert.ok(targetPath.endsWith('.v4.jsonl.zstd'));
+    assert.deepEqual([...fs.readFileSync(targetPath).subarray(0,4)],[0x28,0xb5,0x2f,0xfd],'must be a real Zstandard frame');
+    assert.deepEqual(nonLockEntries(path.dirname(targetPath)),[path.basename(targetPath)],'zero foreign files allowed inside DSH session dir');
+
+    // Cold reopen from real .v4.jsonl.zstd and verify exact Session.fromRestore replay!
+    const expectedEvents=f.session.snapshotEvents();
+    const expectedNodes=[...f.session.surface.nodes];
+    f.detach();
+    await f.closeHandle();
+    const reopened=await f.backend.open(f.session.id,'write');
+    try{
+      const stored=await reopened.read();
+      assert.deepEqual(stored.events,expectedEvents);
+      const replay=Session.fromRestore(f.session.id,stored.events,reopened.header,reopened.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.deepEqual(replay.surface.nodes,expectedNodes);
+    }finally{await reopened.close();}
+  }finally{
     await f.close();
   }
 });
