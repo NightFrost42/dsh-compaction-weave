@@ -36,15 +36,15 @@ When context reaches the trigger threshold, resumes after idle time, or receives
 
 ## Installation and upgrade
 
-Supports **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`** (`0.2.x–0.x` from `0.2.2-rc.1`), with native atomic transactions verified against **DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`** on **Node.js 24.9+**, plus graceful fallback (`strictHostFingerprints: false` default) to public `Session.append(replace)` + `sessions.flush()` across minor DSH updates while still blocking unrecovered `.rollback`/`.tail` atomic journals. Stable releases are published to **[npm (`latest`)](https://www.npmjs.com/package/dsh-compaction-weave)** and [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest): installing `dsh-compaction-weave` from npm is recommended so DSH can track `latest` updates automatically without `allowBuilds` prompts; manual installs using `dsh-compaction-weave.tgz` (versionless latest asset), `dsh-compaction-weave-0.4.3.tgz`, or a locally built `.tgz` remain supported as well.
+Supports **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`** (`0.2.x–0.x` from `0.2.2-rc.1`), with native atomic transactions verified against **DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`** on **Node.js 24.9+**, plus graceful fallback (`strictHostFingerprints: false` default) to public `Session.append(replace)` + `sessions.flush()` across minor DSH updates while still blocking unrecovered `.rollback`/`.tail` atomic journals. Stable releases are published to **[npm (`latest`)](https://www.npmjs.com/package/dsh-compaction-weave)** and [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest): installing `dsh-compaction-weave` from npm is recommended so DSH can track `latest` updates automatically without `allowBuilds` prompts; manual installs using `dsh-compaction-weave.tgz` (versionless latest asset), `dsh-compaction-weave-0.4.4.tgz`, or a locally built `.tgz` remain supported as well.
 
 ### Desktop
 
 - **Install from npm / plugin market (recommended for automatic updates)**: install `dsh-compaction-weave` via `dsh-market` (or enter package name `dsh-compaction-weave` under **Plugins → Add plugin**) to track the npm `latest` release channel.
 - **Manual `.tgz` install / upgrade**:
-  1. Download `dsh-compaction-weave.tgz` or `dsh-compaction-weave-0.4.3.tgz` from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest).
+  1. Download `dsh-compaction-weave.tgz` or `dsh-compaction-weave-0.4.4.tgz` from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest).
   2. When upgrading, uninstall the existing Weave package on the **Plugins** page first while keeping archives and settings in the independent storage directory. Skip this step for a fresh installation.
-  3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.4.3.tgz`), then install and enable it.
+  3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.4.4.tgz`), then install and enable it.
   4. **Restart DSH** and verify the version on the plugin details page.
 
 ### Command line
@@ -58,7 +58,7 @@ dsh plugin --profile web add dsh-compaction-weave
 For offline or manual tarball installation, pass a local `.tgz` path instead:
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.3.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.4.tgz
 ```
 
 Replace `web` with your command-line profile name and restart that profile afterwards. Desktop users should follow the plugin manager steps above.

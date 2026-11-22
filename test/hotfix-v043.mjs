@@ -1180,7 +1180,7 @@ await test('breaker-rpcs-status-retry-and-bypass-with-gate', async () => {
     assert.equal(st.body.value.pressureBreakerAction, 'confirm');
     assert.equal(st.body.value.lastFailureCode, 'CONSTRAINT_LOST');
     assert.equal(st.body.value.lastDiagnosticId, 'diag-xyz');
-    assert.equal(st.body.value.pluginVersion, '0.4.3');
+    assert.equal(st.body.value.pluginVersion, PLUGIN_VERSION);
     assert.equal(st.body.value.breaker.lastDiagnosticPath, '/tmp/diag-xyz.json');
 
     // Requires confirmBypass: true when bypass: true
@@ -1513,11 +1513,11 @@ await test('breaker-settings-and-composer-dock-ui-zh-and-en', async () => {
 await test('v043-release-version-docs-and-changelog', () => {
   const rootDir = new URL('..', import.meta.url);
   const pkg = JSON.parse(readFileSync(new URL('package.json', rootDir), 'utf8'));
-  assert.equal(pkg.version, '0.4.3');
-  assert.equal(PLUGIN_VERSION, '0.4.3');
+  assert.equal(pkg.version, PLUGIN_VERSION);
 
   const changelog = readFileSync(new URL('CHANGELOG.md', rootDir), 'utf8');
-  assert.match(changelog, /^# 更新记录\s+## \[0\.4\.3\] - 2026-11-22/);
+  assert.match(changelog, /^# 更新记录\s+## \[/);
+  assert.match(changelog, /## \[0\.4\.3\] - 2026-11-22/);
   assert.match(changelog, /extraReferencePrefixes/);
   assert.match(changelog, /auditProvenanceBlock/);
   assert.match(changelog, /pressureBreakerAction/);
