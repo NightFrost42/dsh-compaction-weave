@@ -966,6 +966,330 @@ await test('native-transaction-zstd-phase-b-persisted-output-and-microcompact-re
     await f.close();
   }
 });
+await test('native-transaction-zstd-phase-c-session-memory-reuse-prestep-and-reopen',async()=>{
+  const f=await fixture({compression:'zstd',seedDefaultTurn:false});
+  let phaseCEngine=null;
+  try{
+    const hooks=new Map();
+    let llmCalls=0;
+    const smSummary=['Primary Request and Intent','Key Technical Concepts','Files and Code Sections','Errors and Fixes','Problem Solving','All User Messages','Pending Tasks','Work Completed','Context for Continuing Work']
+      .map((h,i)=>`## ${i+1}. ${h}\n${i===0?'Preserve integer cents in all ledgers.':i===5?'[filled by engine]':i===8?'Keep integer cents in all ledgers and continue cleanly.':'(none)'}`).join('\n\n');
+    const phaseCCtx={
+      on(name,fn){if(!hooks.has(name))hooks.set(name,[]);hooks.get(name).push(fn);return ()=>{};},
+      provide(){},
+      get(){return undefined;},
+      logger:{info(){},warn(){}},
+      sessions:{flush:s=>f.store.flush(s),get:id=>f.store.get(id)},
+      sessionPersistence:f.backend,
+      tokenMeter:{
+        measure(s){
+          const nodes=s.surface.nodes.map(seq=>{
+            const tokens=Math.max(1,approxTokens(blocksToText(s.deriveEventMessage(s.eventAt(seq))?.content)));
+            return {seq,tokens,heuristicTokens:tokens};
+          });
+          return {nodes,totalTokens:nodes.reduce((n,x)=>n+x.tokens,0),baseline:{kind:'heuristic'}};
+        },
+        estimateMessage(m){return Math.max(1,approxTokens(blocksToText(m?.content)));},
+      },
+      llm:{
+        async resolveModelInfo(){return {contextWindow:65536,maxOutputTokens:4096};},
+        async *stream(){llmCalls++;yield {type:'text-delta',text:smSummary};yield {type:'finish',kind:'stop',usage:{inputTokens:100,outputTokens:50}};},
+      },
+    };
+    const cfg=resolveConfig({
+      archiveDir:path.join(f.directory,'weave-phase-c-sm','archive'),
+      language:'en',
+      auto:true,
+      proactiveEnabled:false,
+      headroomTokens:4096,
+      thresholdRatio:0.25, // ~14336 tok threshold
+      retainTokens:2048,
+      cachePreservePrefix:false,
+      summaryRetryCount:0,
+      summaryConcurrency:1,
+      sessionMemoryEnabled:true,
+      sessionMemoryMinTokens:4096,
+      sessionMemoryUpdateIntervalTokens:50000,
+      sessionMemoryUpdateIntervalTurns:10,
+      sessionMemoryCooldownMs:0,
+    }).config;
+    phaseCEngine=new WeaveCompactionEngine(phaseCCtx,cfg);
+    f.adapter.register(phaseCEngine.journal,phaseCEngine.sessionState,cfg.failureThreshold,phaseCEngine.backupStore);
+    phaseCEngine.transactionAdapter=f.adapter;
+    phaseCEngine.requireTransactionAdapter=true;
+    phaseCEngine.historyToolsAvailable=true;
+
+    const agent={
+      session:f.session,
+      inbox:{nextStep:[],nextTurn:[],prepend(_t,m){this.nextStep.unshift(m);}},
+      options:{provider:'p',model:'m'},
+      runMaintenance:fn=>fn(new AbortController().signal),
+    };
+
+    // Turn 1: seed multi-message prefix + retained tail, then settle via agent/status: 'idle'
+    f.session.append('turn/start',{turn:1});
+    f.session.append('step/start',{turn:1,step:1});
+    f.add('system','Stable system prefix.',1,1);
+    f.add('user','Preserve integer cents in all ledgers.',1,1);
+    f.add('assistant','Ledger work phase 1. '.repeat(680),1,1); // ~3500 tok
+    f.add('user','Continue ledger validation.',1,1);
+    f.add('assistant','Ledger work phase 2. '.repeat(680),1,1); // ~3500 tok
+    f.add('user','Finish ledger migration.',1,1);
+    f.add('assistant','Ledger work phase 3. '.repeat(680),1,1); // ~3500 tok
+    const midTailU=f.add('user','Mid tail note. '.repeat(320),1,1); // ~1200 tok
+    const midTailA=f.add('assistant','Mid tail reply. '.repeat(320),1,1); // ~1200 tok
+    f.session.append('step/end',{turn:1,step:1});
+    f.session.append('turn/end',{turn:1});
+    await f.store.flush(f.session);
+
+    for(const fn of hooks.get('agent/status')??[])fn({agent,status:'idle'});
+    for(let i=0;i<15;i++){
+      await new Promise(r=>setTimeout(r,15));
+      const p=phaseCEngine.sessionMemory.waitFor(f.session.id);
+      if(p)await p;
+      if(!phaseCEngine.sessionMemory.inFlight.has(f.session.id)&&!phaseCEngine.sessionMemory._scheduling.has(f.session.id))break;
+    }
+    assert.equal(llmCalls,1,'settled idle turn must trigger exactly 1 background session memory call');
+    const readyStatus=phaseCEngine.sessionMemoryStatusFor(f.session.id);
+    assert.equal(readyStatus.ready,true);
+    assert.equal(readyStatus.callsUsed,1);
+    assert.ok(Number.isSafeInteger(readyStatus.coveredThroughSeq));
+
+    // Turn 2: add critical tail constraint + final tail pushing over pressure threshold -> real agent/pre-step!
+    f.session.append('turn/start',{turn:2});
+    f.session.append('step/start',{turn:2,step:1});
+    const tailRule=f.add('user','TAIL_V4_RULE: Never expose raw API secrets in logs.',2,1);
+    const tailReply=f.add('assistant','Acknowledged TAIL_V4_RULE. '.repeat(80),2,1);
+    f.add('user','Final turn input. '.repeat(320),2,1);
+    f.add('assistant','Final turn response. '.repeat(320),2,1);
+
+    let enteredMain=false;
+    const preStep=(hooks.get('agent/pre-step')??[])[0];
+    assert.equal(typeof preStep,'function');
+    await preStep({agent,signal:new AbortController().signal,messages:[]},async()=>{enteredMain=true;return {kind:'enter'};});
+    assert.equal(enteredMain,true);
+    assert.equal(llmCalls,1,'foreground pressure compaction must reuse verified session memory prefix with 0 additional LLM calls');
+
+    // Verify TAIL_V4_RULE and midTail nodes survived verbatim on live surface!
+    assert.ok(f.session.surface.nodes.includes(midTailU.seq));
+    assert.ok(f.session.surface.nodes.includes(midTailA.seq));
+    assert.ok(f.session.surface.nodes.includes(tailRule.seq),'tail rule after watermark must stay verbatim on live surface');
+    assert.ok(f.session.surface.nodes.includes(tailReply.seq));
+
+    // Verify emitted compaction/summary omits llmStreamCall (DSH V4 compliance) & archive verifies!
+    const cpSeq=f.session.surface.nodes.find(seq=>f.session.deriveEventMessage(f.session.eventAt(seq))?.source?.kind==='compact-checkpoint');
+    assert.ok(typeof cpSeq==='number','expected committed compact-checkpoint');
+    const cpId=f.session.deriveEventMessage(f.session.eventAt(cpSeq)).source.compactionId;
+    const summaryEv=f.session.snapshotEvents().find(e=>e.type==='compaction/summary'&&e.data?.compactionId===cpId);
+    assert.ok(summaryEv);
+    assert.equal('llmStreamCall' in summaryEv.data,false,'reused session-memory compaction/summary must omit llmStreamCall');
+    const archived=await phaseCEngine.archive.readSpan(f.session.id,cpId);
+    assert.equal(archived.ok,true);
+    assert.ok(archived.entries.some(e=>e.text.includes('Preserve integer cents in all ledgers.')));
+
+    // Stored memory invalidated while monotonic callsUsed fuse remains 1!
+    const postStatus=phaseCEngine.sessionMemoryStatusFor(f.session.id);
+    assert.equal(postStatus.ready,false);
+    assert.equal(postStatus.callsUsed,1);
+
+    f.session.append('step/end',{turn:2,step:1});
+    f.session.append('turn/end',{turn:2});
+    await f.store.flush(f.session);
+
+    const targetPath=f.backend.locate(f.session.header).path;
+    assert.ok(targetPath.endsWith('.v4.jsonl.zstd'));
+    assert.deepEqual([...fs.readFileSync(targetPath).subarray(0,4)],[0x28,0xb5,0x2f,0xfd]);
+    assert.deepEqual(nonLockEntries(path.dirname(targetPath)),[path.basename(targetPath)]);
+    assert.equal((await phaseCEngine.journal.pending(f.session.id)).length,0);
+
+    // Cold reopen through real DSH V4 Zstandard decoder + Session.fromRestore!
+    const expectedEvents=f.session.snapshotEvents();
+    const expectedNodes=[...f.session.surface.nodes];
+    f.detach();
+    await f.closeHandle();
+    const reopened=await f.backend.open(f.session.id,'write');
+    try{
+      const stored=await reopened.read();
+      assert.deepEqual(stored.events,expectedEvents);
+      const replay=Session.fromRestore(f.session.id,stored.events,reopened.header,reopened.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.deepEqual(replay.surface.nodes,expectedNodes);
+    }finally{await reopened.close();}
+  }finally{
+    phaseCEngine?.dispose();
+    await f.close();
+  }
+});
+await test('native-transaction-zstd-phase-c-expired-ttl-context-collapse-and-reopen',async()=>{
+  const f=await fixture({compression:'zstd',seedDefaultTurn:false});
+  const realNow=Date.now;
+  let phaseCEngine=null;
+  try{
+    const hooks=new Map();
+    let llmCalls=0;
+    const collapseSummary=['Primary Request and Intent','Key Technical Concepts','Files and Code Sections','Errors and Fixes','Problem Solving','All User Messages','Pending Tasks','Work Completed','Context for Continuing Work']
+      .map((h,i)=>`## ${i+1}. ${h}\n${i===0?'Keep WAL checkpointing enabled.':i===5?'[filled by engine]':i===8?'Keep WAL checkpointing enabled and continue cleanly.':'(none)'}`).join('\n\n');
+    const phaseCCtx={
+      on(name,fn){if(!hooks.has(name))hooks.set(name,[]);hooks.get(name).push(fn);return ()=>{};},
+      provide(){},
+      get(){return undefined;},
+      logger:{info(){},warn(){}},
+      sessions:{flush:s=>f.store.flush(s),get:id=>f.store.get(id)},
+      sessionPersistence:f.backend,
+      tokenMeter:{
+        measure(s){
+          const nodes=s.surface.nodes.map(seq=>{
+            const tokens=Math.max(1,approxTokens(blocksToText(s.deriveEventMessage(s.eventAt(seq))?.content)));
+            return {seq,tokens,heuristicTokens:tokens};
+          });
+          return {nodes,totalTokens:nodes.reduce((n,x)=>n+x.tokens,0),baseline:{kind:'heuristic'}};
+        },
+        estimateMessage(m){return Math.max(1,approxTokens(blocksToText(m?.content)));},
+      },
+      llm:{
+        async resolveModelInfo(){return {contextWindow:200000,maxOutputTokens:4096};},
+        async *stream(){llmCalls++;yield {type:'text-delta',text:collapseSummary};yield {type:'finish',kind:'stop',usage:{inputTokens:100,outputTokens:50}};},
+      },
+    };
+    const cfg=resolveConfig({
+      archiveDir:path.join(f.directory,'weave-phase-c-cc','archive'),
+      language:'en',
+      auto:false,
+      proactiveEnabled:false,
+      idleCompactionMinutes:30,
+      minimumReductionRatio:0.2,
+      microcompactEnabled:true,
+      microcompactKeepRecentTools:2,
+      microcompactThresholdChars:2000,
+      microcompactHeadChars:200,
+      microcompactTailChars:200,
+      microcompactRepeatedReadMinChars:2000,
+      contextCollapseEnabled:true,
+      contextCollapseMinTokens:8192,
+      contextCollapseMaxSpanTokens:16384,
+      contextCollapseKeepRecentTokens:2048,
+      contextCollapseKeepRecentTurns:2,
+      idleFullSummaryEnabled:true,
+    }).config;
+    phaseCEngine=new WeaveCompactionEngine(phaseCCtx,cfg);
+    f.adapter.register(phaseCEngine.journal,phaseCEngine.sessionState,cfg.failureThreshold,phaseCEngine.backupStore);
+    phaseCEngine.transactionAdapter=f.adapter;
+    phaseCEngine.requireTransactionAdapter=true;
+    phaseCEngine.historyToolsAvailable=true;
+
+    const agent={
+      session:f.session,
+      inbox:{nextStep:[],nextTurn:[],prepend(_t,m){this.nextStep.unshift(m);}},
+      options:{provider:'p',model:'m'},
+      runMaintenance:fn=>fn(new AbortController().signal),
+    };
+    const preStep=(hooks.get('agent/pre-step')??[])[0];
+    assert.equal(typeof preStep,'function');
+
+    let oldU1,tailU1,tailA1,tailU2,tailA2;
+    const callOld='call-v4-cc-old',callHot1='call-v4-cc-hot1',callHot2='call-v4-cc-hot2';
+    Date.now=()=>realNow()-45*60_000;
+    try{
+      f.session.append('turn/start',{turn:1});
+      f.session.append('step/start',{turn:1,step:1});
+      f.add('system','Stable system prefix.',1,1);
+      oldU1=f.add('user','Keep WAL checkpointing enabled. '+'P1 '.repeat(2000),1,1);
+      f.add('assistant','Old phase 1 analysis. '+'A1 '.repeat(2600),1,1);
+      f.add('user','Phase 2 detail. '+'P2 '.repeat(2000),1,1);
+      f.add('assistant','Old phase 2 analysis. '+'A2 '.repeat(2600),1,1);
+      // Old oversized tool output (folded by Tier 1 Microcompact, saving < 20% alone)
+      f.session.append('assistant/message',{turn:1,step:1,stream:[],usage:{inputTokens:0,outputTokens:0},message:{
+        id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},
+        content:[{type:'tool-call',id:callOld,name:'run_command',arguments:JSON.stringify({command:'npm test'})}],
+      }},{surfaceOp:'append'});
+      const tcOld=f.session.append('tool/call',{turn:1,step:1,callId:callOld,name:'run_command',arguments:JSON.stringify({command:'npm test'})});
+      f.session.append('tool/result',{turn:1,step:1,message:{
+        id:randomUUID(),role:'tool',toolCallId:callOld,source:{kind:'tool',callId:callOld},
+        content:[{type:'text',text:'V4_CC_OLD_TOOL_'+'X'.repeat(10000)+'_END'}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcOld.seq]});
+      f.session.append('step/end',{turn:1,step:1});
+
+      // Protected tail: 2 authentic user turns + 2 hot tools
+      f.session.append('step/start',{turn:1,step:2});
+      tailU1=f.add('user','Protected tail turn 1. '+'T1 '.repeat(1100),1,2);
+      f.session.append('assistant/message',{turn:1,step:2,stream:[],usage:{inputTokens:0,outputTokens:0},message:{
+        id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},
+        content:[
+          {type:'tool-call',id:callHot1,name:'read_file',arguments:JSON.stringify({path:'src/a.js'})},
+          {type:'tool-call',id:callHot2,name:'read_file',arguments:JSON.stringify({path:'src/b.js'})},
+        ],
+      }},{surfaceOp:'append'});
+      const tcH1=f.session.append('tool/call',{turn:1,step:2,callId:callHot1,name:'read_file',arguments:JSON.stringify({path:'src/a.js'})});
+      f.session.append('tool/result',{turn:1,step:2,message:{
+        id:randomUUID(),role:'tool',toolCallId:callHot1,source:{kind:'tool',callId:callHot1},
+        content:[{type:'text',text:'HOT_1_'+'H'.repeat(1200)}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcH1.seq]});
+      const tcH2=f.session.append('tool/call',{turn:1,step:2,callId:callHot2,name:'read_file',arguments:JSON.stringify({path:'src/b.js'})});
+      f.session.append('tool/result',{turn:1,step:2,message:{
+        id:randomUUID(),role:'tool',toolCallId:callHot2,source:{kind:'tool',callId:callHot2},
+        content:[{type:'text',text:'HOT_2_'+'K'.repeat(1200)}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcH2.seq]});
+      tailA1=f.add('assistant','Protected tail reply 1. '+'R1 '.repeat(1100),1,2);
+      tailU2=f.add('user','Protected tail turn 2. '+'T2 '.repeat(1100),1,2);
+      tailA2=f.add('assistant','Protected tail reply 2. '+'R2 '.repeat(1100),1,2);
+      f.session.append('step/end',{turn:1,step:2});
+      f.session.append('turn/end',{turn:1});
+      await f.store.flush(f.session);
+    }finally{
+      Date.now=realNow;
+    }
+
+    // Turn 2 arrives 45 minutes later -> Tier 1 Microcompact + Tier 2 Context Collapse -> skips Tier 3!
+    const resumeMsg={id:randomUUID(),role:'user',source:{kind:'user'},content:[{type:'text',text:'Resume after 45 minutes.'}]};
+    f.session.append('agent/inbox/spliced',{target:'next-turn',start:0,removedCount:0,inserted:[resumeMsg]});
+    f.session.append('turn/start',{turn:2});
+    let enteredMain=false;
+    await preStep({agent,signal:new AbortController().signal,messages:[resumeMsg]},async()=>{enteredMain=true;return {kind:'enter'};});
+    assert.equal(enteredMain,true);
+    assert.equal(llmCalls,1,'Tier 2 Context Collapse must commit in 1 LLM call and skip Tier 3 Full Idle Summary');
+
+    const collapseCpSeq=f.session.surface.nodes.find(seq=>f.session.deriveEventMessage(f.session.eventAt(seq))?.source?.contextCollapse===true);
+    assert.ok(typeof collapseCpSeq==='number','expected Tier 2 Context Collapse checkpoint on surface');
+    assert.equal(f.session.surface.nodes.includes(oldU1.seq),false,'older prefix must be collapsed');
+    assert.ok(f.session.surface.nodes.includes(tailU1.seq),'protected tail turn 1 must stay verbatim');
+    assert.ok(f.session.surface.nodes.includes(tailA1.seq),'protected tail reply 1 must stay verbatim');
+    assert.ok(f.session.surface.nodes.includes(tailU2.seq),'protected tail turn 2 must stay verbatim');
+    assert.ok(f.session.surface.nodes.includes(tailA2.seq),'protected tail reply 2 must stay verbatim');
+
+    const cpId=f.session.deriveEventMessage(f.session.eventAt(collapseCpSeq)).source.compactionId;
+    const archived=await phaseCEngine.archive.readSpan(f.session.id,cpId);
+    assert.equal(archived.ok,true);
+    assert.ok(archived.entries.some(e=>e.text.includes('Keep WAL checkpointing enabled.')));
+
+    f.session.append('step/start',{turn:2,step:1});
+    f.add('assistant','Continuing cleanly after expired-TTL Context Collapse.',2,1);
+    f.session.append('step/end',{turn:2,step:1});
+    f.session.append('turn/end',{turn:2});
+    await f.store.flush(f.session);
+
+    const targetPath=f.backend.locate(f.session.header).path;
+    assert.ok(targetPath.endsWith('.v4.jsonl.zstd'));
+    assert.deepEqual([...fs.readFileSync(targetPath).subarray(0,4)],[0x28,0xb5,0x2f,0xfd]);
+    assert.deepEqual(nonLockEntries(path.dirname(targetPath)),[path.basename(targetPath)]);
+    assert.equal((await phaseCEngine.journal.pending(f.session.id)).length,0);
+
+    // Cold reopen from real .v4.jsonl.zstd and verify exact Session.fromRestore replay!
+    const expectedEvents=f.session.snapshotEvents();
+    const expectedNodes=[...f.session.surface.nodes];
+    f.detach();
+    await f.closeHandle();
+    const reopened=await f.backend.open(f.session.id,'write');
+    try{
+      const stored=await reopened.read();
+      assert.deepEqual(stored.events,expectedEvents);
+      const replay=Session.fromRestore(f.session.id,stored.events,reopened.header,reopened.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.deepEqual(replay.surface.nodes,expectedNodes);
+    }finally{await reopened.close();}
+  }finally{
+    Date.now=realNow;
+    phaseCEngine?.dispose();
+    await f.close();
+  }
+});
 
 console.log(JSON.stringify({passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,results},null,2));
 if(results.some(r=>!r.pass))process.exitCode=1;
