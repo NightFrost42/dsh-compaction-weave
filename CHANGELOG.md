@@ -1,5 +1,15 @@
 # 更新记录
 
+## [0.4.3] - 2026-11-22
+
+- **裸非用户记忆注入隔离与 `extraReferencePrefixes`（Issue #7A）**：在 `lib/instruction-source.js` 与 `lib/source-provenance.js` 中自动识别多行独立记忆注入头（如 `===== 长期记忆 =====`、`===== Long-Term Memory =====`、`【记忆导引】` 等且严格要求换行后含正文，避免单行普通用户提问误判），并新增可配置前缀数组 `extraReferencePrefixes`（2–200 字符、最多 64 项，经 `AsyncLocalStorage` 按引擎/策略并发隔离并自动失效 `instructionRanges` 边界缓存）；隔离内容在压缩投影时封装为 `<untrusted_reference kind="reference-prefix">`，全链路排除出 Section 6 `preserved` 与用户要求/极性/闲置输入判定。
+- **修复 `repairFeedback` 触发本地 `CONTEXT_WINDOW_EXCEEDED`（Issue #7B）**：`renderRepairFeedback` 严格遵守 `maxBytes` UTF-8 字节上限；`planSummaryRange` 默认预留受控修正反馈余量（`DEFAULT_REPAIR_FEEDBACK_HEADROOM_BYTES = 8704`，按窗口上限 `25%` 封顶并在单组过大时自动回落至完整 `limit` 避免误报 `SUMMARY_GROUP_TOO_LARGE`）；新增 `buildFittedSummaryRequest` 在重试拟合超限时按序裁剪 `issues`、压缩 `repairFeedbackMaxBytes` / `SUMMARY_NOT_SMALLER` 提示并在必要时省略历史反馈（同时保持 `requestLimit` / `capacityLimit` / `assertSummaryCapacity` 契约不变）。
+- **来源审计（Provenance）增强、词序无关、`auditProvenanceBlock` 与精准诊断（Issue #8A/8B/8C）**：扩充中英文否定/待批/前置条件授权模式（如`除非`/`前置条件`/`未经`/`之?前不得`/`后才可`与 `prerequisite`/`before`/`only after`）；剔除 `seq #N` 位置引用后再匹配授权词组以实现词序无关；仅在可信用户原文中识别常见口语同意与同条行动指令、严格跳过纯疑问句与 `注意`/`先问我` 警告句、支持口语撤回（`revokedGrants`）、复合授权拆分（防夹带未授权动作）与动词族强校验 + 仓库收尾同义改写；新增 `auditProvenanceBlock`（默认 `true`，仅警告模式仍对命中 `untrusted-source`/`revoked` 保持强拦截），并在报错、`failureExplanation` 与 `FailureDiagnostics` 中直接透出触发摘要原句、`reason=provenance` 与 `kind`。
+- **自动压缩熔断分级放行、闲置免阻断与反馈交互面板**：
+  - 闲置压缩 `_compactBeforeResume` 遇激活熔断器时记录告警并跳过而不抛出 `COMPACTION_STOPPED`，不阻断日常对话（仍受硬请求预算红线保护）。
+  - 新增 `pressureBreakerAction` 配置与热生效设置项（`'confirm'` 默认确认放行 / `'degrade'` 预算内告警放行 / `'block'` 严格阻断）；持久化 `breakerBypassed`、`lastFailureCode`、`lastDiagnosticId`、`lastDiagnosticPath`，并在成功压缩、手动重试、还原备份及恢复后通过 `clearBreakerState` 一键清理。
+  - 新增 `retry-compaction` 与 `bypass-breaker`（需两步确认）RPC；输入框上方进度卡片在熔断时展示错误码、诊断 ID、高成本计费提示、「手动重试压缩」、「继续对话（两步确认）」/「恢复拦截」、脱敏诊断复制与反馈问题入口（`RECOVERY_REQUIRED`、待续传与 `total >= messageBudgetTokens` 红线永不放行）。
+
 ## [0.4.2] - 2026-11-22
 
 - **修复 Section 6 占位符写进标题导致结构校验误拒（PR #3 by `@qqGit-0528` 与跟进完善）**：采纳 `@qqGit-0528` 在 PR #3 中的修复并在 `lib/prompt.js` 与 `lib/validate.js` 中补全双语对称逻辑：英文提示词同步明确保留 `## 6. All User Messages` 标题并将 `[filled by engine]` 写在正文；`ZH_SECTION_TITLE_VARIANTS[5]` 补齐 `[engine-filled]` / `engine-filled` 与 `ENGINE_PLACEHOLDER_RE` 对称匹配；`materializeUserMessageSection` 仅在标题命中占位符正则时才规范化第六节标题（结合 `language` 与标题/第 7 节 CJK 语境输出 `## 6. 全部用户消息` 或 `## 6. All User Messages`），确保 `## 6. 所有用户消息` 等合法自然中文标题不再被 `language='en'` 误改。

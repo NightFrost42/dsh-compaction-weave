@@ -133,8 +133,11 @@ Older quotes leave the budget first; active requirements remain independently ch
 | `archiveDir` | Automatic | Custom archive directory |
 | `auditEnabled` | `true` | Check requirement retention |
 | `auditBlockOnLoss` | `true` | Retry and prevent submission of summaries losing requirements (polarity reversals remain strictly blocked even when `false`) |
+| `auditProvenanceBlock` | `true` | Block submissions when claimed permissions or instructions lack a matching verified user source; setting `false` warns on `missing-source` only while `untrusted-source` and `revoked` matches stay strictly blocked |
 | `extraReferenceSourceKinds` | `[]` | Additional `source.kind` strings treated as untrusted reference channels instead of user commands (array of up to 64 non-empty strings; strictly rejects `'user'` and `'compact-checkpoint'`). Built-in IM bridge channels (`wechat`, `qq`, `wechat-bridge`, `qq-bridge`, `im-bridge`) are already isolated |
+| `extraReferencePrefixes` | `[]` | Additional plain-text prefixes treated as bare untrusted reference injections (trimmed length 2–200 chars, max 64 entries). Built-in multi-line memory headers (e.g., `===== Long-Term Memory =====`, `===== 长期记忆 =====`, `【记忆导引】` with body text) are already isolated cleanly |
 | `failureThreshold` | `3` | Consecutive-failure threshold for automatic compaction |
+| `pressureBreakerAction` | `'confirm'` | Policy when the automatic pressure circuit breaker trips (hot-configurable in Settings): `'confirm'` (default: pause auto-send and offer Retry or 2-step Confirm bypass in the composer dock), `'degrade'` (warn and bypass pressure compaction while under the hard request budget), or `'block'` (strictly block until retried or restored); `RECOVERY_REQUIRED`, pending continuations, and `total >= messageBudgetTokens` never bypass |
 | `strictHostFingerprints` | `false` | When `false`, host minor updates altering private persistence methods gracefully fall back (with a one-time warning) to public `Session.append(replace)` + `sessions.flush` if no unrecovered `.rollback`/`.tail` atomic journal exists; set `true` to enforce reviewed method fingerprints |
 | `language` | `auto` | Summary language: `auto`, `zh`, or `en` |
 

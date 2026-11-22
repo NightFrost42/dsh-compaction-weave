@@ -133,8 +133,11 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `archiveDir` | 自动 | 自定义历史归档目录 |
 | `auditEnabled` | `true` | 检查要求是否保留 |
 | `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交（极性反转在关闭时仍严格拦截） |
+| `auditProvenanceBlock` | `true` | 授权/指令来源未匹配用户原文（`provenance`）时阻断提交；设为 `false` 时仅对无依据归纳改为告警放行，但对 `untrusted-source`（外部/注入来源）与 `revoked`（已撤回授权）仍保持强拦截 |
 | `extraReferenceSourceKinds` | `[]` | 额外视为非用户参考通道的 `source.kind` 字符串数组（最多 64 项，严禁包含 `'user'` 或 `'compact-checkpoint'`）；内置已自动隔离 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge` 等桥接通道 |
+| `extraReferencePrefixes` | `[]` | 额外视为非用户注入块的裸文本前缀数组（修剪后 2–200 字符、最多 64 项）；内置已自动隔离多行记忆注入头（如 `===== 长期记忆 =====`、`【记忆导引】` 后带正文），不污染 Section 6 原话或要求审计 |
 | `failureThreshold` | `3` | 连续失败后的自动压缩熔断阈值 |
+| `pressureBreakerAction` | `'confirm'` | 自动压缩熔断后的处理策略（可在设置页热生效修改）：`'confirm'`（默认：阻断自动发送并在输入框卡片提供重试压缩与两步确认放行）、`'degrade'`（在请求硬预算内发出告警并暂跳过自动压缩）、`'block'`（严格阻断，仅允许重试压缩或还原备份）；`RECOVERY_REQUIRED`、待续传与超出 `messageBudgetTokens` 永不放行 |
 | `strictHostFingerprints` | `false` | 宿主持久化私有方法随 DSH 小版本改动时，确认无未恢复 `.rollback`/`.tail` 日志后发出一次提示并降级使用公开 `Session.append(replace)` + `sessions.flush`；设为 `true` 时严格拦截未审核指纹 |
 | `language` | `auto` | 摘要语言：`auto`、`zh` 或 `en` |
 

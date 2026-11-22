@@ -36,15 +36,15 @@ When context reaches the trigger threshold, resumes after idle time, or receives
 
 ## Installation and upgrade
 
-Supports **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`** (`0.2.x–0.x` from `0.2.2-rc.1`), with native atomic transactions verified against **DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`** on **Node.js 24.9+**, plus graceful fallback (`strictHostFingerprints: false` default) to public `Session.append(replace)` + `sessions.flush()` across minor DSH updates while still blocking unrecovered `.rollback`/`.tail` atomic journals. Stable releases are published to **[npm (`latest`)](https://www.npmjs.com/package/dsh-compaction-weave)** and [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest): installing `dsh-compaction-weave` from npm is recommended so DSH can track `latest` updates automatically without `allowBuilds` prompts; manual installs using `dsh-compaction-weave.tgz` (versionless latest asset), `dsh-compaction-weave-0.4.2.tgz`, or a locally built `.tgz` remain supported as well.
+Supports **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`** (`0.2.x–0.x` from `0.2.2-rc.1`), with native atomic transactions verified against **DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`** on **Node.js 24.9+**, plus graceful fallback (`strictHostFingerprints: false` default) to public `Session.append(replace)` + `sessions.flush()` across minor DSH updates while still blocking unrecovered `.rollback`/`.tail` atomic journals. Stable releases are published to **[npm (`latest`)](https://www.npmjs.com/package/dsh-compaction-weave)** and [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest): installing `dsh-compaction-weave` from npm is recommended so DSH can track `latest` updates automatically without `allowBuilds` prompts; manual installs using `dsh-compaction-weave.tgz` (versionless latest asset), `dsh-compaction-weave-0.4.3.tgz`, or a locally built `.tgz` remain supported as well.
 
 ### Desktop
 
 - **Install from npm / plugin market (recommended for automatic updates)**: install `dsh-compaction-weave` via `dsh-market` (or enter package name `dsh-compaction-weave` under **Plugins → Add plugin**) to track the npm `latest` release channel.
 - **Manual `.tgz` install / upgrade**:
-  1. Download `dsh-compaction-weave.tgz` or `dsh-compaction-weave-0.4.2.tgz` from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest).
+  1. Download `dsh-compaction-weave.tgz` or `dsh-compaction-weave-0.4.3.tgz` from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest).
   2. When upgrading, uninstall the existing Weave package on the **Plugins** page first while keeping archives and settings in the independent storage directory. Skip this step for a fresh installation.
-  3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.4.2.tgz`), then install and enable it.
+  3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.4.3.tgz`), then install and enable it.
   4. **Restart DSH** and verify the version on the plugin details page.
 
 ### Command line
@@ -58,7 +58,7 @@ dsh plugin --profile web add dsh-compaction-weave
 For offline or manual tarball installation, pass a local `.tgz` path instead:
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.2.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.3.tgz
 ```
 
 Replace `web` with your command-line profile name and restart that profile afterwards. Desktop users should follow the plugin manager steps above.
@@ -91,6 +91,7 @@ Adjust common options under **Settings → Compaction** (or on the plugin detail
 | Summary concurrency | 2 | Bounded 1–6 parallel chunk generation & auditing with strictly ordered serial commits and automatic HTTP 429 backoff to `1` |
 | Summary reasoning effort | `low` | Lowers reasoning effort on summary calls by default to improve speed and cost; also accepts `none`, `minimal`, `medium`, `high`, `xhigh`, `max`, or `inherit` with automatic downward fallback |
 | Strict retention audit blocking | On | Blocks and regenerates summaries failing retention checks; disabling (`auditBlockOnLoss: false`) logs warnings instead |
+| Pressure breaker policy | `confirm` | Controls automatic compaction after repeated failures: block with Retry / 2-step Confirm bypass (`confirm`), warn & bypass under request budget (`degrade`), or strictly block (`block`) |
 | Automatic trigger ratio | 80% | Combined with next-reply output reservation and headroom to set the trigger threshold |
 | Minimum reduction | 20% | Target input space reduction for automatic compaction planning |
 | Retry count | 2 | Up to 2 additional attempts after an initial failure |
@@ -105,7 +106,7 @@ Retry settings take effect independently of summary model selection. See [Config
 - **Coexisting with `dsh-world` (Issue #4)**: If `dsh-world` is installed with compaction replacement active (`compactionSwapped` / `dsh-world/compaction`), it replaces `@deepseek-ai/dsh-compaction-basic` in the config tree so Weave silently fails to mount. To keep `dsh-world`'s diary, `memory_find`, and memory injection while letting Weave handle compaction:
   - Preset mode: in the World Console, open **概览 → 会话预设 → 还原 DSH 预设** (Overview → Session Presets → Restore DSH Preset);
   - Non-preset mode: set `replaceCompaction: false` in `dsh-world`.
-- **Third-party IM bridge isolation (Issue #6)**: Built-in IM bridge channels (`wechat`, `qq`, `wechat-bridge`, `qq-bridge`, `im-bridge`) are automatically treated as untrusted reference context rather than user constraint sources; for any other custom bridge `source.kind`, add it to `extraReferenceSourceKinds` in engine config (see [Configuration](docs/en/configuration.md)).
+- **Third-party IM bridge & bare injection isolation (Issue #6 / #7A)**: Built-in IM bridge channels (`wechat`, `qq`, `wechat-bridge`, `qq-bridge`, `im-bridge`) and unambiguous multi-line memory headers (such as `===== Long-Term Memory =====`, `===== 长期记忆 =====`, and `【记忆导引】` with body text) are automatically treated as untrusted reference context rather than user constraint sources; for any other custom `source.kind` or bare prefix, add it to `extraReferenceSourceKinds` or `extraReferencePrefixes` (see [Configuration](docs/en/configuration.md)).
 
 ## Tests and verification
 

@@ -628,15 +628,15 @@ await test('idle-compaction-skips-tiny-history-for-zero-calls-and-preserves-inpu
     assert.equal(failing.inbox.nextStep.length, 1);
     assert.equal(failing.inbox.nextStep[0].id, 'u-preserve', 'failed idle compaction MUST preserve user queued input');
 
-    // Second step with same stopped session burns ZERO extra LLM calls & keeps message intact!
-    await assert.rejects(
-      failing.hooks.get('agent/pre-step')({ agent: failing.agent, signal: new AbortController().signal, messages: [userMsg] }, async () => {
+    // Second step with same stopped session burns ZERO extra LLM calls & skips idle compaction safely!
+    await failing.hooks.get('agent/pre-step')(
+      { agent: failing.agent, signal: new AbortController().signal, messages: [userMsg] },
+      async () => {
         proceeded += 1;
-      }),
-      (e) => e.failureCode === 'COMPACTION_STOPPED',
+      },
     );
+    assert.equal(proceeded, 1, 'stopped idle session skips idle compaction and lets turn continue within budget');
     assert.equal(failing.calls.length, 1);
-    assert.equal(failing.inbox.nextStep.length, 1);
   } finally {
     await rm(failing.root, { recursive: true, force: true });
   }

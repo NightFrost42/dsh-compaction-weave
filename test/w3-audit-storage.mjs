@@ -708,7 +708,9 @@ await test('session-backup-path-b-guard-breakpoint-clearing-and-cross-instance-c
   assert.deepEqual(fs.readFileSync(logPath), v1Bytes);
   assert.equal(summarizeBackups(storeA, sid).pendingRestore, null);
   const restoredState = stateStore.read(sid);
-  assert.equal(restoredState.failures, 1, 'clean baseline failure count preserved');
+  assert.equal(restoredState.failures, 0, 'v0.4.3 resets breaker failure count cleanly on restore');
+  assert.equal(restoredState.stopped, false);
+  assert.equal(restoredState.breakerBypassed, false);
   assert.equal(restoredState.resumableCompaction, undefined, 'resumableCompaction must be stripped on restore');
   assert.equal(restoredState.continuationPending, undefined, 'continuationPending must be stripped on restore');
 });

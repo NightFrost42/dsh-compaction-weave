@@ -14,7 +14,8 @@
 | 压缩中途暂停、崩退或想放弃未完成断点 | 进行中可点进度卡片“暂停”或执行 `/compact cancel`，已提交分片不会回滚；进程崩溃重开会话时插件会在加载前自动闭合残留锁并转为可续传断点。普通中断在下一条消息前自动续传，也可点“继续”或执行 `/compact resume`；若因额度耗尽（`paused_budget`）或连续失败（`paused_failure`）暂停，不会阻塞正常对话，排查后可点“继续”/`/compact` 恢复，或点“放弃进度”/`/compact discard` 清除断点（完整备份不受影响） |
 | 摘要并发触发 429 限流、耗时偏慢或 `UNSUPPORTED_REASONING_EFFORT` | 默认并发 `summaryConcurrency: 2` 且推理力度为 `low`，遇 HTTP 429 时会自动将并发降至 1 并冷却重试；直接选择 `minimal` / `medium` / `high` / `xhigh` / `max` 时若模型不支持也会自动沿阶梯向下回退并省略。若仍被拒，请在 **设置 → 摘要模型 → 摘要推理强度** 设为 `none` 或该模型支持的档位 |
 | 摘要结构不完整或输出截断 | 调高摘要输出上限（`maxTokens`），或更换更适合长文本归纳的摘要模型 |
-| 要求或进度校验未通过（含 `CONSTRAINT_POLARITY_LOST`） | 查看诊断文件中的错误码、触发 `seq`/`source` 与阶段信息，并按 `auditReports` 打开关联的 `audit-reject/` 记录核对拒绝候选、来源事件序号与原话片段；极性反转（`CONSTRAINT_POLARITY_LOST`）即使在 `auditBlockOnLoss: false` 下仍会拦截。若触发来源是自定义第三方消息桥接（已内置隔离 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge`），可将该通道的 `source.kind` 加入 `extraReferenceSourceKinds`；否则可切换摘要模型、关闭 `auditBlockOnLoss`（仅对普通 `CONSTRAINT_LOST` 有效），或在极端历史兼容场景临时设 `auditEnabled: false` |
+| 要求、极性或指令来源审计未通过（`CONSTRAINT_POLARITY_LOST` / `reason=provenance`） | 查看提示中的触发类型（`untrusted-source` / `revoked` / `missing-source`）、触发摘要句与诊断文件中的 `auditReports` / `audit-reject/` 记录。仅设 `auditBlockOnLoss: false` 不会放行极性反转（`CONSTRAINT_POLARITY_LOST`）或来源审计（`provenance`）；若触发来自第三方消息桥接或记忆插件注入，可将 `source.kind` 加入 `extraReferenceSourceKinds` 或将裸前缀加入 `extraReferencePrefixes`（已内置常见 IM 桥接与多行记忆注入头），无依据归纳可按需设 `auditProvenanceBlock: false`（`untrusted-source` 与 `revoked` 仍始终强拦截） |
+| 自动压缩连续失败触发熔断（`COMPACTION_STOPPED`） | 失败后输入框上方卡片会显示最近根因错误码、诊断 ID 与高成本大上下文计费提示：排查设置或切换模型后点击「手动重试压缩」（成功率清除所有熔断计数与放行标记）；如需在预算安全线内先继续对话，可通过设置页「自动压缩熔断后策略」（`confirm` / `degrade` / `block`，默认 `confirm`）或在卡片中二次确认放行，也可随时「恢复拦截」或复制脱敏诊断摘要反馈问题；注意 `RECOVERY_REQUIRED`、待续传与超出 `messageBudgetTokens` 红线永远不会放行 |
 | 同时安装 `dsh-world` 后 Weave 静默未挂载 | 若 `dsh-world` 开启了压缩接管（`compactionSwapped` / `dsh-world/compaction`），会覆盖官方 `@deepseek-ai/dsh-compaction-basic` 行导致 Weave 无法挂载。预设模式请在 World Console 点击 **概览 → 会话预设 → 还原 DSH 预设**；非预设模式设置 `replaceCompaction: false`（`dsh-world` 的日记、`memory_find` 与记忆注入均完整保留），详见 [README 共存说明](../README.md#与-dsh-world-共存及第三方桥接隔离) |
 | 输入或单组工具消息过大 | 插件会在超长会话上自动执行第一级分批工具输出掩码、按主摘要目标独立计算窗口容量、按波次分层折叠检查点并限制每块/每波工具引用上限；若单条消息或单组工具仍超限，请根据诊断中的估算值调高摘要模型窗口或输入预算配置 |
 | 后台分页调用额度耗尽 | 排查提示原因后，输入 `/compact` 为剩余未完成页面续批一轮调用额度 |
@@ -58,7 +59,7 @@
 
 ```bash
 dsh plugin --profile web add dsh-compaction-weave
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.2.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.3.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

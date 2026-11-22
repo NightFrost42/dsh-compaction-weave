@@ -934,7 +934,9 @@ await test('e2e-backup-restore-path-a-cold-and-path-b-live-armed-recoverBeforeOp
     });
     assert.equal(applied.status, 'restored');
     assert.equal(sha256(readFileSync(s.logPath)), preMigrationSha, 'Path B reopen must restore exact .v4.jsonl.zstd bytes');
-    assert.equal(host.engine.sessionState.read(s.session.id).failures, 2, 'weave-state.json restored');
+    assert.equal(host.engine.sessionState.read(s.session.id).failures, 0, 'restore resets breaker failures to 0');
+    assert.equal(host.engine.sessionState.read(s.session.id).stopped, false);
+    assert.equal(host.engine.sessionState.read(s.session.id).breakerBypassed, false);
     assert.deepEqual(await host.engine.journal.pending(s.session.id), [], 'stale journal cleared');
     assert.deepEqual(readdirSync(contDir), [], 'stale continuation-progress cleared');
     assert.equal(host.engine.backupStore.readPendingRestore(s.session.id), null);

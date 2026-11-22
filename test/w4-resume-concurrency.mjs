@@ -1005,9 +1005,11 @@ await test('w4-09-p0-guards-hierarchical-fold-resilience-and-cli-subcommands', a
     groups: 8,
     groupSize: 55000,
     streamHandler: async function* (opts) {
-      // Detect folding call: its input messages contain the inline compact checkpoint preamble
+      // Detect folding call: folds >= 2 prior checkpoints without an Incremental span prefix note
       const serialized = JSON.stringify(opts.messages);
-      const isFoldCall = serialized.includes('This is an automatically generated checkpoint condensing an earlier span');
+      const isFoldCall =
+        (serialized.split('This is an automatically generated checkpoint condensing an earlier span').length - 1) >= 2 &&
+        !serialized.includes('Incremental span:');
       if (isFoldCall) {
         foldFailuresTriggered += 1;
         throw new Error('simulated fold provider failure');

@@ -36,15 +36,15 @@
 
 ## 安装与升级
 
-支持 **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`**（`0.2.2-rc.1` 起的 `0.2.x–0.x` 系列），原生原子事务已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，并在默认 `strictHostFingerprints: false` 下支持宿主后续小版本调整私有持久化方法时平顺降级至公开 `Session.append(replace)` + `sessions.flush()`（同时继续拦截未恢复 `.rollback`/`.tail` 日志），运行环境需 **Node.js 24.9+**。正式版已同步发布到 **[npm（`latest`）](https://www.npmjs.com/package/dsh-compaction-weave)** 与 [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest)：优先推荐通过 npm 安装 `dsh-compaction-weave`（自动跟踪 `latest` 更新提示并免除 `allowBuilds` 构建授权），也可使用 Releases 页面提供的 `dsh-compaction-weave.tgz`（无版本号最新包）、`dsh-compaction-weave-0.4.2.tgz` 或本地打包生成的 `.tgz` 文件。
+支持 **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`**（`0.2.2-rc.1` 起的 `0.2.x–0.x` 系列），原生原子事务已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，并在默认 `strictHostFingerprints: false` 下支持宿主后续小版本调整私有持久化方法时平顺降级至公开 `Session.append(replace)` + `sessions.flush()`（同时继续拦截未恢复 `.rollback`/`.tail` 日志），运行环境需 **Node.js 24.9+**。正式版已同步发布到 **[npm（`latest`）](https://www.npmjs.com/package/dsh-compaction-weave)** 与 [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest)：优先推荐通过 npm 安装 `dsh-compaction-weave`（自动跟踪 `latest` 更新提示并免除 `allowBuilds` 构建授权），也可使用 Releases 页面提供的 `dsh-compaction-weave.tgz`（无版本号最新包）、`dsh-compaction-weave-0.4.3.tgz` 或本地打包生成的 `.tgz` 文件。
 
 ### 桌面端
 
 - **通过 npm / 插件市场安装（推荐，可自动获取更新）**：在 `dsh-market` 搜索或点击安装 `dsh-compaction-weave`（或使用 **插件 → 添加插件** 安装 npm 包名 `dsh-compaction-weave`），后续将自动跟踪 npm `latest` 标签提示升级。
 - **通过离线 `.tgz` 手动安装 / 升级**：
-  1. 从 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest) 下载 `dsh-compaction-weave.tgz` 或 `dsh-compaction-weave-0.4.2.tgz`。
+  1. 从 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest) 下载 `dsh-compaction-weave.tgz` 或 `dsh-compaction-weave-0.4.3.tgz`。
   2. 升级安装时，先在 **插件** 页面卸载旧版 Weave，保留独立存储目录中的历史归档与设置；首次安装可跳过此步。
-  3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.4.2.tgz`），完成安装并启用。
+  3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.4.3.tgz`），完成安装并启用。
   4. **重启 DSH**，在插件详情页确认版本号已更新。
 
 ### 命令行
@@ -58,7 +58,7 @@ dsh plugin --profile web add dsh-compaction-weave
 如需离线安装或手动指定版本 `.tgz` 包，也可改用本地文件路径：
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.2.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.3.tgz
 ```
 
 请将 `web` 替换为实际使用的命令行 profile 名称，完成后重新启动该 profile。桌面端用户请参考上方的插件管理页流程。
@@ -91,6 +91,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.2.tgz
 | 摘要并发数 | 2 | 允许 1–6 路受控并发生成与审计（严格按序提交），遇 HTTP 429 自动降回并发 1 冷却 |
 | 摘要推理强度 | `low` | 默认压低摘要深度思考开销以提速省费，也支持直接指定 `none`、`minimal`、`medium`、`high`、`xhigh`、`max` 或 `inherit`（不支持时自动逐级向下回退并省略） |
 | 保留审计严格阻断 | 开启 | 默认对未通过保留校验的摘要阻断重生成；关闭（`auditBlockOnLoss: false`）后改为仅记录告警并放行 |
+| 自动压缩熔断后策略 | `confirm` | 连续失败熔断后控制卡片提供手动重试、两步确认暂跳过自动压缩（`confirm`），或仅警告放行（`degrade`）/ 严格阻断（`block`） |
 | 自动压缩触发比例 | 80% | 与主回答输出预留和提前量共同决定实际触发线 |
 | 最小压缩幅度 | 20% | 自动压缩规划期望释放的输入空间比例 |
 | 失败重试次数 | 2 次 | 首次请求失败后最多追加尝试 2 次 |
@@ -105,7 +106,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.2.tgz
 - **与 `dsh-world` 共存（Issue #4）**：如果同时安装并启用了 `dsh-world` 的压缩替换（`compactionSwapped` / `dsh-world/compaction`），它会把官方 `@deepseek-ai/dsh-compaction-basic` 行从配置树替换掉，导致 Weave 找不到官方行而**静默未挂载**。若要保留 `dsh-world` 的日记、`memory_find` 与记忆注入同时由 Weave 负责压缩：
   - 预设模式：在 World Console 点击 **概览 → 会话预设 → 还原 DSH 预设**；
   - 非预设模式：在 `dsh-world` 配置中设置 `replaceCompaction: false`。
-- **第三方 IM 桥接通道隔离（Issue #6）**：Weave 已内置将 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge` 等桥接来源按非用户参考数据隔离（不参与用户约束/极性审计）；若你使用的其他第三方桥接或插件带有自定义 `source.kind`，可在引擎配置中将其加入 `extraReferenceSourceKinds`（见 [配置指南](docs/configuration.md)）。
+- **第三方 IM 桥接通道与裸注入前缀隔离（Issue #6 / #7A）**：Weave 已内置将 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge` 等桥接来源及常见多行记忆注入头（如 `===== 长期记忆 =====`、`===== Long-Term Memory =====`、`【记忆导引】`）按非用户参考数据隔离（不参与 Section 6 保留与约束/极性审计）；若你使用的第三方桥接或插件带有自定义 `source.kind` 或裸前缀，可在配置中加入 `extraReferenceSourceKinds` / `extraReferencePrefixes`（见 [配置指南](docs/configuration.md)）。
 
 ## 测试与验证
 

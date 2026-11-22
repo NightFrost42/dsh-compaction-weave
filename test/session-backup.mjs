@@ -184,8 +184,15 @@ await test('zstd-raw-byte-fidelity-and-zero-foreign-files-in-dsh-session-dir', a
   assert.ok(restored.safetyCopyPath.startsWith(ws.backupStore.dirFor(sessionId)));
   assert.deepEqual(fs.readFileSync(restored.safetyCopyPath), mutatedBytes);
   assert.deepEqual(fs.readdirSync(ws.dshSessionDir), ['session.v4.jsonl.zstd']);
-  // Aux Weave stores synced cleanly:
-  assert.deepEqual(ws.stateStore.read(sessionId), { failures: 1, stopped: false });
+  // Aux Weave stores synced cleanly (v0.4.3 clears breaker state on restore):
+  assert.deepEqual(ws.stateStore.read(sessionId), {
+    failures: 0,
+    stopped: false,
+    breakerBypassed: false,
+    lastFailureCode: null,
+    lastDiagnosticId: null,
+    lastDiagnosticPath: null,
+  });
   assert.equal((await ws.journal.pending(sessionId)).length, 0);
   assert.equal(contStore.read(), null);
   assert.equal(mock.stats().memoHas, false);

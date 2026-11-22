@@ -817,11 +817,11 @@ await test('issue6-polarity-error-metadata-and-diagnostic-explanation', async ()
 await test('issue4-and-v042-metadata-docs-and-changelog', () => {
   const rootDir = new URL('..', import.meta.url);
   const pkg = JSON.parse(readFileSync(new URL('package.json', rootDir), 'utf8'));
-  assert.equal(pkg.version, '0.4.2');
-  assert.equal(PLUGIN_VERSION, '0.4.2');
+  assert.match(pkg.version, /^0\.4\.[2-9]\d*/);
+  assert.equal(PLUGIN_VERSION, pkg.version);
 
   const changelog = readFileSync(new URL('CHANGELOG.md', rootDir), 'utf8');
-  assert.match(changelog, /^# 更新记录\s+## \[0\.4\.2\] - 2026-11-22/);
+  assert.match(changelog, /^# 更新记录[\s\S]*?## \[0\.4\.2\] - 2026-11-22/);
   assert.match(changelog, /@qqGit-0528/);
 
   const readmeZh = readFileSync(new URL('README.md', rootDir), 'utf8');
