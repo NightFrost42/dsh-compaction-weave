@@ -461,7 +461,7 @@ await test('bilingual-natural-zh-headings-accepted-and-arbitrary-rejected', asyn
     assert.equal(host.calls.length, 1, 'natural Chinese summary on code-heavy English-detected span must pass on 1st attempt');
   } finally {
     host.cleanup();
-    await rm(home, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -566,7 +566,7 @@ await test('summary-not-smaller-retry-feedback-includes-maxSummaryBytes', async 
     assert.match(reqPrompt, /SIZE BUDGET CONSTRAINT:.*maxSummaryBytes=420/);
   } finally {
     host.cleanup();
-    await rm(home, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -651,7 +651,7 @@ await test('migrate-bili-retains-unshrinkable-non-bili-tail-after-bili-cleared',
     assert.equal(detectBiliSession(sStillBili.session).detected, true, 'bili tool still unmigrated on failed tail');
   } finally {
     host.cleanup();
-    await rm(home, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -846,7 +846,7 @@ await test('monotonic-overallPercent-across-chunks-fold-continuation-and-fold-ad
     assert.equal(foldDone.overallPercent, 100);
   } finally {
     hostFold.cleanup();
-    await rm(home, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -998,7 +998,7 @@ await test('retry-backup-preserves-original-baseline-reuses-identical-sha-and-re
     assert.equal(sha256(readFileSync(s.logPath)), afterAttempt1Sha);
   } finally {
     host.cleanup();
-    await rm(home, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -1029,7 +1029,7 @@ await test('legacy-bili-backups-without-isBaseline-still-pin-earliest-baseline',
     assert.equal(restored.backupId, b1.backupId);
     assert.deepEqual(readFileSync(logPath), bytes1);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
