@@ -77,7 +77,7 @@ GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、�
 5. 如需本机手动发布到 npm，发布已验证的 tarball（npm 11+ 对本地相对路径要求保留 `./` 前缀，否则会被误解析为 GitHub `owner/repo` 简写）：
 
 ```bash
-npm publish ./dist/dsh-compaction-weave-0.4.1.tgz --tag latest --access public
+npm publish ./dist/dsh-compaction-weave-0.4.2.tgz --tag latest --access public
 ```
 
 正式版默认发布标签为 `latest`（如需发布预览候选版，则改用预发布版本号并将 `publishConfig.tag` 设为 `next`）。

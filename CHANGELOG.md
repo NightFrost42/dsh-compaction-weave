@@ -1,5 +1,13 @@
 # 更新记录
 
+## [0.4.2] - 2026-11-22
+
+- **修复 Section 6 占位符写进标题导致结构校验误拒（PR #3 by `@qqGit-0528` 与跟进完善）**：采纳 `@qqGit-0528` 在 PR #3 中的修复并在 `lib/prompt.js` 与 `lib/validate.js` 中补全双语对称逻辑：英文提示词同步明确保留 `## 6. All User Messages` 标题并将 `[filled by engine]` 写在正文；`ZH_SECTION_TITLE_VARIANTS[5]` 补齐 `[engine-filled]` / `engine-filled` 与 `ENGINE_PLACEHOLDER_RE` 对称匹配；`materializeUserMessageSection` 仅在标题命中占位符正则时才规范化第六节标题（结合 `language` 与标题/第 7 节 CJK 语境输出 `## 6. 全部用户消息` 或 `## 6. All User Messages`），确保 `## 6. 所有用户消息` 等合法自然中文标题不再被 `language='en'` 误改。
+- **直接选择摘要推理强度与阶梯向下回退（Issue #5）**：`summaryReasoningEffort` 新增直接档位 `minimal`、`medium`、`high`、`xhigh`、`max`（共 8 项配置，默认仍为 `low`），设置页下拉框同步更新并支持跨路由直接下发；新增 `resolveModelInfo` 能力预检、按 `ctx.llm` 隔离的有界拒绝缓存（`max → xhigh → high → medium → low → minimal → none → 省略`）以及流抛错/结束块 `UNSUPPORTED_REASONING_EFFORT` 单计费边界内运行时逐级降档与诊断指引。
+- **第三方桥接通道隔离与 `CONSTRAINT_POLARITY_LOST` 诊断升级（Issue #6）**：内置将 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge` 纳入 `REFERENCE_CONTEXT_KINDS` 非用户参考通道，新增 `extraReferenceSourceKinds` 配置项（通过 `AsyncLocalStorage` 按引擎/策略并发隔离，严禁传入 `'user'` 与 `'compact-checkpoint'`）；在全部 `CONSTRAINT_POLARITY_LOST` 报错与 `failureExplanation` 中携带脱敏的 `seq` 与 `source` 元数据，并说明即便关闭 `auditBlockOnLoss` 极性拦截仍严格生效及对应排查路径。
+- **`dsh-world` 共存与桥接排查文档（Issue #4）**：在双语 `README` 与 `troubleshooting` 中补充与 `dsh-world`（`compactionSwapped` / `dsh-world/compaction`）共存方案（通过 World Console 还原 DSH 预设或设置 `replaceCompaction: false`，保留日记/`memory_find`/记忆注入）及第三方桥接通道隔离配置说明。
+- **回归测试**：新增 `test/hotfix-v042.mjs` 专项回归套件并同步更新 `test/w3-concurrency-config.mjs` 与 `test/client-progress.mjs`。
+
 ## [0.4.1] - 2026-11-22
 
 - **修复多块自动压缩过早触发接续死锁（`compactIfNeeded`）**：在 `compactIfNeeded` 串行与并发多块压缩路径中，只有当上下文降至 `<= reductionTarget`（或剩余可压分块耗尽 / 未能继续缩减）时才结束批处理，并将 `_compactChunksConcurrent` 的 `stopBelowTokens` 设为 `reductionTarget + 1`；避免第 0 块刚跌破 `thresholdTokens` 但仍高于 `reductionTarget` 时提前退出批处理并误触发分页接续。

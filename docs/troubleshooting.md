@@ -12,9 +12,10 @@
 | --- | --- |
 | 摘要超时或断流 | 检查模型供应商连接状态，或在设置页适当调高等待上限与重试次数；已提交的分片与断点会自动保留，下一条消息、进度卡片“继续”或 `/compact resume` 会从断点续传 |
 | 压缩中途暂停、崩退或想放弃未完成断点 | 进行中可点进度卡片“暂停”或执行 `/compact cancel`，已提交分片不会回滚；进程崩溃重开会话时插件会在加载前自动闭合残留锁并转为可续传断点。普通中断在下一条消息前自动续传，也可点“继续”或执行 `/compact resume`；若因额度耗尽（`paused_budget`）或连续失败（`paused_failure`）暂停，不会阻塞正常对话，排查后可点“继续”/`/compact` 恢复，或点“放弃进度”/`/compact discard` 清除断点（完整备份不受影响） |
-| 摘要并发触发 429 限流或耗时偏慢 | 默认并发 `summaryConcurrency: 2` 且推理力度为 `low`，遇 HTTP 429 时会自动将并发降至 1 并冷却重试；也可在设置页把并发调为 1 或将 `summaryReasoningEffort` 调为 `none` / `low` 以平衡速度与限流 |
+| 摘要并发触发 429 限流、耗时偏慢或 `UNSUPPORTED_REASONING_EFFORT` | 默认并发 `summaryConcurrency: 2` 且推理力度为 `low`，遇 HTTP 429 时会自动将并发降至 1 并冷却重试；直接选择 `minimal` / `medium` / `high` / `xhigh` / `max` 时若模型不支持也会自动沿阶梯向下回退并省略。若仍被拒，请在 **设置 → 摘要模型 → 摘要推理强度** 设为 `none` 或该模型支持的档位 |
 | 摘要结构不完整或输出截断 | 调高摘要输出上限（`maxTokens`），或更换更适合长文本归纳的摘要模型 |
-| 要求或进度校验未通过 | 查看诊断文件中的错误码与阶段信息，并按 `auditReports` 打开关联的 `audit-reject/` 记录核对拒绝候选、来源事件序号与原话片段；重试过程会自动附带该反馈。若长会话因自然语言改写反复触发 `CONSTRAINT_LOST`，可在设置页热关闭 `auditBlockOnLoss`（极性反转、授权伪造与进度冲突仍严格拦截） |
+| 要求或进度校验未通过（含 `CONSTRAINT_POLARITY_LOST`） | 查看诊断文件中的错误码、触发 `seq`/`source` 与阶段信息，并按 `auditReports` 打开关联的 `audit-reject/` 记录核对拒绝候选、来源事件序号与原话片段；极性反转（`CONSTRAINT_POLARITY_LOST`）即使在 `auditBlockOnLoss: false` 下仍会拦截。若触发来源是自定义第三方消息桥接（已内置隔离 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge`），可将该通道的 `source.kind` 加入 `extraReferenceSourceKinds`；否则可切换摘要模型、关闭 `auditBlockOnLoss`（仅对普通 `CONSTRAINT_LOST` 有效），或在极端历史兼容场景临时设 `auditEnabled: false` |
+| 同时安装 `dsh-world` 后 Weave 静默未挂载 | 若 `dsh-world` 开启了压缩接管（`compactionSwapped` / `dsh-world/compaction`），会覆盖官方 `@deepseek-ai/dsh-compaction-basic` 行导致 Weave 无法挂载。预设模式请在 World Console 点击 **概览 → 会话预设 → 还原 DSH 预设**；非预设模式设置 `replaceCompaction: false`（`dsh-world` 的日记、`memory_find` 与记忆注入均完整保留），详见 [README 共存说明](../README.md#与-dsh-world-共存及第三方桥接隔离) |
 | 输入或单组工具消息过大 | 插件会在超长会话上自动执行第一级分批工具输出掩码、按主摘要目标独立计算窗口容量、按波次分层折叠检查点并限制每块/每波工具引用上限；若单条消息或单组工具仍超限，请根据诊断中的估算值调高摘要模型窗口或输入预算配置 |
 | 后台分页调用额度耗尽 | 排查提示原因后，输入 `/compact` 为剩余未完成页面续批一轮调用额度 |
 | 从 `billion-context` 切到 Weave 后无法自动压缩或遇到旧折叠块 | Weave 接管官方压缩行时会自动清除残留的 `disabled: true`；若日志提示继承了 `auto: false`，请从 profile patch 中移除 `auto: false` 或显式配置 `engine.auto: true`。旧会话中的 `billion-context` / `billion-context-dsh` 折叠块或工具记录可通过进度卡片中的“兼容转换为 Weave”按钮或 `/compact migrate` 一键转换，转换前会自动创建并经 SHA-256 校验完整原始会话备份；如需回退，可点击卡片中的“还原备份”或执行 `/compact backups`、`/compact restore [backupId]`（已打开的会话会先锁定写入，在关闭重开或重载 DSH 后自动完成原子还原） |
@@ -57,7 +58,7 @@
 
 ```bash
 dsh plugin --profile web add dsh-compaction-weave
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.1.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.2.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

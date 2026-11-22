@@ -18,7 +18,7 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 | Base delay | `summaryRetryDelayMs` | 1000 | 0–30000 ms |
 | Per-request timeout | `summaryTimeoutMs` | 180000 | 5000–3600000 ms |
 | Summary concurrency | `summaryConcurrency` | 2 | 1–6 integer (parallel chunk generation with strictly ordered serial commit; drops to 1 on HTTP 429) |
-| Summary reasoning effort | `summaryReasoningEffort` | `low` | `low` (default reduced effort) / `none` (disabled) / `inherit` (follow session) |
+| Summary reasoning effort | `summaryReasoningEffort` | `low` | `low` (default reduced effort) / `none` (omitted) / `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit` (follow session); steps down automatically if unsupported |
 | Block on requirement loss | `auditBlockOnLoss` | `true` (on) | On / Off |
 
 The UI displays timing in seconds; configuration fields use milliseconds. A retry count of 2 allows up to 3 attempts for each unfinished summary or page. Consecutive retries use exponential backoff, capped at 30 seconds.
@@ -116,7 +116,7 @@ Values saved by the summary settings page override the corresponding engine fiel
 | `summaryInputRatio` | `0.75` | Summary input budget relative to the model window |
 | `summaryInputMaxBytes` | `458752` | Complete summary request's UTF-8 byte budget |
 | `summaryConcurrency` | `2` | Maximum concurrent summary workers (`1–6`; probes chunk 0 serially, then generates remaining chunks in parallel and commits strictly in order; drops to 1 on HTTP 429) |
-| `summaryReasoningEffort` | `'low'` | Reasoning effort policy for summary calls: `low` (default reduced effort), `none` (disable reasoning), or `inherit` (keep session setting) |
+| `summaryReasoningEffort` | `'low'` | Reasoning effort policy for summary calls: `low` (default reduced effort), `none` (omit reasoning effort), `minimal` / `medium` / `high` / `xhigh` / `max` (explicit level forwarded even cross-route, automatically stepping down `max → xhigh → high → medium → low → minimal → none → omit` and caching rejected efforts per route on `UNSUPPORTED_REASONING_EFFORT`), or `inherit` (keep session setting on same-route) |
 | `maxSummaryChunks` | `32` | Maximum successful chunks in a workflow |
 | `continuationEnabled` | `true` | Enable paged continuation for large histories |
 | `continuationMemoryBytes` | `12288` | Working-notes budget for continuation |
@@ -132,7 +132,8 @@ Older quotes leave the budget first; active requirements remain independently ch
 | `archiveEnabled` | `true` | Archive originals and attachments before replacing the selected history |
 | `archiveDir` | Automatic | Custom archive directory |
 | `auditEnabled` | `true` | Check requirement retention |
-| `auditBlockOnLoss` | `true` | Retry and prevent submission of summaries losing requirements |
+| `auditBlockOnLoss` | `true` | Retry and prevent submission of summaries losing requirements (polarity reversals remain strictly blocked even when `false`) |
+| `extraReferenceSourceKinds` | `[]` | Additional `source.kind` strings treated as untrusted reference channels instead of user commands (array of up to 64 non-empty strings; strictly rejects `'user'` and `'compact-checkpoint'`). Built-in IM bridge channels (`wechat`, `qq`, `wechat-bridge`, `qq-bridge`, `im-bridge`) are already isolated |
 | `failureThreshold` | `3` | Consecutive-failure threshold for automatic compaction |
 | `strictHostFingerprints` | `false` | When `false`, host minor updates altering private persistence methods gracefully fall back (with a one-time warning) to public `Session.append(replace)` + `sessions.flush` if no unrecovered `.rollback`/`.tail` atomic journal exists; set `true` to enforce reviewed method fingerprints |
 | `language` | `auto` | Summary language: `auto`, `zh`, or `en` |

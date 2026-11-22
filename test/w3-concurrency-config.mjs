@@ -44,7 +44,7 @@ async function test(name, fn) {
 await test('config-defaults-validation-and-model-policy-merging', () => {
   assert.equal(MIN_SUMMARY_CONCURRENCY, 1);
   assert.equal(MAX_SUMMARY_CONCURRENCY, 6);
-  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['low', 'none', 'inherit']);
+  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
   assert.equal(DEFAULT_CONFIG.summaryConcurrency, 2);
   assert.equal(DEFAULT_CONFIG.summaryReasoningEffort, 'low');
 
@@ -63,13 +63,13 @@ await test('config-defaults-validation-and-model-policy-merging', () => {
     assert.throws(() => resolveConfig({ summaryConcurrency: bad }), /summaryConcurrency/);
   }
 
-  for (const effort of ['low', 'none', 'inherit']) {
+  for (const effort of ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']) {
     const resolved = resolveConfig({ summaryReasoningEffort: effort });
     assert.deepEqual(resolved.unknown, []);
     assert.equal(resolved.config.summaryReasoningEffort, effort);
     assert.equal(normalizeSummaryReasoningEffort(effort), effort);
   }
-  for (const bad of ['high', 'xhigh', 'medium', 'max', '', ' ', null, 1, false, {}, []]) {
+  for (const bad of ['ultra', '', ' ', null, 1, false, {}, []]) {
     assert.throws(() => resolveConfig({ summaryReasoningEffort: bad }), /summaryReasoningEffort/);
   }
 
@@ -80,6 +80,7 @@ await test('config-defaults-validation-and-model-policy-merging', () => {
     modelPolicies: [
       { provider: 'fast', model: 'flash', summaryConcurrency: 5, summaryReasoningEffort: 'none' },
       { provider: 'strict', model: 'pro', summaryConcurrency: 1, summaryReasoningEffort: 'inherit' },
+      { provider: 'deep', model: 'reasoner', summaryReasoningEffort: 'high' },
     ],
   }).config;
   const fastPolicy = resolveTargetPolicy(withPolicies, 'fast', 'flash');
@@ -88,6 +89,8 @@ await test('config-defaults-validation-and-model-policy-merging', () => {
   const strictPolicy = resolveTargetPolicy(withPolicies, 'strict', 'pro');
   assert.equal(strictPolicy.summaryConcurrency, 1);
   assert.equal(strictPolicy.summaryReasoningEffort, 'inherit');
+  const deepPolicy = resolveTargetPolicy(withPolicies, 'deep', 'reasoner');
+  assert.equal(deepPolicy.summaryReasoningEffort, 'high');
   const fallbackPolicy = resolveTargetPolicy(withPolicies, 'other', 'model');
   assert.equal(fallbackPolicy.summaryConcurrency, 2);
   assert.equal(fallbackPolicy.summaryReasoningEffort, 'low');
@@ -97,7 +100,7 @@ await test('config-defaults-validation-and-model-policy-merging', () => {
     /summaryConcurrency/,
   );
   assert.throws(
-    () => resolveConfig({ modelPolicies: [{ provider: 'p', model: 'm', summaryReasoningEffort: 'high' }] }),
+    () => resolveConfig({ modelPolicies: [{ provider: 'p', model: 'm', summaryReasoningEffort: 'ultra' }] }),
     /summaryReasoningEffort/,
   );
 });
@@ -116,7 +119,7 @@ await test('summary-config-speed-settings-validation-persistence-clear-and-hot-a
     assert.equal(v.ok, true);
     assert.equal(v.value.summaryConcurrency, Number(String(raw).trim()));
   }
-  for (const raw of ['low', 'none', 'inherit', ' none ']) {
+  for (const raw of ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max', ' none ', ' high ']) {
     const v = validateSummaryConfig({ summaryReasoningEffort: raw });
     assert.equal(v.ok, true);
     assert.equal(v.value.summaryReasoningEffort, raw.trim());
@@ -128,7 +131,7 @@ await test('summary-config-speed-settings-validation-persistence-clear-and-hot-a
     assert.equal(v.ok, false, `bad summaryConcurrency=${String(bad)}`);
     assert.equal(v.code, 'INVALID_SUMMARY_CONCURRENCY');
   }
-  for (const bad of ['high', 'xhigh', 'max', '', ' ', null, 2, false, {}, []]) {
+  for (const bad of ['ultra', '', ' ', null, 2, false, {}, []]) {
     const v = validateSummaryConfig({ summaryReasoningEffort: bad });
     assert.equal(v.ok, false, `bad summaryReasoningEffort=${String(bad)}`);
     assert.equal(v.code, 'INVALID_SUMMARY_REASONING_EFFORT');
@@ -169,7 +172,7 @@ await test('summary-config-speed-settings-validation-persistence-clear-and-hot-a
       { code: 'INVALID_SUMMARY_CONCURRENCY' },
     );
     assert.throws(
-      () => mergeSummaryConfig({}, { summaryReasoningEffort: 'high' }),
+      () => mergeSummaryConfig({}, { summaryReasoningEffort: 'ultra' }),
       { code: 'INVALID_SUMMARY_REASONING_EFFORT' },
     );
     assert.throws(
@@ -184,7 +187,7 @@ await test('summary-config-speed-settings-validation-persistence-clear-and-hot-a
       { code: 'INVALID_SUMMARY_CONCURRENCY' },
     );
     await assert.rejects(
-      handleSummaryConfigRpc({ method: 'set', params: { summaryReasoningEffort: 'high' } }, file),
+      handleSummaryConfigRpc({ method: 'set', params: { summaryReasoningEffort: 'ultra' } }, file),
       { code: 'INVALID_SUMMARY_REASONING_EFFORT' },
     );
     assert.equal(await readFile(file, 'utf8'), beforeRaw);

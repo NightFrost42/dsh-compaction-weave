@@ -18,7 +18,7 @@
 | 重试基础间隔 | `summaryRetryDelayMs` | 1000 | 0–30000 毫秒 |
 | 每次等待上限 | `summaryTimeoutMs` | 180000 | 5000–3600000 毫秒 |
 | 摘要并发数 | `summaryConcurrency` | 2 | 1–6 整数（多块并行生成，严格按顺序提交；遇到 HTTP 429 自动降为 1） |
-| 摘要推理力度 | `summaryReasoningEffort` | `low` | `low`（默认低档）/ `none`（关闭）/ `inherit`（跟随会话） |
+| 摘要推理力度 | `summaryReasoningEffort` | `low` | `low`（默认低档）/ `none`（关闭）/ `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit`（跟随会话）；不支持时自动逐级向下回退 |
 | 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭 |
 
 设置页用秒展示等待时间与间隔，配置字段使用毫秒。重试次数指首次请求之后的额外尝试：设置为 2 时，每个未完成的摘要或页面最多尝试 3 次。连续重试采用指数退避，间隔最高 30 秒。
@@ -116,7 +116,7 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `summaryInputRatio` | `0.75` | 摘要输入相对模型窗口的预算比例 |
 | `summaryInputMaxBytes` | `458752` | 完整摘要请求的 UTF-8 字节预算 |
 | `summaryConcurrency` | `2` | 多分片/分页摘要的并行生成上限（1–6；首片串行探针后并行生成、严格按顺序提交，429 自动降至 1） |
-| `summaryReasoningEffort` | `'low'` | 摘要请求推理力度策略：`low`（低档降耗）、`none`（关闭推理）、`inherit`（沿用主会话设置） |
+| `summaryReasoningEffort` | `'low'` | 摘要请求推理力度策略：`low`（默认低档降耗）、`none`（省略参数）、`minimal` / `medium` / `high` / `xhigh` / `max`（直接指定思考档位，跨路由也会下发并在不支持时自动沿阶梯 `max → xhigh → high → medium → low → minimal → none → 省略` 向下回退并按路由缓存）、`inherit`（同路由沿用主会话设置） |
 | `maxSummaryChunks` | `32` | 一次流程允许的成功分块数量 |
 | `continuationEnabled` | `true` | 开启大段历史的分页接续 |
 | `continuationMemoryBytes` | `12288` | 接续工作笔记预算 |
@@ -132,7 +132,8 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `archiveEnabled` | `true` | 替换选区历史前归档原文与附件 |
 | `archiveDir` | 自动 | 自定义历史归档目录 |
 | `auditEnabled` | `true` | 检查要求是否保留 |
-| `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交 |
+| `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交（极性反转在关闭时仍严格拦截） |
+| `extraReferenceSourceKinds` | `[]` | 额外视为非用户参考通道的 `source.kind` 字符串数组（最多 64 项，严禁包含 `'user'` 或 `'compact-checkpoint'`）；内置已自动隔离 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge` 等桥接通道 |
 | `failureThreshold` | `3` | 连续失败后的自动压缩熔断阈值 |
 | `strictHostFingerprints` | `false` | 宿主持久化私有方法随 DSH 小版本改动时，确认无未恢复 `.rollback`/`.tail` 日志后发出一次提示并降级使用公开 `Session.append(replace)` + `sessions.flush`；设为 `true` 时严格拦截未审核指纹 |
 | `language` | `auto` | 摘要语言：`auto`、`zh` 或 `en` |
