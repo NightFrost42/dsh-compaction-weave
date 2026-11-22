@@ -42,6 +42,7 @@ async function worker() {
     const [name,file]=jobs[index++],started=Date.now();
     const temp=path.join(scratch,name.replaceAll('/','-'));
     fs.mkdirSync(temp,{recursive:true});
+    let failureDetail='';
     const result=await new Promise(resolve=>{
       let stdout='',stderr='',timedOut=false;
       const child=spawn(process.execPath,['--import',pathToFileURL(preload).href,file],{
@@ -54,12 +55,27 @@ async function worker() {
       child.on('close',code=>{
         clearTimeout(timer);
         const log=name.replaceAll('/','-')+'.log';
-        fs.writeFileSync(path.join(reportDir,log),stdout+stderr);
-        resolve({name,exit:code,timedOut,...counts(stdout),milliseconds:Date.now()-started,log});
+        const combined=stdout+stderr;
+        fs.writeFileSync(path.join(reportDir,log),combined);
+        const parsed=counts(stdout);
+        if(code!==0||parsed.failed>0||parsed.passed===0){
+          try{
+            const data=JSON.parse(stdout),rows=Array.isArray(data)?data:data.results;
+            const bad=Array.isArray(rows)?rows.filter(x=>x.pass===false):[];
+            if(bad.length)failureDetail=bad.map(x=>`  - ${x.name??x.id??'(unnamed)'}: ${x.error??x.stack??'failed'}`).join('\n');
+          }catch{}
+          if(!failureDetail){
+            const tail=combined.trim().split(/\r?\n/).slice(-25).join('\n');
+            if(tail)failureDetail=tail.split('\n').map(l=>'  '+l).join('\n');
+          }
+        }
+        resolve({name,exit:code,timedOut,...parsed,milliseconds:Date.now()-started,log});
       });
     });
     results.push(result);
-    console.log(`${result.exit===0&&!result.failed&&result.passed?'PASS':'FAIL'} ${name} (${result.passed} cases)`);
+    const passedSuite=result.exit===0&&!result.failed&&result.passed;
+    console.log(`${passedSuite?'PASS':'FAIL'} ${name} (${result.passed} cases)`);
+    if(!passedSuite&&failureDetail)console.error(`  [${name}] failure details:\n${failureDetail}`);
   }
 }
 await Promise.all([worker(),worker(),worker()]);

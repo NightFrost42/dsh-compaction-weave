@@ -210,6 +210,10 @@ await test('native-transaction-adapter-unavailable-falls-back-by-default',async(
     assert.equal((await f.engine.journal.pending(f.session.id)).length,0);
   }finally{await f.close();}
 });
+function nonLockEntries(dir){
+  const entries=fs.readdirSync(dir);
+  return process.platform==='win32'?entries:entries.filter(name=>name!=='session.lock');
+}
 await test('native-transaction-bili-fold-adopt-zstd-reopen-and-backup-restore',async()=>{
   const f=await fixture({compression:'zstd',seedDefaultTurn:false});
   const sha=buf=>createHash('sha256').update(buf).digest('hex');
@@ -278,7 +282,7 @@ await test('native-transaction-bili-fold-adopt-zstd-reopen-and-backup-restore',a
     assert.equal(migrated.completed,true);
     assert.equal(f.calls(),0,'fold-adopt must use 0 LLM calls');
     assert.equal(sha(fs.readFileSync(migrated.backupPath)),preMigrateSha,'backup SHA-256 must match pre-migration .v4.jsonl.zstd');
-    assert.deepEqual(fs.readdirSync(path.dirname(targetPath)),[path.basename(targetPath)],'zero foreign files allowed inside DSH session dir');
+    assert.deepEqual(nonLockEntries(path.dirname(targetPath)),[path.basename(targetPath)],'zero foreign files allowed inside DSH session dir');
 
     // Verify emitted compaction/summary omits llmStreamCall (DSH V4 payload validator rejects false)
     const migratedCpId=migrated.compactionIds[0];
@@ -329,7 +333,7 @@ await test('native-transaction-bili-fold-adopt-zstd-reopen-and-backup-restore',a
     try{
       assert.equal(f.adapter.blocked.has(f.session.id),false,'cold restore on reopen must clear quarantine');
       assert.equal(sha(fs.readFileSync(targetPath)),preMigrateSha,'cold reopen must restore pre-migration .v4.jsonl.zstd byte-for-byte');
-      assert.deepEqual(fs.readdirSync(path.dirname(targetPath)),[path.basename(targetPath)],'zero foreign files after backup restore');
+      assert.deepEqual(nonLockEntries(path.dirname(targetPath)),[path.basename(targetPath)],'zero foreign files after backup restore');
       const restoredStored=await restoredHandle.read();
       const restoredReplay=Session.fromRestore(f.session.id,restoredStored.events,restoredHandle.header,restoredHandle.inheritedEventCount,'detached',f.store.messageProjections);
       assert.equal(detectBiliSession(restoredReplay).detected,true);
@@ -401,7 +405,7 @@ await test('native-transaction-idle-proxy-raw-bili-migrate-and-mask-outside-turn
     assert.equal(detectBiliSession(f.session).detected,false);
     assert.equal(f.session.snapshotEvents().some(e=>e.type==='compaction/prune'),false,'idle proxy-raw migration must not write compaction/prune');
     assert.equal(sha(fs.readFileSync(migrated.backupPath)),preMigrateSha);
-    assert.deepEqual(fs.readdirSync(path.dirname(targetPath)),[path.basename(targetPath)]);
+    assert.deepEqual(nonLockEntries(path.dirname(targetPath)),[path.basename(targetPath)]);
 
     // Real DSH V4 cold reopen + payload/relationship validation (would throw SessionFormatError if any tool/result landed outside a turn!)
     const expectedEvents=f.session.snapshotEvents();

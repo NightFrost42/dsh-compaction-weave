@@ -66,6 +66,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      packages: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -185,3 +186,43 @@ jobs:
               gh release create "$TAG" "${ASSETS[@]}" --verify-tag --title "DSH Compaction Weave $TAG" --generate-notes --latest
             fi
           fi
+
+      - name: Publish mirror to GitHub Packages
+        if: steps.meta.outputs.dry_run == 'false'
+        shell: bash
+        env:
+          GH_PACKAGES_TOKEN: ${{ github.token }}
+          GH_OWNER: ${{ github.repository_owner }}
+          PKG_NAME: ${{ steps.meta.outputs.name }}
+          PKG_VERSION: ${{ steps.meta.outputs.version }}
+          PKG_TARBALL: ${{ steps.meta.outputs.tarball }}
+          NPM_TAG: ${{ steps.meta.outputs.npm_tag }}
+          NPM_CONFIG_PROVENANCE: 'false'
+        run: |
+          set -euo pipefail
+          OWNER_LOWER="$(echo "$GH_OWNER" | tr '[:upper:]' '[:lower:]')"
+          SCOPED_NAME="@${OWNER_LOWER}/${PKG_NAME}"
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+          cat > "$TMP_DIR/.npmrc" <<EOF
+          @${OWNER_LOWER}:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${GH_PACKAGES_TOKEN}
+          EOF
+          published_gh="$(npm view "${SCOPED_NAME}@${PKG_VERSION}" version --registry=https://npm.pkg.github.com --userconfig="$TMP_DIR/.npmrc" 2>/dev/null || true)"
+          if [ "$published_gh" = "$PKG_VERSION" ]; then
+            echo "${SCOPED_NAME}@${PKG_VERSION} is already published on GitHub Packages; skipping."
+            exit 0
+          fi
+          mkdir -p "$TMP_DIR/unpack"
+          tar -xzf "$PKG_TARBALL" -C "$TMP_DIR/unpack"
+          node --input-type=module - "$TMP_DIR/unpack/package/package.json" "$SCOPED_NAME" <<'EOF'
+          import fs from 'node:fs';
+          const [pkgPath, scopedName] = process.argv.slice(2);
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+          pkg.name = scopedName;
+          delete pkg.scripts;
+          pkg.publishConfig = { registry: 'https://npm.pkg.github.com' };
+          fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+          EOF
+          MIRROR_TGZ="$(npm pack "$TMP_DIR/unpack/package" --ignore-scripts --pack-destination "$TMP_DIR" | tail -n 1)"
+          npm publish "$TMP_DIR/$MIRROR_TGZ" --tag "$NPM_TAG" --registry=https://npm.pkg.github.com --userconfig="$TMP_DIR/.npmrc" --provenance=false --ignore-scripts
