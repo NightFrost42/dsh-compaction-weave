@@ -21,12 +21,14 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 | Summary reasoning effort | `summaryReasoningEffort` | `low` | `low` (default reduced effort) / `none` (omitted) / `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit` (follow session); steps down automatically if unsupported |
 | Block on requirement loss | `auditBlockOnLoss` | `true` (on) | On / Off |
 | Post-compact workspace file re-injection | `postCompactReinjectEnabled` | `true` (on) | On (0 LLM tokens, fresh local read of up to 5 recent workspace files, 24KB cap) / Off |
+| Spill oversized tail tool outputs | `persistedOutputEnabled` | `true` (on) | On (0 LLM, archives only unsent tail tool outputs ≥ 32768 chars with 1200-char head/tail preview) / Off |
+| Idle 0-LLM microcompaction | `microcompactEnabled` | `true` (on) | On (0 LLM, preserves newest 4 hot outputs and folds older oversized outputs & repeated reads after idle timeout) / Off |
 
 The UI displays timing in seconds; configuration fields use milliseconds. A retry count of 2 allows up to 3 attempts for each unfinished summary or page. Consecutive retries use exponential backoff, capped at 30 seconds.
 
-Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry, concurrency, reasoning effort, idle, audit-blocking, and workspace file re-injection settings, including unsaved edits.
+Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry, concurrency, reasoning effort, idle, audit-blocking, workspace file re-injection, persisted-output, and microcompaction settings, including unsaved edits.
 
-**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings (as well as concurrency, reasoning effort, `auditBlockOnLoss`, and `postCompactReinjectEnabled`) all hot-apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
+**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings (as well as concurrency, reasoning effort, `auditBlockOnLoss`, `postCompactReinjectEnabled`, `persistedOutputEnabled`, and `microcompactEnabled`) all hot-apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
 
 ### Requirement audit, resumable progress, slash commands & live progress card
 
@@ -52,7 +54,7 @@ Choose **5, 10, 30, 60, 720 or 1440 minutes**, or the longer **7 days (10080 min
 
 The Claude 5 / 60-minute references, GPT ordinary and extended-cache references, and Gemini 30-minute reference remain available. The 7-day and 30-day presets support longer idle policies; they do not imply that provider caches last that long.
 
-When a new user message arrives, compare its queue time with the latest user, assistant or tool activity in the same conversation. If the gap **exceeds** the selected interval, compact existing history at the first step of the new turn before handling the new input. This setting is independent of the pressure-based `auto` switch, applies across conversations, and does not change automatically when switching models. Saved changes apply at subsequent request boundaries; they do not start an idle countdown or background compaction timer.
+When a new user message arrives, compare its queue time with the latest user, assistant or tool activity in the same conversation. If the gap **exceeds** the selected interval, Weave shares `idleCompactionMinutes` with **Time-Based Microcompact (0 LLM calls)**: at the first step of the new turn before handling the new input, it first preserves the newest `K` (default `4`) hot tool outputs and folds older oversized tool outputs and same-path repeated reads, then runs an optional full idle summary (`idleFullSummaryEnabled`) only if further reduction is still needed. This setting is independent of the pressure-based `auto` switch, applies across conversations, and does not change automatically when switching models. Saved changes apply at subsequent request boundaries; they do not start an idle countdown or background compaction timer.
 
 The clock comes from durable session events, including after reopening. Skip new conversations, missing or invalid timestamps, input added during active tool loops, and history that cannot shrink. Do not repeat a successful compaction without intervening conversation work. New input stays outside the selected history. Summary, audit or storage failures stop the main request and retain that input; cancellation retains it too. Existing archives, requirement checks, tool pairing, retry limits and circuit breakers still apply.
 
@@ -101,6 +103,17 @@ Values saved by the summary settings page override the corresponding engine fiel
 | `observationMaskThresholdChars` | `4000` | Minimum tool-result length (in chars) for Stage-1 observation masking |
 | `observationMaskHeadChars` | `300` | Leading chars retained inline by Stage-1 observation masking |
 | `observationMaskTailChars` | `300` | Trailing chars retained inline by Stage-1 observation masking |
+| `persistedOutputEnabled` | `true` | Enable **Persisted-Output**: spills ONLY newly landed unsent tail `tool/result` nodes (0 prefix-cache invalidation, never mutates already-sent history, skips `isError: true`) |
+| `persistedOutputThresholdChars` | `32768` | Minimum text block length (chars) before tail `Persisted-Output` spilling triggers (`2048–1048576` integer) |
+| `persistedOutputHeadChars` | `1200` | Leading preview chars kept inline in persisted-output stubs (`0–8192` integer) |
+| `persistedOutputTailChars` | `1200` | Trailing preview chars kept inline in persisted-output stubs (`0–8192` integer) |
+| `microcompactEnabled` | `true` | Enable **Time-Based Microcompact**: shares `idleCompactionMinutes`, 0 LLM calls, preserves newest `K` hot tool outputs while folding older oversized outputs and same-path repeated reads before optional full idle summary |
+| `microcompactKeepRecentTools` | `4` | Number of newest successful hot tool outputs `K` preserved intact during microcompaction (`0–50` integer) |
+| `microcompactThresholdChars` | `2000` | Minimum length (chars) for folding older non-error tool outputs during microcompaction (`500–262144` integer) |
+| `microcompactHeadChars` | `200` | Leading preview chars kept inline by microcompact masking (`0–4096` integer) |
+| `microcompactTailChars` | `200` | Trailing preview chars kept inline by microcompact masking (`0–4096` integer) |
+| `microcompactRepeatedReadMinChars` | `2000` | Minimum char length for deduplicating earlier same-path file reads during microcompaction (`500–262144` integer; newer hot-tail reads still supersede older reads) |
+| `idleFullSummaryEnabled` | `true` | Whether idle resume compaction may fall back to a full LLM idle summary after 0-LLM microcompaction if still needed (set `false` for microcompact-only idle cleanup) |
 | `cachePreservePrefix` | `true` | Prefer incremental ranges preserving existing prefixes |
 | `cacheMaxCheckpoints` | `4` | Checkpoint count at which consolidation is considered |
 | `cacheMinSavingsTokens` | `4096` | Minimum space freed by incremental compaction |
