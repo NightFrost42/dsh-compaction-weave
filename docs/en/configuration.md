@@ -20,16 +20,19 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 | Summary concurrency | `summaryConcurrency` | 2 | 1–6 integer (parallel chunk generation with strictly ordered serial commit; drops to 1 on HTTP 429) |
 | Summary reasoning effort | `summaryReasoningEffort` | `low` | `low` (default reduced effort) / `none` (omitted) / `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit` (follow session); steps down automatically if unsupported |
 | Block on requirement loss | `auditBlockOnLoss` | `true` (on) | On / Off |
+| Post-compact workspace file re-injection | `postCompactReinjectEnabled` | `true` (on) | On (0 LLM tokens, fresh local read of up to 5 recent workspace files, 24KB cap) / Off |
 
 The UI displays timing in seconds; configuration fields use milliseconds. A retry count of 2 allows up to 3 attempts for each unfinished summary or page. Consecutive retries use exponential backoff, capped at 30 seconds.
 
-Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry, concurrency, reasoning effort, idle, and audit-blocking settings, including unsaved edits.
+Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry, concurrency, reasoning effort, idle, audit-blocking, and workspace file re-injection settings, including unsaved edits.
 
-**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings (as well as concurrency, reasoning effort, and `auditBlockOnLoss`) all hot-apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
+**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings (as well as concurrency, reasoning effort, `auditBlockOnLoss`, and `postCompactReinjectEnabled`) all hot-apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
 
-### Requirement audit, resumable progress & live progress card
+### Requirement audit, resumable progress, slash commands & live progress card
 
 - **`auditBlockOnLoss` (on by default)**: Retries and blocks summaries or continuations that drop active user requirements. Weave automatically filters `<system-reminder>`, `AGENTS.md`, and first-party DSH V4 host reminders (while preserving real user prose in mixed messages) to prevent false rejections. If a long session still hits retention rejections, you can toggle this off live in Settings; Section 6 verbatim quotes, polarity-flip blocking, approval provenance checks, and progress-fact conflict checks remain strictly enforced.
+- **One-shot focused compaction (`/compact <focus>`, `/compact -- <focus>`)**:
+  - `/compact <focus>` (for example `/compact keep API schema and error line numbers`) passes a one-shot focus instruction (control chars stripped, whitespace collapsed, capped at 500 characters) to manual compaction so specified details are prioritized without dropping user constraints or inventing facts. Only the exact 6 built-in subcommands (`migrate`, `backups`, `restore [backupId]`, `resume`, `cancel`, `discard`) are reserved; any other non-empty text parses as a focus instruction. Prefix with `--` (`/compact -- resume notes`) to force focus parsing when your instruction begins with a reserved keyword. Plain `/compact` with no arguments delegates unchanged.
 - **Live progress card & pause/resume checkpoints**: During automatic compaction, manual `/compact`, paged continuation, or compatibility conversion, a live progress card appears above the composer showing the current phase, progress bar, wave/chunk/page counters, concurrency/rate-limit indicator, attempt count, summary model, token delta, masked tool count, stream liveness, elapsed timer, and a **Pause** button; when idle (with no migration or paused checkpoint), it stays hidden. If a run is paused, timed out, errored, or interrupted by a crash, committed chunks stay intact and remaining progress is persisted as a resumable checkpoint: ordinary interruptions (`interrupted`) auto-resume before the next message or on **Resume** / `/compact resume`; budget-paused (`paused_budget`) and threshold-failed (`paused_failure`) checkpoints never auto-resume (avoiding silent charges or blocking chat) and wait for explicit **Resume**, `/compact` / `/compact resume`, or **Discard** / `/compact discard` (original full-session backups are never deleted). Slash subcommands: `/compact resume`, `/compact cancel`, `/compact discard`.
 - **`billion-context` compatibility conversion & verified backups**: The **Convert to Weave** row appears ONLY when unmigrated `billion-context` / `billion-context-dsh` fold blocks or tool artifacts are actually detected in the current session (strictly absent on ordinary or already-converted sessions). Before any irreversible conversion mutates the session, Weave creates and SHA-256 verifies a raw-byte full-session backup under `<DSH_HOME>/storages/dsh-compaction-weave/backups/` (preserving exact `.v4.jsonl.zstd` / `.v4.jsonl` encoding with zero foreign files written into DSH's session directory), and protects the initial original baseline backup across repeated runs. Equivalent slash subcommands are available via `/compact migrate`, `/compact backups`, and `/compact restore [backupId]`.
 
@@ -141,6 +144,20 @@ Older quotes leave the budget first; active requirements remain independently ch
 | `pressureBreakerAction` | `'confirm'` | Policy when the automatic pressure circuit breaker trips (hot-configurable in Settings): `'confirm'` (default: pause auto-send and offer Retry or 2-step Confirm bypass in the composer dock), `'degrade'` (warn and bypass pressure compaction while under the hard request budget), or `'block'` (strictly block until retried or restored); `RECOVERY_REQUIRED`, pending continuations, and `total >= messageBudgetTokens` never bypass |
 | `strictHostFingerprints` | `false` | When `false`, host minor updates altering private persistence methods gracefully fall back (with a one-time warning) to public `Session.append(replace)` + `sessions.flush` if no unrecovered `.rollback`/`.tail` atomic journal exists; set `true` to enforce reviewed method fingerprints |
 | `language` | `auto` | Summary language: `auto`, `zh`, or `en` |
+
+### Post-compact file re-injection & plugin event hooks
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `postCompactReinjectEnabled` | `true` | Deterministically re-reads recently touched local workspace files from disk after compaction (uses 0 LLM tokens; skips `AGENTS.md` / `CLAUDE.md`, `.env` / keys / secrets, binaries, symlink escapes, and remote/synthetic sessions) |
+| `postCompactReinjectMaxFiles` | `5` | Maximum number of recent workspace files re-injected per compaction (`1–20` positive integer) |
+| `postCompactReinjectMaxBytes` | `24576` | Total UTF-8 byte budget for post-compact file re-injection (`1024–262144` integer) |
+| `postCompactReinjectMaxFileBytes` | `6144` | Per-file UTF-8 byte cap for post-compact file re-injection (`512–65536` integer) |
+
+Weave also emits two in-process Cordis plugin event hooks on `ctx.root ?? ctx` for sibling DSH plugins (no external shell commands are spawned):
+
+- **`weave/pre-compact`**: Dispatched serially before compaction runs; returning `{ continue: false }` or `{ cancel: true }` vetoes compaction, and `{ additionalContext }` (up to 1000 chars combined) or `{ focusInstruction }` (up to 500 chars) augments the run. Listener errors or timeouts (default 5000ms) log a warning and fail open so compaction is not stalled.
+- **`weave/post-compact`**: Dispatched serially after compaction commits; strictly failure-isolated (warnings logged, never fails or rolls back committed checkpoints), optionally collecting `{ notice }` / `{ additionalContext }` hints.
 
 The settings interface follows DSH's Chinese or English locale. The `language` option controls generated summaries separately.
 

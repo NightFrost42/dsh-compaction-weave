@@ -20,16 +20,19 @@
 | 摘要并发数 | `summaryConcurrency` | 2 | 1–6 整数（多块并行生成，严格按顺序提交；遇到 HTTP 429 自动降为 1） |
 | 摘要推理力度 | `summaryReasoningEffort` | `low` | `low`（默认低档）/ `none`（关闭）/ `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit`（跟随会话）；不支持时自动逐级向下回退 |
 | 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭 |
+| 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 LLM Token，从本地重读最近最多 5 个工作区文件，上限 24KB）/ 关闭 |
 
 设置页用秒展示等待时间与间隔，配置字段使用毫秒。重试次数指首次请求之后的额外尝试：设置为 2 时，每个未完成的摘要或页面最多尝试 3 次。连续重试采用指数退避，间隔最高 30 秒。
 
-供应商和模型一起选择或一起清空。点击“清除（跟随会话模型）”会清除模型覆盖及其输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、闲置时间与审计拦截参数，包括尚未保存的修改。
+供应商和模型一起选择或一起清空。点击“清除（跟随会话模型）”会清除模型覆盖及其输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、闲置时间、审计拦截与工作区文件重注入参数，包括尚未保存的修改。
 
-**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度与 `auditBlockOnLoss` 审计拦截开关），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
+**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`auditBlockOnLoss` 与 `postCompactReinjectEnabled`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
 
-### 要求保留审计、断点续传与实时进度卡片
+### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
 - **`auditBlockOnLoss`（默认开启）**：在摘要或分页接续漏掉有效用户约束时自动重试并阻止提交。插件已自动识别并过滤 `<system-reminder>`、`AGENTS.md` 以及宿主第一方上下文注入（保留同一消息中的真实用户正文），大幅降低长会话误拦截；若仍需优先让压缩通过，可在设置页将其关闭（关闭后仍严格拦截允许/禁止极性反转、无来源授权伪造及进度事实冲突，并继续逐字保留 Section 6 近期用户原话）。
+- **单次聚焦压缩命令（`/compact <focus>`、`/compact -- <focus>`）**：
+  - `/compact <focus>`（如 `/compact 保留 API 鉴权细节和报错行号`）可在手动压缩时传入单次聚焦指令（自动去除控制字符并压缩空白，最长 500 字符），在不漏掉用户约束或虚构事实的前提下优先保留指定上下文；仅精确保留以下 6 个内建子命令：`migrate`、`backups`、`restore [backupId]`、`resume`、`cancel`、`discard`，其余任意非空文本均解析为聚焦指令。若聚焦内容恰好以保留关键字开头（如 `-- resume notes`），可使用 `/compact -- <focus>` 强制按聚焦指令解析。无参数的 `/compact` 保持原有默认压缩与断点续传行为不变。
 - **实时压缩进度卡片与暂停/断点续传**：自动压缩、手动 `/compact`、分页接续或兼容转换进行时，对话输入框上方会自动显示实时进度卡片，包含阶段状态、进度条、波次/分块/页码、并发路数与限流状态、重试次数、摘要模型、token 变化、掩码统计、流式接收活跃度与计时，并支持点击**暂停**中断当前任务；空闲且无需迁移/续传时完全隐藏。当压缩因用户暂停、超时、错误或进程崩溃中断时，已提交的分片全部保留，未完成进度会自动保存断点：普通中断（`interrupted`）会在下一条消息前自动续传，也可在进度卡片点击**继续**或执行 `/compact resume` 立即继续；额度耗尽（`paused_budget`）或达到失败阈值（`paused_failure`）时不会自动触发续传，避免静默续费或阻塞对话，排查后可点击**继续**、执行 `/compact` / `/compact resume`，或点击**放弃进度** / `/compact discard` 清理未完成断点（原始完整备份始终保留）。命令行对应子命令：`/compact resume`、`/compact cancel`、`/compact discard`。
 - **billion-context 兼容转换与完整备份**：仅当当前会话实际检测到未迁移的 `billion-context` / `billion-context-dsh` 折叠块或工具记录时，进度卡片才会按需出现“兼容转换为 Weave”入口（普通会话及已完成转换的会话不显示）。执行不可逆转换前，插件会先在独立存储目录 `<DSH_HOME>/storages/dsh-compaction-weave/backups/` 下创建并经 SHA-256 校验原始字节（完整保留 `.v4.jsonl.zstd` / `.v4.jsonl` 编码，不向 DSH 会话目录写入杂项文件）；多次备份始终保护首次生成的原始基线备份不被覆盖；命令行亦可使用 `/compact migrate`、`/compact backups` 与 `/compact restore [backupId]`。
 
@@ -141,6 +144,20 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `pressureBreakerAction` | `'confirm'` | 自动压缩熔断后的处理策略（可在设置页热生效修改）：`'confirm'`（默认：阻断自动发送并在输入框卡片提供重试压缩与两步确认放行）、`'degrade'`（在请求硬预算内发出告警并暂跳过自动压缩）、`'block'`（严格阻断，仅允许重试压缩或还原备份）；`RECOVERY_REQUIRED`、待续传与超出 `messageBudgetTokens` 永不放行 |
 | `strictHostFingerprints` | `false` | 宿主持久化私有方法随 DSH 小版本改动时，确认无未恢复 `.rollback`/`.tail` 日志后发出一次提示并降级使用公开 `Session.append(replace)` + `sessions.flush`；设为 `true` 时严格拦截未审核指纹 |
 | `language` | `auto` | 摘要语言：`auto`、`zh` 或 `en` |
+
+### 工作区文件重注入与插件生命周期事件（Hooks）
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `postCompactReinjectEnabled` | `true` | 压缩后确定性地从本地工作区磁盘重读最近活跃文件（消耗 0 LLM Token；自动跳过 `AGENTS.md` / `CLAUDE.md`、`.env` / 密钥等敏感文件、二进制文件、逃逸软链接与远程/合成会话） |
+| `postCompactReinjectMaxFiles` | `5` | 压缩后重注入的本地工作区文件数量上限（`1–20` 正整数） |
+| `postCompactReinjectMaxBytes` | `24576` | 压缩后重注入文件总字节上限（`1024–262144` 整数，UTF-8 字节） |
+| `postCompactReinjectMaxFileBytes` | `6144` | 单个重注入文件的最大 UTF-8 读取字节数（`512–65536` 整数） |
+
+Weave 还在插件事件总线（`ctx.root ?? ctx`）派发两个同进程 Cordis 插件生命周期钩子，供同一宿主内的其他 DSH 插件监听扩展（不执行本地外部 Shell 命令）：
+
+- **`weave/pre-compact`**：压缩开始前按 `serial` 派发；任一监听器返回 `{ continue: false }` 或 `{ cancel: true }` 可否决本次压缩，返回 `{ additionalContext }`（合计上限 1000 字符）或 `{ focusInstruction }`（上限 500 字符）可向本次压缩注入上下文提示；监听器异常或超时（默认 5000ms）会记录警告并自动降级放行，避免阻塞主压缩流程。
+- **`weave/post-compact`**：压缩提交后按 `serial` 派发；严格故障隔离（监听器报错或超时仅记录警告，绝不打断或回滚已提交的压缩），可返回可选的 `{ notice }` / `{ additionalContext }` 提示文本。
 
 设置界面跟随 DSH 的中文或英文界面语言；`language` 字段单独控制生成摘要的语言。
 
