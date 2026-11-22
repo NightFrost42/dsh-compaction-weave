@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
@@ -26,7 +27,7 @@ async function test(name,fn){
   catch(error){results.push({name,pass:false,error:error.message,stack:error.stack});}
 }
 
-async function fixture({compression='none',seedDefaultTurn=true}={}){
+async function fixture({compression='none',seedDefaultTurn=true,cwd}={}){
   const directory=fs.mkdtempSync(path.join(process.env.WEAVE_TEST_ROOT,'test-tmp','transaction-'));
   const root=new Context();
   const mounting=root.plugin({name:'weave-transaction-fixture',async apply(ctx){
@@ -35,7 +36,10 @@ async function fixture({compression='none',seedDefaultTurn=true}={}){
   }});
   await mounting.await();
   const backend=root.sessionPersistence,store=root.sessions;
-  const session=Session.create('transaction-'+randomUUID());
+  const sessionId='transaction-'+randomUUID();
+  const session=cwd===undefined
+    ?Session.create(sessionId)
+    :Session.create(sessionId,undefined,{...Session.create(sessionId).header,cwd});
   const handle=await backend.create(session.header);
   let detach=store.enter(session),expectedHandleCloseFailure=false,handleClosed=false;store.announce(session);
   const add=(role,text,turn=1,step=1)=>session.append(role+'/message',role==='user'
@@ -536,6 +540,92 @@ await test('native-transaction-started-crash-cold-recovery-closes-lock-before-en
       try{await reopenedHandle.close();}catch{}
     }
   }finally{await f.close();}
+});
+await test('native-transaction-zstd-disk-liveness-zero-empty-spins-and-reopen',async()=>{
+  const workspaceDir=fs.mkdtempSync(path.join(process.env.WEAVE_TEST_ROOT??os.tmpdir(),'weave-v4-disk-'));
+  try{
+    fs.mkdirSync(path.join(workspaceDir,'src'),{recursive:true});
+    const existingFile=path.join(workspaceDir,'src','existing.js');
+    const deletedFile=path.join(workspaceDir,'src','deleted-deliverable.js');
+    const oldTime=new Date(Date.now()-120000);
+    fs.writeFileSync(existingFile,'export const ok = true;\n','utf8');
+    fs.utimesSync(existingFile,oldTime,oldTime);
+    fs.writeFileSync(deletedFile,'export const temp = true;\n','utf8');
+    fs.unlinkSync(deletedFile);
+
+    const f=await fixture({compression:'zstd',seedDefaultTurn:false,cwd:workspaceDir});
+    try{
+      assert.equal(f.session.header.cwd,workspaceDir);
+      f.session.append('turn/start',{turn:1});
+      f.session.append('step/start',{turn:1,step:1});
+      f.add('system','Stable system prefix.',1,1);
+      f.add('user','Continue the test task.',1,1);
+      const callKeep='call-disk-keep-1',callDeleted='call-disk-del-1';
+      f.session.append('assistant/message',{turn:1,step:1,stream:[],usage:{inputTokens:0,outputTokens:0},message:{
+        id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},
+        content:[
+          {type:'tool-call',id:callKeep,name:'read_file',arguments:JSON.stringify({path:'src/existing.js'})},
+          {type:'tool-call',id:callDeleted,name:'write_file',arguments:JSON.stringify({path:'src/deleted-deliverable.js'})},
+        ],
+      }},{surfaceOp:'append'});
+      const tcKeep=f.session.append('tool/call',{turn:1,step:1,callId:callKeep,name:'read_file',arguments:JSON.stringify({path:'src/existing.js'})});
+      f.session.append('tool/result',{turn:1,step:1,message:{
+        id:randomUUID(),role:'tool',toolCallId:callKeep,source:{kind:'tool',callId:callKeep},
+        content:[{type:'text',text:'export const ok = true;\n'}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcKeep.seq]});
+      const tcDeleted=f.session.append('tool/call',{turn:1,step:1,callId:callDeleted,name:'write_file',arguments:JSON.stringify({path:'src/deleted-deliverable.js'})});
+      f.session.append('tool/result',{turn:1,step:1,message:{
+        id:randomUUID(),role:'tool',toolCallId:callDeleted,source:{kind:'tool',callId:callDeleted},
+        content:[{type:'text',text:'Wrote src/deleted-deliverable.js'}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcDeleted.seq]});
+      f.session.append('step/end',{turn:1,step:1});
+      f.session.append('step/start',{turn:1,step:2});
+      f.add('assistant','Work notes for deliverables. '.repeat(2500),1,2);
+      f.session.append('step/end',{turn:1,step:2});
+      f.session.append('turn/end',{turn:1});
+      await f.store.flush(f.session);
+
+      const targetPath=f.backend.locate(f.session.header).path;
+      assert.ok(targetPath.endsWith('.v4.jsonl.zstd'),`expected .v4.jsonl.zstd, got ${targetPath}`);
+
+      const result=await f.compact();
+      assert.ok(result.compactionId);
+      assert.equal(f.calls(),1);
+      assert.deepEqual([...fs.readFileSync(targetPath).subarray(0,4)],[0x28,0xb5,0x2f,0xfd],'must persist a real Zstandard frame');
+
+      const checkpoint=f.session.deriveEventMessage(f.session.eventAt(f.session.surface.nodes.at(-1)));
+      const cpText=blocksToText(checkpoint.content);
+      const diskMatch=cpText.match(/<disk-state-check\b[^>]*>[\s\S]*?<\/disk-state-check>/);
+      assert.ok(diskMatch,`expected <disk-state-check> in checkpoint:\n${cpText}`);
+      assert.ok(diskMatch[0].includes('src/deleted-deliverable.js'),'deleted deliverable must be listed in <disk-state-check>');
+      assert.ok(!diskMatch[0].includes('src/existing.js'),'existing unchanged file must not be listed in <disk-state-check>');
+
+      const events=f.session.snapshotEvents();
+      const startCount=events.filter(e=>e.type==='compaction/start').length;
+      const summaryCount=events.filter(e=>e.type==='compaction/summary').length;
+      const endCount=events.filter(e=>e.type==='compaction/end').length;
+      assert.equal(startCount,1);
+      assert.equal(startCount,summaryCount);
+      assert.equal(summaryCount,endCount);
+
+      assert.deepEqual(nonLockEntries(path.dirname(targetPath)),[path.basename(targetPath)],'zero leftover plugin files allowed inside DSH session dir');
+      assert.equal((await f.engine.journal.pending(f.session.id)).length,0);
+
+      const expectedEvents=events;
+      const expectedNodes=[...f.session.surface.nodes];
+      f.detach();
+      await f.closeHandle();
+
+      const reopened=await f.backend.open(f.session.id,'write');
+      try{
+        const stored=await reopened.read();
+        assert.deepEqual(stored.events,expectedEvents);
+        const replay=Session.fromRestore(f.session.id,stored.events,reopened.header,reopened.inheritedEventCount,'detached',f.store.messageProjections);
+        assert.deepEqual(replay.surface.nodes,expectedNodes);
+        assert.equal(replay.header.cwd,workspaceDir);
+      }finally{await reopened.close();}
+    }finally{await f.close();}
+  }finally{fs.rmSync(workspaceDir,{recursive:true,force:true});}
 });
 
 console.log(JSON.stringify({passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,results},null,2));
