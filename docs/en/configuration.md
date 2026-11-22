@@ -23,15 +23,16 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 | Post-compact workspace file re-injection | `postCompactReinjectEnabled` | `true` (on) | On (0 LLM tokens, fresh local read of up to 5 recent workspace files, 24KB cap) / Off |
 | Spill oversized tail tool outputs | `persistedOutputEnabled` | `true` (on) | On (0 LLM, archives only unsent tail tool outputs ≥ 32768 chars with 1200-char head/tail preview) / Off |
 | Idle 0-LLM microcompaction | `microcompactEnabled` | `true` (on) | On (0 LLM, preserves newest 4 hot outputs and folds older oversized outputs & repeated reads after idle timeout) / Off |
+| Last-resort 0-LLM emergency pruning (Snip) | `snipEnabled` | `true` (on) | On (default, 0 LLM; triggers only near `messageBudgetTokens` or on 413 after regular compaction/continuation fails, archiving old tool loops with `history_read` pointers without dropping recent user messages) / Off |
 | Background session memory | `sessionMemoryEnabled` | `false` (off) | Off (default, 0 extra calls) / On (opt-in; runs background idle LLM calls consuming API balance & token quota) |
 | Session Memory call limit per session | `sessionMemoryMaxCallsPerSession` | `8` | 1–100 integer (per-session billing fuse halting background memory calls once reached) |
 | Expired-window context collapse | `contextCollapseEnabled` | `false` (off) | Off (default) / On (opt-in; triggers ONLY inside the expired `idleCompactionMinutes` resume window after 0-LLM microcompaction, never during warm prompt cache; may invoke a summary LLM call consuming API balance) |
 
 The UI displays timing in seconds; configuration fields use milliseconds. A retry count of 2 allows up to 3 attempts for each unfinished summary or page. Consecutive retries use exponential backoff, capped at 30 seconds.
 
-Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry, concurrency, reasoning effort, idle, audit-blocking, workspace file re-injection, persisted-output, microcompaction, and modified session-memory / context-collapse settings, including unsaved edits.
+Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry, concurrency, reasoning effort, idle, audit-blocking, workspace file re-injection, persisted-output, microcompaction, Snip emergency pruning, and modified session-memory / context-collapse settings, including unsaved edits.
 
-**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings (as well as concurrency, reasoning effort, `auditBlockOnLoss`, `postCompactReinjectEnabled`, `persistedOutputEnabled`, `microcompactEnabled`, `sessionMemoryEnabled`, `sessionMemoryMaxCallsPerSession`, and `contextCollapseEnabled`) all hot-apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
+**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings (as well as concurrency, reasoning effort, `auditBlockOnLoss`, `postCompactReinjectEnabled`, `persistedOutputEnabled`, `microcompactEnabled`, `snipEnabled`, `sessionMemoryEnabled`, `sessionMemoryMaxCallsPerSession`, and `contextCollapseEnabled`) all hot-apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
 
 ### Requirement audit, resumable progress, slash commands & live progress card
 
@@ -125,6 +126,26 @@ Values saved by the summary settings page override the corresponding engine fiel
 | `proactiveMinGrowthTokens` | `4096` | New content required before another proactive request |
 
 `auto` controls pressure-based compaction, `idleCompactionMinutes` controls compaction when resuming after idle time, and `proactiveEnabled` controls model requests. Use `/compact` for manual compaction.
+
+### Execution hierarchy & last-resort 0-LLM emergency pruning (Snip)
+
+Weave reduces context in strictly ordered, cache-conscious tiers:
+
+1. **Normal warm cache (active turns)**: runs ONLY 0-LLM, 0-prefix-cache-invalidation **Persisted-Output** tail spilling for newly landed unsent `tool/result` nodes; never mutates previously sent history.
+2. **Expired idle TTL window (`idleCompactionMinutes` exceeded)**:
+   - **Tier 1 — Idle 0-LLM Time-Based Microcompact**: keeps newest `K` hot tool outputs and folds older oversized outputs & repeated same-path reads.
+   - **Tier 2 — Context Collapse (opt-in)**: runs progressively when `contextCollapseEnabled: true` (never during warm prompt cache).
+   - **Tier 3 — Optional full idle LLM summary (`idleFullSummaryEnabled`)**: runs only if further reduction is still needed.
+3. **Pressure / manual compaction (`thresholdRatio` / `pressureBudgetTokens`, `/compact`, `context_compact`)**: runs Stage-1 archive-backed **Observation Masking** (0 LLM if target met) before LLM summarization / paged continuation (reusing validated `Session Memory` first when `sessionMemoryEnabled: true`).
+4. **Last-resort 0-LLM emergency pruning (`Snip`) near the hard wall**: triggers ONLY as a final fallback when regular compaction or continuation fails / cannot fit and the session still approaches `messageBudgetTokens` or hits `CONTEXT_WINDOW_EXCEEDED` (413) (0 LLM calls). Snip prioritizes archiving older tool-call/result loops into compact stubs with `history_read` pointers while strictly protecting the system prompt, recent user messages and turns, active constraints, and tool-pair boundaries.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `snipEnabled` | `true` | Enable last-resort 0-LLM emergency pruning **Snip** (on by default, hot-toggleable in Settings; 0 LLM calls, triggers only near `messageBudgetTokens` or on 413 after regular compaction/continuation fails, archiving pruned tool loops with `history_read` pointers and never dropping recent user messages) |
+| `snipKeepRecentTurns` | `2` | Minimum recent authentic user turns strictly protected from Snip pruning (`1–50` integer) |
+| `snipKeepRecentTokens` | `8192` | Minimum recent working-tail token floor protected from Snip pruning (`512–262144` integer, bounded against target budget on tool-pair-balanced boundaries) |
+| `snipMinSavingsTokens` | `1024` | Minimum net token savings required before Snip archives a candidate span (`0–131072` integer) |
+| `snipMaxSpansPerRescue` | `4` | Maximum contiguous spans archived in a single emergency Snip rescue pass (`1–20` integer) |
 
 ### Background Session Memory & Expired-Window Context Collapse (Opt-In, Default Off)
 

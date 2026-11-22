@@ -23,15 +23,16 @@
 | 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 LLM Token，从本地重读最近最多 5 个工作区文件，上限 24KB）/ 关闭 |
 | 超大工具结果尾部溢出 | `persistedOutputEnabled` | `true`（开启） | 开启（0 LLM，仅归档未发送尾部 ≥ 32768 字符工具输出并留首尾 1200 字预览）/ 关闭 |
 | 闲置 0-LLM 轻压缩 | `microcompactEnabled` | `true`（开启） | 开启（0 LLM，闲置超期后先保留最新 4 条热点输出，折叠更早大输出与重复读取）/ 关闭 |
+| 最后兜底 0-LLM 急救裁剪（Snip） | `snipEnabled` | `true`（开启） | 开启（默认，0 LLM；仅在逼近 `messageBudgetTokens` 或 413 兜底时归档旧工具循环并保留 `history_read` 指针，绝不丢弃近期用户消息）/ 关闭 |
 | 后台会话记忆 | `sessionMemoryEnabled` | `false`（关闭） | 关闭（默认，0 额外调用）/ 开启（Opt-In；在空闲期运行后台 LLM 调用并额外消耗 API 余额与 Token 额度） |
 | 每会话记忆调用上限 | `sessionMemoryMaxCallsPerSession` | `8` | 1–100 整数（计费熔断上限；达到后本会话停止后台记忆调用） |
 | 过期窗口上下文折叠 | `contextCollapseEnabled` | `false`（关闭） | 关闭（默认）/ 开启（Opt-In；仅在超过 `idleCompactionMinutes` 闲置恢复窗口、且 0-LLM 轻压缩之后触发，绝不在热提示词缓存期间修改历史，可能调用摘要 LLM 消耗 API 余额） |
 
 设置页用秒展示等待时间与间隔，配置字段使用毫秒。重试次数指首次请求之后的额外尝试：设置为 2 时，每个未完成的摘要或页面最多尝试 3 次。连续重试采用指数退避，间隔最高 30 秒。
 
-供应商和模型一起选择或一起清空。点击“清除（跟随会话模型）”会清除模型覆盖及其输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、闲置时间、审计拦截、工作区文件重注入、尾部溢出、闲置轻压缩以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
+供应商和模型一起选择或一起清空。点击“清除（跟随会话模型）”会清除模型覆盖及其输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、闲置时间、审计拦截、工作区文件重注入、尾部溢出、闲置轻压缩、最后兜底急救裁剪（Snip）以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
 
-**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`auditBlockOnLoss`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`microcompactEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession` 与 `contextCollapseEnabled`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
+**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`auditBlockOnLoss`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession` 与 `contextCollapseEnabled`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
 
 ### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
@@ -125,6 +126,26 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `proactiveMinGrowthTokens` | `4096` | 再次主动压缩前所需的新内容规模 |
 
 `auto`、`idleCompactionMinutes` 和 `proactiveEnabled` 分别控制自动压力检查、闲置后继续对话时压缩与模型主动申请。手动入口为 `/compact`。
+
+### 上下文压缩执行层级与最后兜底 0-LLM 急救裁剪（Snip）
+
+Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
+
+1. **热缓存期（正常连续对话）**：仅运行 0 LLM、0 前缀缓存失效的 **Persisted-Output** 尾部溢出（仅归档尚未发给模型的尾部超大 `tool/result`）；绝不改写已发送历史。
+2. **闲置超期恢复窗口（超过 `idleCompactionMinutes`）**：
+   - **Tier 1 — 闲置 0-LLM 轻压缩（Time-Based Microcompact）**：先保留最新 `K` 条热点工具输出，折叠更早大体积输出与同路径重复读取。
+   - **Tier 2 — 过期窗口上下文折叠（Context Collapse，Opt-In）**：仅在 `contextCollapseEnabled: true` 时接续渐进折叠更早阶段（绝不在热缓存期间运行）。
+   - **Tier 3 — 可选完整闲置摘要（`idleFullSummaryEnabled`）**：仅在前面步骤后仍需进一步缩减时执行。
+3. **压力／手动压缩（达到 `thresholdRatio` / `pressureBudgetTokens` 或手动 `/compact`、`context_compact`）**：先运行第一级归档存根掩码（Observation Masking，达标则免除摘要模型调用），未达标再进入 LLM 摘要或分页接续（若开启 `sessionMemoryEnabled` 则优先尝试复用已核验的后台记忆）。
+4. **接近硬预算红线的最后兜底 0-LLM 急救裁剪（Snip）**：仅当常规压缩、掩码或续传失败／仍不足以压低，且会话逼近 `messageBudgetTokens` 硬上限或触发 413 溢出（`CONTEXT_WINDOW_EXCEEDED`）时作为最后一道兜底防线运行（0 LLM 调用）。Snip 优先将最旧的工具调用循环归档并替换为带 `history_read` 回查指针的紧凑存根，严格保留系统提示、近期真实用户消息与回合、有效约束及工具调用/结果配对完整性。
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `snipEnabled` | `true` | 开启最后兜底 0-LLM 急救裁剪 **Snip**（默认开启，也可在设置页热切换；0 LLM 调用，仅在常规压缩与续传仍无法避免逼近 `messageBudgetTokens` 硬上限或触发 413 溢出时触发，归档旧工具循环并留下 `history_read` 指针，绝不丢弃近期用户消息） |
+| `snipKeepRecentTurns` | `2` | Snip 强制在尾部保护的最近真实用户回合数下限（`1–50` 整数） |
+| `snipKeepRecentTokens` | `8192` | Snip 强制在尾部保护的近期工作上下文最小 token 预算（`512–262144` 整数，随目标预算协调并在工具配对边界对齐） |
+| `snipMinSavingsTokens` | `1024` | Snip 单个候选连续区间至少需净释放的最小 token 数（`0–131072` 整数） |
+| `snipMaxSpansPerRescue` | `4` | 单次 Snip 急救流程最多归档裁剪的连续区间数量上限（`1–20` 整数） |
 
 ### 后台会话记忆与过期窗口上下文折叠（默认关闭，Opt-In）
 
