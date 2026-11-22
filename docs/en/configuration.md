@@ -23,12 +23,15 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 | Post-compact workspace file re-injection | `postCompactReinjectEnabled` | `true` (on) | On (0 LLM tokens, fresh local read of up to 5 recent workspace files, 24KB cap) / Off |
 | Spill oversized tail tool outputs | `persistedOutputEnabled` | `true` (on) | On (0 LLM, archives only unsent tail tool outputs ≥ 32768 chars with 1200-char head/tail preview) / Off |
 | Idle 0-LLM microcompaction | `microcompactEnabled` | `true` (on) | On (0 LLM, preserves newest 4 hot outputs and folds older oversized outputs & repeated reads after idle timeout) / Off |
+| Background session memory | `sessionMemoryEnabled` | `false` (off) | Off (default, 0 extra calls) / On (opt-in; runs background idle LLM calls consuming API balance & token quota) |
+| Session Memory call limit per session | `sessionMemoryMaxCallsPerSession` | `8` | 1–100 integer (per-session billing fuse halting background memory calls once reached) |
+| Expired-window context collapse | `contextCollapseEnabled` | `false` (off) | Off (default) / On (opt-in; triggers ONLY inside the expired `idleCompactionMinutes` resume window after 0-LLM microcompaction, never during warm prompt cache; may invoke a summary LLM call consuming API balance) |
 
 The UI displays timing in seconds; configuration fields use milliseconds. A retry count of 2 allows up to 3 attempts for each unfinished summary or page. Consecutive retries use exponential backoff, capped at 30 seconds.
 
-Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry, concurrency, reasoning effort, idle, audit-blocking, workspace file re-injection, persisted-output, and microcompaction settings, including unsaved edits.
+Select or clear the provider and model together. **Clear (follow session model)** clears the model override and its output limit while saving the page's current trigger ratio, minimum reduction, retry, concurrency, reasoning effort, idle, audit-blocking, workspace file re-injection, persisted-output, microcompaction, and modified session-memory / context-collapse settings, including unsaved edits.
 
-**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings (as well as concurrency, reasoning effort, `auditBlockOnLoss`, `postCompactReinjectEnabled`, `persistedOutputEnabled`, and `microcompactEnabled`) all hot-apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
+**Saving or clearing settings on this page needs no DSH restart.** The summary model, output limit, trigger ratio, minimum reduction, retry and idle settings (as well as concurrency, reasoning effort, `auditBlockOnLoss`, `postCompactReinjectEnabled`, `persistedOutputEnabled`, `microcompactEnabled`, `sessionMemoryEnabled`, `sessionMemoryMaxCallsPerSession`, and `contextCollapseEnabled`) all hot-apply at subsequent compaction or request boundaries. A compaction already in progress keeps the configuration snapshot it started with until that operation finishes.
 
 ### Requirement audit, resumable progress, slash commands & live progress card
 
@@ -122,6 +125,28 @@ Values saved by the summary settings page override the corresponding engine fiel
 | `proactiveMinGrowthTokens` | `4096` | New content required before another proactive request |
 
 `auto` controls pressure-based compaction, `idleCompactionMinutes` controls compaction when resuming after idle time, and `proactiveEnabled` controls model requests. Use `/compact` for manual compaction.
+
+### Background Session Memory & Expired-Window Context Collapse (Opt-In, Default Off)
+
+Both features are **strictly opt-in (`false` by default)**: when disabled, they incur **0 extra LLM calls and 0 extra charges**.
+
+- **Background Session Memory**: When enabled, pre-generates rolling session summaries during idle gaps using an explicit `coveredThroughSeq` watermark over compactable prefixes while preserving the recent working tail, and verifies checksums, `sourceHash`, `policyFingerprint`, and tool-pair balance before reuse. Bounded by minimum tokens, update intervals, cooldown, 12KB payload cap, and a persistent per-session **billing fuse** (`sessionMemoryMaxCallsPerSession`, surviving `clear()`) to prevent runaway background billing.
+- **Expired-Window Context Collapse**: Enforces **expired-TTL cache-safe gating**—triggers **ONLY** inside the expired `idleCompactionMinutes` resume window **after** Tier 1 0-LLM **Time-Based Microcompact** (and before optional Tier 3 full idle summary). **NEVER** runs during active turns or warm prompt caches, and stays completely inactive when `idleCompactionMinutes` is `0`. Collapses earlier uncollapsed raw sub-phases progressively up to `contextCollapseMaxSpanTokens` while protecting the recent working tail via the **intersection** of `contextCollapseKeepRecentTokens` and `contextCollapseKeepRecentTurns` (ignoring non-user `<system-reminder>` / bridge messages and keeping tool call/result pairs unsplit). May invoke a summary LLM call consuming API balance.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `sessionMemoryEnabled` | `false` | Opt-in toggle for background idle session-memory pre-generation (`false` by default; enabling runs background LLM calls consuming API balance and token quota) |
+| `sessionMemoryMinTokens` | `24576` | Minimum compactable context tokens required before background Session Memory runs (`4096–1000000` integer) |
+| `sessionMemoryUpdateIntervalTokens` | `16384` | Minimum new token delta beyond the existing `coveredThroughSeq` watermark to trigger an incremental refresh (`2048–500000` integer) |
+| `sessionMemoryUpdateIntervalTurns` | `4` | Minimum new authentic user turn delta beyond `coveredThroughSeq` to trigger an incremental refresh (`1–100` integer) |
+| `sessionMemoryCooldownMs` | `60000` | Minimum cooldown interval in milliseconds between background Session Memory LLM calls (`0–3600000` integer) |
+| `sessionMemoryMaxBytes` | `12288` | Maximum UTF-8 byte size allowed for a persisted Session Memory payload (`2048–65536` integer; oversized entries are cleanly skipped) |
+| `sessionMemoryMaxCallsPerSession` | `8` | Per-session background Session Memory LLM call cap / billing fuse (`1–100` integer; monotonic persisted counter preserved across `clear()`) |
+| `contextCollapseEnabled` | `false` | Opt-in toggle for progressive Context Collapse inside the expired `idleCompactionMinutes` resume window (`false` by default; never triggers during warm prompt cache) |
+| `contextCollapseMinTokens` | `49152` | Minimum total surface tokens required before Context Collapse activates (`8192–1000000` integer) |
+| `contextCollapseMaxSpanTokens` | `32768` | Maximum prefix token span collapsed in a single progressive step (`4096–500000` integer, leaving intermediate/recent history intact) |
+| `contextCollapseKeepRecentTokens` | `8192` | Minimum recent working-tail token floor protected from Context Collapse (`1024–200000` integer, intersected with turn retention) |
+| `contextCollapseKeepRecentTurns` | `2` | Minimum recent authentic user turns protected from Context Collapse (`1–20` integer, intersected with token retention on tool-pair-balanced boundaries) |
 
 ### Quotes and resumable pages
 

@@ -85,7 +85,7 @@ await test('phase-b-defaults-and-v042-phase-a-exports-preserved', () => {
     assert.equal(DEFAULT_CONFIG[key], val, `DEFAULT_CONFIG.${key}`);
   }
 
-  // Preserve v0.4.2 & Phase A exports and defaults, and keep Phase C absent
+  // Preserve v0.4.2 & Phase A exports and defaults, and verify Phase C defaults are opt-in false
   assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
   assert.deepEqual(REASONING_EFFORT_LADDER, ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none']);
   assert.deepEqual(DEFAULT_CONFIG.extraReferenceSourceKinds, []);
@@ -99,7 +99,8 @@ await test('phase-b-defaults-and-v042-phase-a-exports-preserved', () => {
   assert.equal(normalizePostCompactReinjectMaxFiles(5), 5);
   assert.equal(normalizePostCompactReinjectMaxBytes(24576), 24576);
   assert.equal(normalizePostCompactReinjectMaxFileBytes(6144), 6144);
-  assert.equal('sessionMemoryEnabled' in DEFAULT_CONFIG, false);
+  assert.equal(DEFAULT_CONFIG.sessionMemoryEnabled, false);
+  assert.equal(DEFAULT_CONFIG.contextCollapseEnabled, false);
 
   const { config, unknown } = resolveConfig({});
   assert.deepEqual(unknown, []);
@@ -544,14 +545,14 @@ for (const language of ['zh', 'en']) {
         language === 'zh' ? /0-LLM 轻压缩.*完整闲置摘要/ : /0-LLM microcompaction.*full idle summary/,
       );
 
-      // Controls render with default 'true' and ['true', 'false'] options; no Phase C sessionMemory UI
+      // Controls render with default 'true' and ['true', 'false'] options; opt-in Phase C defaults to false
       for (const id of ['weave-persisted-output', 'weave-microcompact']) {
         const control = h.field(id);
         assert.ok(control, `missing ${id}`);
         assert.equal(control.props.value, 'true');
         assert.deepEqual(control.children.map(o => o.props.value), ['true', 'false']);
       }
-      assert.equal(h.field('weave-session-memory-enabled'), null);
+      assert.equal(h.field('weave-session-memory-enabled')?.props?.checked, false);
 
       const pageText = textOf(h.render());
       assert.match(pageText, language === 'zh' ? /0 前缀缓存失效/ : /0 prefix-cache invalidation/);

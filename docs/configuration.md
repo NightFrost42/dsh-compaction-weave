@@ -23,12 +23,15 @@
 | 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 LLM Token，从本地重读最近最多 5 个工作区文件，上限 24KB）/ 关闭 |
 | 超大工具结果尾部溢出 | `persistedOutputEnabled` | `true`（开启） | 开启（0 LLM，仅归档未发送尾部 ≥ 32768 字符工具输出并留首尾 1200 字预览）/ 关闭 |
 | 闲置 0-LLM 轻压缩 | `microcompactEnabled` | `true`（开启） | 开启（0 LLM，闲置超期后先保留最新 4 条热点输出，折叠更早大输出与重复读取）/ 关闭 |
+| 后台会话记忆 | `sessionMemoryEnabled` | `false`（关闭） | 关闭（默认，0 额外调用）/ 开启（Opt-In；在空闲期运行后台 LLM 调用并额外消耗 API 余额与 Token 额度） |
+| 每会话记忆调用上限 | `sessionMemoryMaxCallsPerSession` | `8` | 1–100 整数（计费熔断上限；达到后本会话停止后台记忆调用） |
+| 过期窗口上下文折叠 | `contextCollapseEnabled` | `false`（关闭） | 关闭（默认）/ 开启（Opt-In；仅在超过 `idleCompactionMinutes` 闲置恢复窗口、且 0-LLM 轻压缩之后触发，绝不在热提示词缓存期间修改历史，可能调用摘要 LLM 消耗 API 余额） |
 
 设置页用秒展示等待时间与间隔，配置字段使用毫秒。重试次数指首次请求之后的额外尝试：设置为 2 时，每个未完成的摘要或页面最多尝试 3 次。连续重试采用指数退避，间隔最高 30 秒。
 
-供应商和模型一起选择或一起清空。点击“清除（跟随会话模型）”会清除模型覆盖及其输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、闲置时间、审计拦截、工作区文件重注入、尾部溢出与闲置轻压缩参数，包括尚未保存的修改。
+供应商和模型一起选择或一起清空。点击“清除（跟随会话模型）”会清除模型覆盖及其输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、闲置时间、审计拦截、工作区文件重注入、尾部溢出、闲置轻压缩以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
 
-**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`auditBlockOnLoss`、`postCompactReinjectEnabled`、`persistedOutputEnabled` 与 `microcompactEnabled`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
+**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`auditBlockOnLoss`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`microcompactEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession` 与 `contextCollapseEnabled`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
 
 ### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
@@ -122,6 +125,28 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `proactiveMinGrowthTokens` | `4096` | 再次主动压缩前所需的新内容规模 |
 
 `auto`、`idleCompactionMinutes` 和 `proactiveEnabled` 分别控制自动压力检查、闲置后继续对话时压缩与模型主动申请。手动入口为 `/compact`。
+
+### 后台会话记忆与过期窗口上下文折叠（默认关闭，Opt-In）
+
+以下两项特性均采用**严格默认关闭（`false`）**的 Opt-In 策略：未显式启用时 **0 额外 LLM 调用、0 额外计费**。
+
+- **后台会话记忆（Session Memory）**：启用后在空闲期运行后台滚动摘要预生成，通过显式 `coveredThroughSeq` 水印追踪已覆盖前缀并保留近期尾部工作区上下文，复用前校验校验和、`sourceHash`、`policyFingerprint` 与工具配对完整性；受最小 token、间隔、冷却、12KB 体积上限与跨 `clear()` 持久保留的**单会话计费熔断**（`sessionMemoryMaxCallsPerSession`）约束，避免后台失控扣费。
+- **过期窗口上下文折叠（Context Collapse）**：采用**过期 TTL 缓存安全门控**，**仅**在超过 `idleCompactionMinutes` 闲置恢复窗口、且 Tier 1 **0-LLM 轻压缩（Microcompact）** 执行之后触发（`idleCompactionMinutes` 为 `0` 或热提示词缓存期间**绝不触发**）；按 `contextCollapseMaxSpanTokens` 渐进折叠较早未折叠阶段，同时以 `contextCollapseKeepRecentTokens` 与 `contextCollapseKeepRecentTurns` 的交集（取保护范围更早的一侧，且忽略 `<system-reminder>` 与桥接通道非用户消息、不拆断工具调用/结果配对）严格保留近期工作尾部。触发时可能调用摘要 LLM 并消耗 API 余额。
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `sessionMemoryEnabled` | `false` | Opt-In 开关：是否启用后台闲置会话记忆预生成（默认 `false` 关闭；启用后会运行后台 LLM 调用消耗 API 余额与 Token 额度） |
+| `sessionMemoryMinTokens` | `24576` | 触发后台 Session Memory 所需的最小可压缩上下文 token 数（`4096–1000000` 整数） |
+| `sessionMemoryUpdateIntervalTokens` | `16384` | 已有有效 `coveredThroughSeq` 水印后，触发增量更新所需的新增 token 增量（`2048–500000` 整数） |
+| `sessionMemoryUpdateIntervalTurns` | `4` | 已有有效 `coveredThroughSeq` 水印后，触发增量更新所需的新增真实用户回合数（`1–100` 整数） |
+| `sessionMemoryCooldownMs` | `60000` | 两次后台 Session Memory LLM 调用之间的最小冷却间隔（`0–3600000` 整数毫秒） |
+| `sessionMemoryMaxBytes` | `12288` | 单条持久化 Session Memory 载荷的 UTF-8 最大字节上限（`2048–65536` 整数；超限则安全跳过落盘） |
+| `sessionMemoryMaxCallsPerSession` | `8` | 每会话后台 Session Memory 调用次数上限 / 计费熔断（`1–100` 整数；单调持久化计数，经 `clear()` 仍保留） |
+| `contextCollapseEnabled` | `false` | Opt-In 开关：是否启用过期 `idleCompactionMinutes` 恢复窗口内的渐进 Context Collapse（默认 `false` 关闭；仅在过期闲置窗口 Microcompact 之后触发，绝不破坏热提示词缓存） |
+| `contextCollapseMinTokens` | `49152` | 触发 Context Collapse 所需的最小表面消息总 token 数（`8192–1000000` 整数） |
+| `contextCollapseMaxSpanTokens` | `32768` | 单次渐进 Context Collapse 最多折叠的前缀 token 跨度上限（`4096–500000` 整数，避免一次吞并整段中间/近期历史） |
+| `contextCollapseKeepRecentTokens` | `8192` | Context Collapse 强制在尾部保留的近期工作上下文最小 token 预算（`1024–200000` 整数，与回合数保留取交集） |
+| `contextCollapseKeepRecentTurns` | `2` | Context Collapse 强制在尾部保留的最近真实用户回合数（`1–20` 整数，与 token 保留取交集并对齐工具配对边界） |
 
 ### 原话与分页接续
 

@@ -71,7 +71,8 @@ await test('config-reinject-defaults-and-v042-exports-preserved', () => {
   assert.equal(config.postCompactReinjectMaxFiles, 5);
   assert.equal(config.postCompactReinjectMaxBytes, 24576);
   assert.equal(config.postCompactReinjectMaxFileBytes, 6144);
-  assert.equal('sessionMemoryEnabled' in DEFAULT_CONFIG, false);
+  assert.equal(DEFAULT_CONFIG.sessionMemoryEnabled, false);
+  assert.equal(DEFAULT_CONFIG.contextCollapseEnabled, false);
   assert.equal('hooks' in DEFAULT_CONFIG, false);
 });
 
@@ -591,12 +592,12 @@ for (const language of ['zh', 'en']) {
         ['low', 'none', 'minimal', 'medium', 'high', 'xhigh', 'max', 'inherit'],
       );
 
-      // Post-compact reinject control renders with default 'true' and clear explanation; no sessionMemory UI in Phase A
+      // Post-compact reinject control renders with default 'true' and clear explanation; opt-in Phase C defaults to false
       const reinjectField = h.field('weave-post-compact-reinject');
       assert.ok(reinjectField);
       assert.equal(reinjectField.props.value, 'true');
       assert.deepEqual(reinjectField.children.map(o => o.props.value), ['true', 'false']);
-      assert.equal(h.field('weave-session-memory-enabled'), null);
+      assert.equal(h.field('weave-session-memory-enabled')?.props?.checked, false);
 
       const pageText = textOf(h.render());
       assert.match(pageText, language === 'zh' ? /0 LLM Token/ : /0 LLM tokens/);
