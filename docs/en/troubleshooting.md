@@ -57,7 +57,7 @@ For a command-line profile, stop the profile before upgrading from npm or a loca
 
 ```bash
 dsh plugin --profile web add dsh-compaction-weave
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.4.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.0.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

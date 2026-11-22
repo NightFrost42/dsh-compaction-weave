@@ -36,15 +36,15 @@ When context reaches the trigger threshold, resumes after idle time, or receives
 
 ## Installation and upgrade
 
-Supports **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`** (`0.2.x–0.x` from `0.2.2-rc.1`), with native atomic transactions verified against **DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`** on **Node.js 24.9+**, plus graceful fallback (`strictHostFingerprints: false` default) to public `Session.append(replace)` + `sessions.flush()` across minor DSH updates while still blocking unrecovered `.rollback`/`.tail` atomic journals. Stable releases are published to **[npm (`latest`)](https://www.npmjs.com/package/dsh-compaction-weave)** and [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest): installing `dsh-compaction-weave` from npm is recommended so DSH can track `latest` updates automatically without `allowBuilds` prompts; manual installs using `dsh-compaction-weave.tgz` (versionless latest asset), `dsh-compaction-weave-0.3.4.tgz`, or a locally built `.tgz` remain supported as well.
+Supports **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`** (`0.2.x–0.x` from `0.2.2-rc.1`), with native atomic transactions verified against **DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`** on **Node.js 24.9+**, plus graceful fallback (`strictHostFingerprints: false` default) to public `Session.append(replace)` + `sessions.flush()` across minor DSH updates while still blocking unrecovered `.rollback`/`.tail` atomic journals. Stable releases are published to **[npm (`latest`)](https://www.npmjs.com/package/dsh-compaction-weave)** and [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest): installing `dsh-compaction-weave` from npm is recommended so DSH can track `latest` updates automatically without `allowBuilds` prompts; manual installs using `dsh-compaction-weave.tgz` (versionless latest asset), `dsh-compaction-weave-0.4.0.tgz`, or a locally built `.tgz` remain supported as well.
 
 ### Desktop
 
 - **Install from npm / plugin market (recommended for automatic updates)**: install `dsh-compaction-weave` via `dsh-market` (or enter package name `dsh-compaction-weave` under **Plugins → Add plugin**) to track the npm `latest` release channel.
 - **Manual `.tgz` install / upgrade**:
-  1. Download `dsh-compaction-weave.tgz` or `dsh-compaction-weave-0.3.4.tgz` from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest).
+  1. Download `dsh-compaction-weave.tgz` or `dsh-compaction-weave-0.4.0.tgz` from [Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest).
   2. When upgrading, uninstall the existing Weave package on the **Plugins** page first while keeping archives and settings in the independent storage directory. Skip this step for a fresh installation.
-  3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.3.4.tgz`), then install and enable it.
+  3. Open **Plugins → Add plugin**, enter the absolute path to the package (for example `C:/Downloads/dsh-compaction-weave-0.4.0.tgz`), then install and enable it.
   4. **Restart DSH** and verify the version on the plugin details page.
 
 ### Command line
@@ -58,7 +58,7 @@ dsh plugin --profile web add dsh-compaction-weave
 For offline or manual tarball installation, pass a local `.tgz` path instead:
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.4.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.0.tgz
 ```
 
 Replace `web` with your command-line profile name and restart that profile afterwards. Desktop users should follow the plugin manager steps above.
@@ -67,7 +67,9 @@ Replace `web` with your command-line profile name and restart that profile after
 
 Once enabled, chat normally. By default, Weave uses the active conversation model for summarization and automatically plans compaction as context approaches the trigger threshold (targeting at least a **20%** input reduction on automatic runs).
 
-- **Manual compaction**: Type `/compact` in chat to compact immediately or resume a paused multi-page continuation.
+- **Manual compaction**: Type `/compact` in chat to compact immediately or resume an interrupted compaction/continuation; `/compact resume`, `/compact cancel`, and `/compact discard` also control breakpoints directly.
+- **Live progress & resumable compaction**: While compacting or migrating, a composer-aligned progress card above the input box displays monotonic total progress, active chunk counts, and concurrency, with an immediate **`[Pause]`** button. Pausing or crashing persists checkpoints safely—reopening the session shows **`[Resume]`** / **`[Discard]`**, and sending your next message automatically resumes from the checkpoint without redoing committed chunks.
+- **`billion-context` backup & migration**: When foreign `billion-context` folded nodes are detected in a session, the card offers a conditional one-click compatibility migration that snapshots an immutable SHA-256 baseline backup before rolling-wave compaction, with local-timezone snapshot restore built in.
 - **Phase wrap-up request**: Ask the model to call `context_compact` after finishing a task phase. The tool returns `queued` to record the request; at the next safe step after the current tool batch finishes, Weave checks context growth and eligible span conditions, then either runs compaction (`compacted`, `partial`, or `failed`) or returns a non-compacting receipt such as `skipped` or `blocked`. Check the follow-up receipt for the outcome.
 - **Look up original history**: When you need earlier errors, file paths, or code details verified, ask or prompt the model—it can call these tools on demand to query the local archive:
 
@@ -80,12 +82,15 @@ Once enabled, chat normally. By default, Weave uses the active conversation mode
 
 ## Basic settings
 
-Adjust common options under **Settings → Summary model** (or on the plugin details page). **Saving applies to subsequent operations without restarting DSH; an in-flight compaction keeps its original settings.**
+Adjust common options under **Settings → Compaction** (or on the plugin details page). **Saving applies to subsequent operations without restarting DSH; an in-flight compaction keeps its original settings.**
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | Summary provider and model | Follow conversation | Leave blank to reuse the active chat model, or configure a dedicated summary model |
 | Summary output limit | 8192 tokens | Maximum output length allowed for a single summary response |
+| Summary concurrency | 2 | Bounded 1–6 parallel chunk generation & auditing with strictly ordered serial commits and automatic HTTP 429 backoff to `1` |
+| Summary reasoning effort | `low` | Lowers reasoning effort on summary calls by default to improve speed and cost; accepts `none` or `inherit` |
+| Strict retention audit blocking | On | Blocks and regenerates summaries failing retention checks; disabling (`auditBlockOnLoss: false`) logs warnings instead |
 | Automatic trigger ratio | 80% | Combined with next-reply output reservation and headroom to set the trigger threshold |
 | Minimum reduction | 20% | Target input space reduction for automatic compaction planning |
 | Retry count | 2 | Up to 2 additional attempts after an initial failure |
@@ -96,6 +101,8 @@ Adjust common options under **Settings → Summary model** (or on the plugin det
 Retry settings take effect independently of summary model selection. See [Configuration](docs/en/configuration.md) and [Compaction principles and diagrams](docs/en/principles.md) for prefix preservation, verbatim quote budgets, summary language (`auto` / `zh` / `en`), continuation paging options, and the restrictions when local archiving is disabled (`archiveEnabled: false`).
 
 ## Tests and verification
+
+- **Stable release `0.4.0` (2026-11-22 live progress card, unified resumable compaction, bounded concurrency, `billion-context` backup migration, and P0/P1 self-healing)**: **63 active suites (56 offline unit + 7 real DSH host integration) / 1,211 checks passed with 0 failures** on Windows with DSH `0.2.2-rc.3` (covering crash recovery, idempotent chunk resume, 429 adaptive backoff, `stockAdapter` & billing safety, Issue `#2`, and Chinese multi-clause polarity audits), alongside verified end-to-end migration of a real 1M+ token `billion-context` conversation (`36` consecutive summaries, `0` failures, exact SHA-256 retention, and verbatim `history_search`/`history_read` recall).
 
 - **Stable release `0.3.2` (after the 2026-11-19 host-compatibility relaxation, two-stage compaction, channel-isolation refactor, JSON-wrapper unwrapping, and billing-safety stress tests)**: **51 active suites / 1,059 checks passed with 0 failures** against DSH `0.2.2-rc.3` on Windows (**44 offline suites / 941 checks** including 20 checks in `astra-review-fixes.mjs` and 9 billing/entry checks in `release-billing-safety.mjs`, plus **7 real-host integration suites / 118 checks** covering `strictHostFingerprints: false` graceful fallback and atomic journal refusal); in paired benchmarks against `v0.3.2-rc.4` (`a41b41a`), heavy tool-output compaction cut summary LLM calls from `1` to `0` (`7,329.35 ms → 19.36 ms`), same-route verbatim KV prefix preservation rose from `60%` (`654 B`) to `100%` (`12,215 B`), structured `key: value` validation sped up ~`108×` (`1.08 ms → 0.01 ms`), native `2.1 MB` host transaction commit sped up `14.2%`, and runtime `lib/` bytes dropped `2.66%` (`748,804 → 728,876 B`) — see [Per-suite results and improvement benchmark](docs/benchmarks/v0.3.2-tests.json). 21 legacy synthetic-vocabulary and natural-language regex suites remain archived under [`test/archived-regex/`](test/archived-regex/README.md) outside default runs, and the pre-archive baseline (67 suites / 2,064 checks) stays recorded in [Per-suite baseline results](docs/benchmarks/rc4-tests.json).
 

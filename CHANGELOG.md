@@ -1,5 +1,14 @@
 # 更新记录
 
+## 0.4.0 — 2026-11-22
+
+- **实时压缩进度卡片与统一中断续压（方案 A）**：在对话输入框上方（`conversation.input.dock`）新增与输入框等宽、适配 DSH 主题变量的实时进度卡片，支持单调总进度、块号/Token 实时刷新与主动 `[暂停]`；手动、自动、闲置压缩或迁移中断后均持久化断点，打开会话即见进度与 `[继续压缩]/[继续转换]`/`[放弃]`，继续发消息自动从断点接续（严格遵守分页预算与失败熔断红线）；新增 `/compact resume`、`/compact cancel`、`/compact discard`。
+- **`billion-context` 一键备份迁移与原子还原**：仅在检测到 `billion-context` 折叠块的会话显示「兼容转换为 Weave」入口；转换前自动建立不可变基线 SHA-256 完整备份并支持多波次滚雪球压缩；支持本地时区备份选择、路径一键复制与在线/离线安全还原（缺 `stockAdapter` 时拒绝假成功并明确提示）。
+- **可控并发提速与推理降档**：新增热生效 `summaryConcurrency`（1–6 并发，默认 2，受控并发生成审计 + 按块序串行原子提交，遇 HTTP 429 自动降回并发 1 冷却，暂停或鉴权失败联动中止在途槽位）、`summaryReasoningEffort`（默认 `low`，避免继承主会话高推理档位）、重复大文件读取投影去重以及多页接续并行 Map-Reduce。
+- **保留审计治理与 Issue #2 修复**：设置页新增热生效 `auditBlockOnLoss` 开关（设置入口更名为「上下文压缩」）；修复 `<system-reminder>` / `AGENTS.md` 被误当成用户约束导致 `CONSTRAINT_LOST`（[#2](https://github.com/NightFrost42/dsh-compaction-weave/issues/2)）并免疫反引号/代码块字面量；修复中文多子句极性误判（`CONSTRAINT_POLARITY_LOST`）及双语九段标题与体积缩减重试反馈。
+- **P0/P1 崩溃自愈与并发安全加固**：冷启动在宿主写入 `session/end-seed` 前自动闭合 `phase: 'started'` 及无日志尾随孤儿 `weave-` 压缩锁，`agent/status` 与 `latestEndSeedSeq` 对齐解除旧死锁；冷会话迁移期间拦截并发新回合（`keepInbox: true`）；`weave-state.json.lock` 增加死进程 PID 自动回收；可选层级折叠 `_tryHierarchicalFold` 异常平滑跳过不熔断；细化 4 类忙碌诊断并补齐多 preset 路由与空闲轮询缓存优化。
+- **验收基线**：离线与真实 DSH 宿主测试扩展至 **63 套 / 1,211 项检查全部通过（0 失败）**。
+
 ## 0.3.4 — 2026-11-21
 
 - **npm `latest` 分发渠道与双语文档更新**：在 `README.md` 与 `README.en.md` 顶部加入绑定 `latest` 标签的 npm 徽章，将推荐安装与升级方式调整为直接安装 npm 包 `dsh-compaction-weave`（`dsh plugin --profile web add dsh-compaction-weave`，自动接收更新提示并免 `allowBuilds`），保留离线 `.tgz` 方案并同步更新 `docs/troubleshooting.md`、`docs/en/troubleshooting.md` 升级命令示例。

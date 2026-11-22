@@ -36,15 +36,15 @@
 
 ## 安装与升级
 
-支持 **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`**（`0.2.2-rc.1` 起的 `0.2.x–0.x` 系列），原生原子事务已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，并在默认 `strictHostFingerprints: false` 下支持宿主后续小版本调整私有持久化方法时平顺降级至公开 `Session.append(replace)` + `sessions.flush()`（同时继续拦截未恢复 `.rollback`/`.tail` 日志），运行环境需 **Node.js 24.9+**。正式版已同步发布到 **[npm（`latest`）](https://www.npmjs.com/package/dsh-compaction-weave)** 与 [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest)：优先推荐通过 npm 安装 `dsh-compaction-weave`（自动跟踪 `latest` 更新提示并免除 `allowBuilds` 构建授权），也可使用 Releases 页面提供的 `dsh-compaction-weave.tgz`（无版本号最新包）、`dsh-compaction-weave-0.3.4.tgz` 或本地打包生成的 `.tgz` 文件。
+支持 **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`**（`0.2.2-rc.1` 起的 `0.2.x–0.x` 系列），原生原子事务已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，并在默认 `strictHostFingerprints: false` 下支持宿主后续小版本调整私有持久化方法时平顺降级至公开 `Session.append(replace)` + `sessions.flush()`（同时继续拦截未恢复 `.rollback`/`.tail` 日志），运行环境需 **Node.js 24.9+**。正式版已同步发布到 **[npm（`latest`）](https://www.npmjs.com/package/dsh-compaction-weave)** 与 [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest)：优先推荐通过 npm 安装 `dsh-compaction-weave`（自动跟踪 `latest` 更新提示并免除 `allowBuilds` 构建授权），也可使用 Releases 页面提供的 `dsh-compaction-weave.tgz`（无版本号最新包）、`dsh-compaction-weave-0.4.0.tgz` 或本地打包生成的 `.tgz` 文件。
 
 ### 桌面端
 
 - **通过 npm / 插件市场安装（推荐，可自动获取更新）**：在 `dsh-market` 搜索或点击安装 `dsh-compaction-weave`（或使用 **插件 → 添加插件** 安装 npm 包名 `dsh-compaction-weave`），后续将自动跟踪 npm `latest` 标签提示升级。
 - **通过离线 `.tgz` 手动安装 / 升级**：
-  1. 从 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest) 下载 `dsh-compaction-weave.tgz` 或 `dsh-compaction-weave-0.3.4.tgz`。
+  1. 从 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest) 下载 `dsh-compaction-weave.tgz` 或 `dsh-compaction-weave-0.4.0.tgz`。
   2. 升级安装时，先在 **插件** 页面卸载旧版 Weave，保留独立存储目录中的历史归档与设置；首次安装可跳过此步。
-  3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.3.4.tgz`），完成安装并启用。
+  3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.4.0.tgz`），完成安装并启用。
   4. **重启 DSH**，在插件详情页确认版本号已更新。
 
 ### 命令行
@@ -58,7 +58,7 @@ dsh plugin --profile web add dsh-compaction-weave
 如需离线安装或手动指定版本 `.tgz` 包，也可改用本地文件路径：
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.4.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.0.tgz
 ```
 
 请将 `web` 替换为实际使用的命令行 profile 名称，完成后重新启动该 profile。桌面端用户请参考上方的插件管理页流程。
@@ -67,7 +67,9 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.4.tgz
 
 插件启用后即可正常对话。默认情况下，Weave 跟随当前会话模型生成摘要，并在上下文接近阈值时自动规划压缩（自动模式以释放至少 **20%** 输入空间为规划目标）。
 
-- **手动触发**：在对话框输入 `/compact` 立即尝试压缩，或在后台分页暂停后继续剩余页面。
+- **手动触发**：在对话框输入 `/compact` 立即尝试压缩，或在后台断点暂停后继续剩余分块/页面；也可使用 `/compact resume`、`/compact cancel`、`/compact discard` 直接控制续压与暂停。
+- **实时进度与中断续压**：压缩或迁移期间，对话输入框上方会显示与输入框等宽的实时进度卡片（含总进度、当前分块与并发度），支持随时点击 **`[暂停]`**；主动暂停或意外崩溃重启后均自动保留断点，打开会话可见 **`[继续压缩]`** / **`[继续转换]`** 与 **`[放弃]`**，继续发送新消息也会自动从断点接续压缩（不重复已提交分块）。
+- **`billion-context` 兼容迁移与完整备份还原**：仅在检测到会话存在 `billion-context` 折叠块时，卡片出现「兼容转换为 Weave」入口；转换前自动拍下不可变 SHA-256 完整会话基线备份并支持多波次滚雪球迁移，后续可随时在卡片内按本地时间选择快照还原。
 - **阶段收尾申请**：可让模型在完成阶段任务后调用 `context_compact` 提交申请。工具返回 `queued` 表示已进入队列，插件会在当前工具批次结束后的安全步骤检查上下文增长与可压缩区间，满足条件时执行压缩并返回 `compacted`、`partial` 或 `failed`，不满足条件或插件已停止时返回 `skipped`、`blocked` 等最终回执；查看后续回执即可确认结果。
 - **回查原文**：需要核对早期报错、路径或代码细节时，可提醒或直接向模型提问，模型可按需调用以下工具检索本地归档：
 
@@ -80,12 +82,15 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.4.tgz
 
 ## 基本设置
 
-在 **设置 → 摘要模型**（或插件详情页）中修改常用项，**保存后无需重启 DSH，后续操作使用新设置；进行中的压缩保留原设置**。
+在 **设置 → 上下文压缩**（或插件详情页）中修改常用项，**保存后无需重启 DSH，后续操作使用新设置；进行中的压缩保留原设置**。
 
 | 设置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | 摘要供应商和模型 | 跟随会话 | 留空时复用当前对话模型，也可单独指定摘要模型 |
 | 摘要输出上限 | 8192 tokens | 单次摘要响应允许的最大输出长度 |
+| 摘要并发数 | 2 | 允许 1–6 路受控并发生成与审计（严格按序提交），遇 HTTP 429 自动降回并发 1 冷却 |
+| 摘要推理强度 | `low` | 默认压低摘要深度思考开销以提速省费，可选 `none` 或 `inherit`（跟随主会话） |
+| 保留审计严格阻断 | 开启 | 默认对未通过保留校验的摘要阻断重生成；关闭（`auditBlockOnLoss: false`）后改为仅记录告警并放行 |
 | 自动压缩触发比例 | 80% | 与主回答输出预留和提前量共同决定实际触发线 |
 | 最小压缩幅度 | 20% | 自动压缩规划期望释放的输入空间比例 |
 | 失败重试次数 | 2 次 | 首次请求失败后最多追加尝试 2 次 |
@@ -96,6 +101,8 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.3.4.tgz
 重试设置可独立于摘要模型生效。前缀保留、近期原话预算、摘要语言（自动 / 中文 / 英文）、后台分页参数，以及关闭本地归档（`archiveEnabled: false`）时的功能限制见 [配置指南](docs/configuration.md) 与 [压缩原理与示意图](docs/principles.md)。
 
 ## 测试与验证
+
+- **正式版 `0.4.0`（2026-11-22 实时进度卡片、统一中断续压、受控并发提速、`billion-context` 备份迁移与 P0/P1 崩溃自愈）**：Windows / Node.js / DSH `0.2.2-rc.3` 实测全部 **63 套活动套件（56 套离线单元 + 7 套真实 DSH 宿主集成）、1,211 项断言全部通过，0 失败**（完整覆盖中断恢复、双写幂等推进、429 自适应并发降速、`billing` 与 `stockAdapter` 防护、`Issue #2` 与中文多子句极性审计），并在真实百万级 Token 超长 `billion-context` 会话上完成全量多波次滚雪球迁移压缩（36 段连续摘要 0 失败，关键 SHA-256 与约束完整留存，`history_search`/`history_read` 实测原文逐字取回）。
 
 - **正式版 `0.3.2`（2026-11-19 宿主兼容放宽、两级整理、通道隔离、JSON 解包与计费保护后）**：Windows / Node.js / DSH `0.2.2-rc.3` 实测全部 **51 套活动套件、1,059 项断言全部通过，0 失败**（包含 **44 套离线单元测试 / 941 项** 与 **7 套真实 DSH `0.2.2-rc.3` 宿主集成测试 / 118 项**，含 `strictHostFingerprints: false` 降级与阻断测试、20 项修复回归 `astra-review-fixes.mjs` 及 9 项资金/额度熔断压测 `release-billing-safety.mjs`）；与 `v0.3.2-rc.4`（`a41b41a`）配对基准实测重工具输入省下 100% 摘要调用（`1 → 0` 次、`7329.35 ms → 19.36 ms`）、同路由原样前缀从 `60%`（`654 B`）提升至 `100%`（`12,215 B`）、结构化进度校验提速约 `108×`、`2.1 MB` 原生事务提交提速 `14.2%`，运行库体积净减 `2.66%`（`748,804 → 728,876 B`），详见 [逐套结果与提升对比](docs/benchmarks/v0.3.2-tests.json)。此前强绑定特定业务词表与旧自然语言猜测正则的 21 套历史测试已归档至 [`test/archived-regex/`](test/archived-regex/README.md)，退出日常测试入口；重构前基线快照（67 套、2064 项）留存于 [逐套结果基线](docs/benchmarks/rc4-tests.json)。
 
