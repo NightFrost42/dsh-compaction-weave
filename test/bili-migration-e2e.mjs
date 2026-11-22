@@ -996,10 +996,32 @@ await test('e2e-slash-compact-migrate-backups-restore-and-preserve-default', asy
     );
     const agent = { session: s.session, options: { provider: 'p', model: 'm' } };
 
-    // Ordinary /compact and /compact <focus> still delegate untouched to host command!
+    // Ordinary /compact still delegates untouched to host command; /compact <focus> routes to Weave compactNow!
     assert.equal(await decorated.handler({ rawInput: '/compact', agent, signal: new AbortController().signal }), baseResult);
-    assert.equal(await decorated.handler({ rawInput: '/compact keep API schema', agent, signal: new AbortController().signal }), baseResult);
-    assert.equal(defaultDelegated, 2);
+    assert.equal(defaultDelegated, 1);
+    const focusCalls = [];
+    const origCompactNow = host.engine.compactNow.bind(host.engine);
+    host.engine.compactNow = async (targetAgent, sig, cmdId, cont, opts) => {
+      focusCalls.push({ targetAgent, cmdId, cont, opts });
+      return { compactionId: 'weave-focus-e2e-1', chunks: 1, shadowedTokenCount: 120, shadowedSeqs: [1] };
+    };
+    try {
+      const focusOut = await decorated.handler({
+        rawInput: '/compact keep API schema',
+        agent,
+        signal: new AbortController().signal,
+        commandId: 'cmd-focus-e2e',
+      });
+      assert.equal(focusOut.kind, 'success');
+      assert.match(focusOut.text, /keep API schema/);
+      assert.equal(focusCalls.length, 1);
+      assert.equal(focusCalls[0].cont, false);
+      assert.equal(focusCalls[0].cmdId, 'cmd-focus-e2e');
+      assert.deepEqual(focusCalls[0].opts, { focusInstruction: 'keep API schema' });
+      assert.equal(defaultDelegated, 1);
+    } finally {
+      host.engine.compactNow = origCompactNow;
+    }
 
     // /compact migrate
     const migOut = await decorated.handler({ rawInput: '/compact migrate', agent, signal: new AbortController().signal });
@@ -1030,7 +1052,7 @@ await test('e2e-slash-compact-migrate-backups-restore-and-preserve-default', asy
     const restoreOut = await decorated.handler({ rawInput: '/compact restore', agent, signal: new AbortController().signal });
     assert.equal(restoreOut.kind, 'success');
     assert.match(restoreOut.text, /备份还原已就绪/);
-    assert.equal(defaultDelegated, 2);
+    assert.equal(defaultDelegated, 1);
   } finally {
     host.cleanup();
     await rm(home, { recursive: true, force: true });

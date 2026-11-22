@@ -627,6 +627,140 @@ await test('native-transaction-zstd-disk-liveness-zero-empty-spins-and-reopen',a
     }finally{await f.close();}
   }finally{fs.rmSync(workspaceDir,{recursive:true,force:true});}
 });
+await test('native-transaction-zstd-phase-a-reinject-focus-and-cordis-hooks-reopen',async()=>{
+  const workspaceDir=fs.mkdtempSync(path.join(process.env.WEAVE_TEST_ROOT??os.tmpdir(),'weave-v4-phase-a-'));
+  try{
+    fs.mkdirSync(path.join(workspaceDir,'src'),{recursive:true});
+    const appFile=path.join(workspaceDir,'src','billing.js');
+    fs.writeFileSync(appFile,'export const PRECISION = "integer-cents";\n','utf8');
+    fs.writeFileSync(path.join(workspaceDir,'AGENTS.md'),'HOST_RESIDENT_MUST_SKIP\n','utf8');
+    fs.writeFileSync(path.join(workspaceDir,'.env'),'API_SECRET=must-never-reinject\n','utf8');
+
+    const f=await fixture({compression:'zstd',seedDefaultTurn:false,cwd:workspaceDir});
+    let siblingPlugin;
+    try{
+      // Wire real Cordis root Context so sibling plugin listeners receive weave/pre-compact & weave/post-compact!
+      f.engine.ctx.root=f.root;
+      const seenPre=[],seenPost=[];
+      let lastRequestText='';
+      const origStream=f.engine.ctx.llm.stream;
+      f.engine.ctx.llm.stream=async function*(req){
+        lastRequestText=blocksToText(req?.messages?.at?.(-1)?.content);
+        for await(const chunk of origStream(req))yield chunk;
+      };
+      siblingPlugin=f.root.plugin({
+        name:'phase-a-sibling-hooks',
+        apply(pctx){
+          pctx.on('weave/pre-compact',payload=>{
+            seenPre.push(payload);
+            return {additionalContext:'sibling-hook-v4-note'};
+          });
+          pctx.on('weave/post-compact',payload=>{
+            seenPost.push(payload);
+            return {notice:'post-hook-ok'};
+          });
+        },
+      });
+      await siblingPlugin.await();
+
+      f.session.append('turn/start',{turn:1});
+      f.session.append('step/start',{turn:1,step:1});
+      f.add('system','Stable system prefix.',1,1);
+      f.add('user','Continue the test task.',1,1);
+      const callWrite='call-phasea-write-1',callAgents='call-phasea-agents-1',callEnv='call-phasea-env-1';
+      f.session.append('assistant/message',{turn:1,step:1,stream:[],usage:{inputTokens:0,outputTokens:0},message:{
+        id:randomUUID(),role:'assistant',source:{kind:'model',provider:'p',model:'m'},
+        content:[
+          {type:'tool-call',id:callWrite,name:'write_file',arguments:JSON.stringify({path:'src/billing.js'})},
+          {type:'tool-call',id:callAgents,name:'read_file',arguments:JSON.stringify({path:'AGENTS.md'})},
+          {type:'tool-call',id:callEnv,name:'read_file',arguments:JSON.stringify({path:'.env'})},
+        ],
+      }},{surfaceOp:'append'});
+      const tcWrite=f.session.append('tool/call',{turn:1,step:1,callId:callWrite,name:'write_file',arguments:JSON.stringify({path:'src/billing.js'})});
+      f.session.append('tool/result',{turn:1,step:1,message:{
+        id:randomUUID(),role:'tool',toolCallId:callWrite,source:{kind:'tool',callId:callWrite},
+        content:[{type:'text',text:'Wrote src/billing.js'}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcWrite.seq]});
+      const tcAgents=f.session.append('tool/call',{turn:1,step:1,callId:callAgents,name:'read_file',arguments:JSON.stringify({path:'AGENTS.md'})});
+      f.session.append('tool/result',{turn:1,step:1,message:{
+        id:randomUUID(),role:'tool',toolCallId:callAgents,source:{kind:'tool',callId:callAgents},
+        content:[{type:'text',text:'Read AGENTS.md'}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcAgents.seq]});
+      const tcEnv=f.session.append('tool/call',{turn:1,step:1,callId:callEnv,name:'read_file',arguments:JSON.stringify({path:'.env'})});
+      f.session.append('tool/result',{turn:1,step:1,message:{
+        id:randomUUID(),role:'tool',toolCallId:callEnv,source:{kind:'tool',callId:callEnv},
+        content:[{type:'text',text:'Read .env'}],
+      }},{surfaceOp:'append',sourceEventSeqs:[tcEnv.seq]});
+      f.session.append('step/end',{turn:1,step:1});
+      f.session.append('step/start',{turn:1,step:2});
+      f.add('assistant','Detailed work trace for billing module. '.repeat(2500),1,2);
+      f.session.append('step/end',{turn:1,step:2});
+      f.session.append('turn/end',{turn:1});
+      f.session.append('turn/start',{turn:2});
+      f.session.append('step/start',{turn:2,step:1});
+      f.add('user','Ready for the next step.',2,1);
+      f.add('assistant','Acknowledged, ready to proceed.',2,1);
+      f.session.append('step/end',{turn:2,step:1});
+      f.session.append('turn/end',{turn:2});
+      await f.store.flush(f.session);
+
+      const targetPath=f.backend.locate(f.session.header).path;
+      assert.ok(targetPath.endsWith('.v4.jsonl.zstd'),`expected .v4.jsonl.zstd, got ${targetPath}`);
+
+      const result=await f.engine.compactNow(
+        f.agent,
+        new AbortController().signal,
+        'cmd-v4-phase-a',
+        false,
+        {focusInstruction:'prioritize integer-cents billing'},
+      );
+      assert.ok(result?.compactionId);
+      assert.equal(f.calls(),1);
+      assert.deepEqual([...fs.readFileSync(targetPath).subarray(0,4)],[0x28,0xb5,0x2f,0xfd],'must persist a real Zstandard frame');
+
+      assert.equal(seenPre.length,1,'real Cordis sibling plugin must receive weave/pre-compact once');
+      assert.equal(seenPost.length,1,'real Cordis sibling plugin must receive weave/post-compact once');
+      assert.equal(seenPre[0].sessionId,f.session.id);
+      assert.equal(seenPre[0].manual,true);
+      assert.equal(seenPre[0].focusInstruction,'prioritize integer-cents billing');
+      assert.equal(seenPost[0].compactionId,result.compactionId);
+      assert.ok(lastRequestText.includes('prioritize integer-cents billing'),'focusInstruction must reach LLM prompt');
+      assert.ok(lastRequestText.includes('sibling-hook-v4-note'),'pre-compact hook additionalContext must reach LLM prompt');
+
+      const cpSeq=f.session.surface.nodes.find(seq=>f.session.deriveEventMessage(f.session.eventAt(seq))?.source?.kind==='compact-checkpoint');
+      assert.ok(typeof cpSeq==='number','expected compact-checkpoint on live surface');
+      const checkpoint=f.session.deriveEventMessage(f.session.eventAt(cpSeq));
+      const cpText=blocksToText(checkpoint.content);
+      assert.match(cpText,/<active-workspace-files\b[^>]*scope="local-workspace">/);
+      assert.ok(cpText.includes('path="src/billing.js"'),'edited billing.js must be reinjected');
+      assert.ok(cpText.includes('PRECISION = "integer-cents"'),'fresh disk content must be embedded');
+      assert.ok(!cpText.includes('HOST_RESIDENT_MUST_SKIP'),'AGENTS.md must be excluded');
+      assert.ok(!cpText.includes('must-never-reinject'),'.env secret must be excluded');
+
+      assert.deepEqual(nonLockEntries(path.dirname(targetPath)),[path.basename(targetPath)],'zero leftover plugin files allowed inside DSH session dir');
+      assert.equal((await f.engine.journal.pending(f.session.id)).length,0);
+
+      const expectedEvents=f.session.snapshotEvents();
+      const expectedNodes=[...f.session.surface.nodes];
+      f.detach();
+      await f.closeHandle();
+
+      const reopened=await f.backend.open(f.session.id,'write');
+      try{
+        const stored=await reopened.read();
+        assert.deepEqual(stored.events,expectedEvents);
+        const replay=Session.fromRestore(f.session.id,stored.events,reopened.header,reopened.inheritedEventCount,'detached',f.store.messageProjections);
+        assert.deepEqual(replay.surface.nodes,expectedNodes);
+        const replayedCp=replay.deriveEventMessage(replay.eventAt(cpSeq));
+        assert.match(blocksToText(replayedCp.content),/<active-workspace-files\b[^>]*>/);
+        assert.ok(blocksToText(replayedCp.content).includes('PRECISION = "integer-cents"'));
+      }finally{await reopened.close();}
+    }finally{
+      if(siblingPlugin)await siblingPlugin.dispose();
+      await f.close();
+    }
+  }finally{fs.rmSync(workspaceDir,{recursive:true,force:true});}
+});
 
 console.log(JSON.stringify({passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,results},null,2));
 if(results.some(r=>!r.pass))process.exitCode=1;
