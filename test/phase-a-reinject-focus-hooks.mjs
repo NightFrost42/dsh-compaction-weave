@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveConfig } from '../lib/config.js';
+import { decorateCompactCommand } from '../lib/command-compact.js';
 import { prepareContinuation } from '../lib/continuation.js';
 import { WeaveCompactionEngine } from '../lib/engine.js';
 import { POST_COMPACT_EVENT, PRE_COMPACT_EVENT } from '../lib/hooks.js';
@@ -813,6 +814,21 @@ await test('cordis-root-hooks-fire-once-veto-safely-and-isolate-post-compact-fai
     assert.equal(f.engine._failures.get(f.engine._keyOf(f.session)) ?? 0, 0, 'manual veto must not count toward breaker');
     assert.equal(seenPost.length, 2, 'vetoed run must not fire post-compact');
 
+    // 5b-ii. /compact <focus> via decorateCompactCommand surfaces the weave/pre-compact hook reason cleanly!
+    const decorated = decorateCompactCommand(
+      { name: 'compact', async handler() { return { kind: 'success', text: 'host-default' }; } },
+      f.engine,
+    );
+    const focusVetoOut = await decorated.handler({
+      rawInput: '/compact keep migration table v3',
+      agent: f.agent,
+      signal: new AbortController().signal,
+      commandId: 'cmd-focus-veto',
+    });
+    assert.equal(focusVetoOut.kind, 'error');
+    assert.match(focusVetoOut.text, /weave\/pre-compact/);
+    assert.match(focusVetoOut.text, /external plugin busy syncing/);
+
     // 5c. Pre-compact veto on auto pressure compaction skips cleanly (returns null) and NEVER trips failure breaker!
     f.session.append('turn/start', { turn: 2 });
     f.addUser('Trigger auto pressure.');
@@ -827,6 +843,13 @@ await test('cordis-root-hooks-fire-once-veto-safely-and-isolate-post-compact-fai
     assert.equal(f.engine._failures.get(f.engine._keyOf(f.session)) ?? 0, 0, 'auto veto must never increment failure counter');
     assert.equal(f.engine._stopped.has(f.engine._keyOf(f.session)), false, 'auto veto must never trip circuit breaker');
     assert.equal(seenPost.length, 2, 'auto veto must not fire post-compact');
+
+    // 5c-ii. _reactiveRetry returns false when weave/pre-compact vetoes trigger: 'region'!
+    f.addUser('Next step.');
+    f.addAssistant('Ok.');
+    const reactiveVetoed = await f.engine._reactiveRetry(f.agent, new AbortController().signal);
+    assert.equal(reactiveVetoed, false, '_reactiveRetry must return false when weave/pre-compact vetoes trigger: region');
+    assert.equal(f.calls.length, callsBeforeVeto, 'vetoed _reactiveRetry must not invoke LLM');
 
     // 5d. Direct compactRegion also fires pre-compact & post-compact once, and isolates a hanging post-compact listener!
     vetoMode = false;

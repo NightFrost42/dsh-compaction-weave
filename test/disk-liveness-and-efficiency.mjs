@@ -864,16 +864,17 @@ await test('prepare-continuation-disk-liveness-folded-archives-and-tight-budgets
     assert.ok(!diskMatch[0].includes('src/existing-cont.js'));
     assert.match(normal.text, /Folded archives: weave-prior-cont-1, weave-prior-cont-0\./);
 
-    // Measure exact baseline without <disk-state-check>
-    const noDisk = await runContinuationCase({ config: { diskLivenessCheck: false } });
+    // Measure exact bare baseline without <disk-state-check> or <active-workspace-files>
+    const noDisk = await runContinuationCase({ config: { diskLivenessCheck: false, postCompactReinjectEnabled: false } });
     const baseWithFoldedBytes = canonicalMessageBytes([{ role: 'user', content: [{ type: 'text', text: noDisk.text }] }]);
     const normalBytes = canonicalMessageBytes([{ role: 'user', content: [{ type: 'text', text: normal.text }] }]);
     assert.ok(normalBytes > baseWithFoldedBytes + 100);
 
-    // Tight shadowedCanonicalBytes: fits baseWithFoldedBytes, smaller than normalBytes -> drops <disk-state-check>
+    // Tight shadowedCanonicalBytes: fits baseWithFoldedBytes, smaller than normalBytes -> drops <active-workspace-files> and <disk-state-check>
     const tightBytesRes = await runContinuationCase({
       prepareArgs: { shadowedCanonicalBytes: baseWithFoldedBytes + 40 },
     });
+    assert.doesNotMatch(tightBytesRes.text, /<active-workspace-files/);
     assert.doesNotMatch(tightBytesRes.text, /<disk-state-check/);
     assert.match(tightBytesRes.text, /Folded archives: weave-prior-cont-1, weave-prior-cont-0\./);
 
@@ -885,7 +886,7 @@ await test('prepare-continuation-disk-liveness-folded-archives-and-tight-budgets
     const fixedCompactionId = 'weave-' + 'c'.repeat(96);
     const longNoDisk = await runContinuationCase({
       notes: rawPadNotes,
-      config: { diskLivenessCheck: false },
+      config: { diskLivenessCheck: false, postCompactReinjectEnabled: false },
       prepareArgs: { compactionId: fixedCompactionId, estimateCheckpointTokens: byteEstimator },
     });
     const longWithoutFolded = longNoDisk.text.replace(/\n\nFolded archives:[^\n]+/, '');
@@ -905,6 +906,7 @@ await test('prepare-continuation-disk-liveness-folded-archives-and-tight-budgets
         checkpointBudgetTokens: tightBudgetTokens,
       },
     });
+    assert.doesNotMatch(tightTokRes.text, /<active-workspace-files/);
     assert.doesNotMatch(tightTokRes.text, /<disk-state-check/);
     assert.match(tightTokRes.text, /Folded archives: weave-prior-cont-1, weave-prior-cont-0\./);
   } finally {
