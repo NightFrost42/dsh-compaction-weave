@@ -17,6 +17,7 @@ import { restoreSourceLayout, sourceLayout } from '../lib/source-refs.js';
 import { collectInstructionMessages, selectSessionMemory } from '../lib/region.js';
 import { FailureDiagnostics, failureExplanation } from '../lib/failure-diagnostics.js';
 import { sourceEvidenceSentences, sourceEvidenceSentencesLegacyQuoteSplit } from '../lib/audit.js';
+import { withStageTraceContext } from '../lib/stage-trace.js';
 
 const results = [];
 async function test(name, fn) {
@@ -491,6 +492,202 @@ await test('sanitized-diagnostic-sub-reasons-and-zero-prose-privacy', async () =
     assert.equal(report2.errors[0].code, 'MEMORY_SOURCE_UNAVAILABLE');
     assert.equal(report2.errors[0].subReason, undefined);
     assert.ok(!JSON.stringify(report2).includes('unlisted_arbitrary_prose_leak'));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// 7. Gated legacy replay skips non-quote-end superseded drift & tracks legacyLastSeq accurately
+await test('superseded-rule-drift-without-quote-end-skips-without-legacy-replay-and-legacyLastSeq-recomputes', async () => {
+  const root = await mkdtemp(join(process.env.WEAVE_TEST_ROOT ?? tmpdir(), 'weave-issue13-opt7-'));
+  try {
+    const f = makeSession();
+    for (let i = 0; i <= 305; i += 1) {
+      f.addUser(`Filler note ${i}.`, 'user', false);
+    }
+    const setMsg = (seq, text) => {
+      f.events[seq].data.content = [{ type: 'text', text }];
+    };
+
+    // Quote-end legacy pairs at low (20), mid (150), and high (200) where modern byMap is empty
+    // (modern keeps 「」 attached so `'取消上一条。」'` no longer emits in current byMap)
+    setMsg(19, '生成「目标一。」然后停止。');
+    setMsg(20, '取消上一条。」');
+    setMsg(149, '生成「目标二。」然后停止。');
+    setMsg(150, '取消上一条。」');
+    setMsg(199, '生成「目标三。」然后停止。');
+    setMsg(200, '取消上一条。」');
+
+    // Drifted superseded pair at maxBy = 300 with NO quote-end punctuation
+    setMsg(290, '必须保持不可变。');
+    setMsg(300, '当前需求已变更为动态更新。');
+
+    const makeDecision = (reason, seq, by, fragText, byFragText) => ({
+      reason,
+      seq,
+      by,
+      fragmentHash: fragDigest(fragText),
+      sourcePart: { block: 0, start: 0, end: fragText.length },
+      byFragmentHash: fragDigest(byFragText),
+      sourceSha256: blocksDigest(f.events[seq].data.content),
+      bySha256: blocksDigest(f.events[by].data.content),
+    });
+
+    const dDrift = makeDecision('superseded', 290, 300, '必须保持不可变。', '当前需求已变更为动态更新。');
+    const dLow = makeDecision('cancelled', 19, 20, '生成「目标一。', '取消上一条。');
+    const dMid = makeDecision('cancelled', 149, 150, '生成「目标二。', '取消上一条。');
+    const dHigh = makeDecision('cancelled', 199, 200, '生成「目标三。', '取消上一条。');
+
+    const runTracedRestore = async (tag, decisions) => {
+      const traceDir = join(root, tag);
+      const res = await withStageTraceContext(
+        { enabled: true, storageRoot: traceDir, sessionId: `s-${tag}` },
+        () => restoreRetiredDecisions(decisions, f.session, 306),
+      );
+      const lines = (await readFile(join(traceDir, 'stage-trace.jsonl'), 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      const endEv = lines.find((l) => l.stage === 'restoreRetiredDecisions' && l.phase === 'end');
+      assert.ok(endEv, `missing restoreRetiredDecisions trace for ${tag}`);
+      return { res, trace: endEv };
+    };
+
+    // Call 1 (high maxBy=300, drifted non-quote superseded): scans once (301), skips getLegacyByMap()
+    const c1 = await runTracedRestore('c1-drift-cold', [dDrift]);
+    assert.deepEqual(c1.res, []);
+    assert.equal(c1.trace.hitCache, false);
+    assert.equal(c1.trace.scanned, 301);
+
+    // Call 2 (low maxBy=20, quote-end legacy cancelled): hits main byMap cache, computes byMapLegacy over 0..20 only
+    const c2 = await runTracedRestore('c2-low-legacy', [dLow]);
+    assert.equal(c2.res.length, 1);
+    assert.equal(c2.res[0].seq, 19);
+    assert.equal(c2.res[0].by, 20);
+    assert.equal(c2.trace.hitCache, true);
+    assert.equal(c2.trace.scanned, 21);
+
+    // Call 3 (high maxBy=200, quote-end legacy cancelled): detects legacyLastSeq (20) < 200 and recomputes cleanly
+    const c3 = await runTracedRestore('c3-high-legacy', [dHigh]);
+    assert.equal(c3.res.length, 1);
+    assert.equal(c3.res[0].seq, 199);
+    assert.equal(c3.res[0].by, 200);
+    assert.equal(c3.trace.hitCache, true);
+    assert.equal(c3.trace.scanned, 201);
+
+    // Call 4 (mid maxBy=150): legacyLastSeq (200) >= 150 reuses cached byMapLegacy with zero scan
+    const c4 = await runTracedRestore('c4-mid-legacy-cached', [dMid]);
+    assert.equal(c4.res.length, 1);
+    assert.equal(c4.res[0].seq, 149);
+    assert.equal(c4.res[0].by, 150);
+    assert.equal(c4.trace.hitCache, true);
+    assert.equal(c4.trace.scanned, 0);
+
+    // Call 5 (drifted non-quote superseded at maxBy=300 while legacyLastSeq=200): stays gated & zero-scan
+    const c5 = await runTracedRestore('c5-drift-warm', [dDrift]);
+    assert.deepEqual(c5.res, []);
+    assert.equal(c5.trace.hitCache, true);
+    assert.equal(c5.trace.scanned, 0);
+
+    // Security baseline: missing byFragmentHash STILL fails closed instead of skipping as rule drift
+    const badDrift = { ...dDrift };
+    delete badDrift.byFragmentHash;
+    assert.throws(
+      () => restoreRetiredDecisions([badDrift], f.session, 306),
+      (err) => err?.code === 'MEMORY_SOURCE_UNAVAILABLE',
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// 8. Append-only tail turns reuse replay cache; truncation & early-event tampering still fail closed
+await test('append-only-tail-turns-reuse-replay-cache-while-truncation-and-tamper-fail-closed', async () => {
+  const root = await mkdtemp(join(process.env.WEAVE_TEST_ROOT ?? tmpdir(), 'weave-issue13-opt8-'));
+  try {
+    const f = makeSession();
+    for (let i = 0; i <= 24; i += 1) {
+      f.addUser(`Background entry ${i}.`, 'user', false);
+    }
+    f.events[10].data.content = [{ type: 'text', text: '生成地图。' }];
+    f.events[20].data.content = [{ type: 'text', text: '取消生成地图。' }];
+
+    const dWithSha = {
+      reason: 'cancelled',
+      seq: 10,
+      by: 20,
+      fragmentHash: fragDigest('生成地图。'),
+      sourcePart: { block: 0, start: 0, end: 5 },
+      byFragmentHash: fragDigest('取消生成地图。'),
+      sourceSha256: blocksDigest(f.events[10].data.content),
+      bySha256: blocksDigest(f.events[20].data.content),
+    };
+
+    const runTraced = async (tag, sessionObj, decisions) => {
+      const traceDir = join(root, tag);
+      const res = await withStageTraceContext(
+        { enabled: true, storageRoot: traceDir, sessionId: `s-${tag}` },
+        () => restoreRetiredDecisionsBatch([{ checkpointSeq: 25, decisions }], sessionObj),
+      );
+      const lines = (await readFile(join(traceDir, 'stage-trace.jsonl'), 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      const endEv = lines.find((l) => l.stage === 'restoreRetiredDecisions' && l.phase === 'end');
+      return { res, trace: endEv };
+    };
+
+    // Cold populate
+    const r1 = await runTraced('r1-cold', f.session, [dWithSha]);
+    assert.equal(r1.res.length, 1);
+    assert.equal(r1.trace.hitCache, false);
+    assert.equal(r1.trace.scanned, 21);
+
+    // Append 5 new turns at tail (replaceGeneration unchanged) -> cache hits cleanly
+    for (let i = 0; i < 5; i += 1) f.addUser(`Tail turn ${i}.`, 'user', true);
+    const r2 = await runTraced('r2-append5', f.session, [dWithSha]);
+    assert.equal(r2.res.length, 1);
+    assert.equal(r2.trace.hitCache, true);
+    assert.equal(r2.trace.scanned, 0);
+
+    // Append 3 more turns -> still hits cache and advances monotonic cached.sessionSeq
+    for (let i = 0; i < 3; i += 1) f.addUser(`More tail ${i}.`, 'user', true);
+    const r3 = await runTraced('r3-append3', f.session, [dWithSha]);
+    assert.equal(r3.res.length, 1);
+    assert.equal(r3.trace.hitCache, true);
+    assert.equal(r3.trace.scanned, 0);
+
+    // Truncate tail (session.seq < cached.sessionSeq) -> invalidates cache
+    f.events.pop();
+    const r4 = await runTraced('r4-truncate', f.session, [dWithSha]);
+    assert.equal(r4.res.length, 1);
+    assert.equal(r4.trace.hitCache, false);
+    assert.equal(r4.trace.scanned, 21);
+
+    // Re-warm with SHA-less legacy decision, append turn, then tamper seq=10 in-place -> fail-closed
+    const dNoSha = {
+      reason: 'cancelled',
+      seq: 10,
+      by: 20,
+      fragmentHash: fragDigest('生成地图。'),
+      sourcePart: { block: 0, start: 0, end: 5 },
+      byFragmentHash: fragDigest('取消生成地图。'),
+    };
+    const rNoShaWarm = await runTraced('r5-nosha-warm', f.session, [dNoSha]);
+    assert.equal(rNoShaWarm.res.length, 1);
+    assert.equal(rNoShaWarm.trace.hitCache, true);
+    assert.equal(rNoShaWarm.trace.scanned, 0);
+
+    f.addUser('Tail before tamper.', 'user', true);
+    f.events[10].data.content = [{ type: 'text', text: '生成表格。' }];
+    assert.throws(
+      () => restoreRetiredDecisionsBatch([{ checkpointSeq: 25, decisions: [dWithSha] }], f.session),
+      (err) => err?.code === 'MEMORY_SOURCE_UNAVAILABLE' && err?.memorySourceReason === 'sha_mismatch',
+    );
+    assert.throws(
+      () => restoreRetiredDecisionsBatch([{ checkpointSeq: 25, decisions: [dNoSha] }], f.session),
+      (err) => err?.code === 'MEMORY_SOURCE_UNAVAILABLE',
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
