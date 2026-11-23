@@ -44,7 +44,7 @@ By default, plugin data is stored under:
 - `backups/`: stores SHA-256 verified raw-byte full-session backups created before compatibility conversion (preserving exact `.v4.jsonl.zstd` / `.v4.jsonl` encoding), armed `pending-restore.json` markers, and pre-restore safety copies without writing any foreign files into DSH's session directory.
 - `summary-config.json`: stores summary model routing, retry, idle, and `auditBlockOnLoss` settings.
 
-Start with the diagnostic file path shown in the conversation notice for that operation. Before sharing files publicly, note that `audit-reject/` records and session excerpts contain original user prompts and candidate prose, and should be reviewed and redacted first.
+Start with the diagnostic file path shown in the conversation notice for that operation. Before sharing files publicly, note that `audit-reject/` records and session excerpts contain original user prompts and candidate prose, and should be reviewed and redacted first. Persisted directories and files under `sessions/`, `audit-reject/`, and `journal/` are created with `0700` / `0600` modes on POSIX (macOS/Linux); on Windows, permissions follow Node.js file permission semantics without external ACL tooling.
 
 ## Open an Issue
 

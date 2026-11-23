@@ -194,7 +194,7 @@ Older quotes leave the budget first; active requirements remain independently ch
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `archiveEnabled` | `true` | Archive originals and attachments before replacing the selected history (uses lossless `zstd` compression and `0o700` / `0o600` permissions by default; never auto-deletes) |
+| `archiveEnabled` | `true` | Archive originals and attachments before replacing the selected history (uses lossless `zstd` compression and `0o700` / `0o600` permissions on POSIX macOS/Linux—Windows follows Node.js file permission semantics; never auto-deletes) |
 | `archiveDir` | Automatic | Custom archive directory |
 | `archiveWarnBytes` | `536870912` (512 MiB) | Gently warns in the composer dock when local `sessions/` archive usage exceeds this threshold (`0` disables; `0–102400 MiB` range; pairs with manual lossless compression and confirmed orphan cleanup in Settings) |
 | `maxVisibleAttachmentBytes` | `16777216` (16 MiB) | High-watermark byte threshold for visible un-offloaded images (`0` disables byte trigger; uses high/low hysteresis to batch-offload older images via native `image/offload` while retaining newest 6 hot to avoid per-turn KV-cache thrashing and without resetting session-memory `callsUsed`) |

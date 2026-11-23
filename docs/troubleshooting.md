@@ -44,7 +44,7 @@
 - `backups/`：按会话保存兼容转换前的原始字节完整会话备份（保留 `.v4.jsonl.zstd` / `.v4.jsonl` 原编码与 SHA-256 校验清单）、`pending-restore.json` 待还原标记与还原前安全副本，不向 DSH 原始会话目录写入额外文件。
 - `summary-config.json`：保存摘要模型路由、重试、闲置与 `auditBlockOnLoss` 设置。
 
-对话提示中给出的诊断路径对应当次操作，排查时优先查看该文件。若公开分享排查资料，请注意 `audit-reject/` 与会话片段包含用户原话与候选摘要正文，上传前请先检查并脱敏。
+对话提示中给出的诊断路径对应当次操作，排查时优先查看该文件。若公开分享排查资料，请注意 `audit-reject/` 与会话片段包含用户原话与候选摘要正文，上传前请先检查并脱敏。`sessions/`、`audit-reject/`、`journal/` 等持久化目录与文件默认以 `0700` / `0600` 权限创建；该权限保护适用于 POSIX（macOS/Linux），Windows 下受 Node.js 文件权限语义限制（不引入外部 ACL 工具修改）。
 
 ## 提交 Issue
 
