@@ -400,7 +400,7 @@ await test('prompt-and-region-historical-warnings-and-folded-metadata', () => {
   assert.ok(!files.includes('src/untrusted-user-claim.js'));
 
   const childIds = collectChildArchiveIds(mockSession, [0, 1, 2, 3, 4]);
-  assert.deepEqual(childIds, ['weave-fold-a', 'weave-grandchild-1', 'weave-fold-b', 'weave-grandchild-2']);
+  assert.deepEqual(childIds, ['weave-fold-a (seq 10-20)', 'weave-grandchild-1', 'weave-fold-b (seq 21-30)', 'weave-grandchild-2']);
   assert.ok(!childIds.includes('fake-id'));
 });
 
@@ -862,7 +862,9 @@ await test('prepare-continuation-disk-liveness-folded-archives-and-tight-budgets
     assert.ok(diskMatch, `expected <disk-state-check> in continuation checkpoint:\n${normal.text}`);
     assert.ok(diskMatch[0].includes('src/missing-cont-deliverable-artifact.js'));
     assert.ok(!diskMatch[0].includes('src/existing-cont.js'));
-    assert.match(normal.text, /Folded archives: weave-prior-cont-1, weave-prior-cont-0\./);
+    assert.match(normal.text, /History archive: .+ \(seq 1-9\)\./);
+    assert.match(normal.text, /Archived files: .*src\/existing-cont\.js/);
+    assert.match(normal.text, /Folded archives: weave-prior-cont-1 \(seq 1-5\), weave-prior-cont-0\./);
 
     // Measure exact bare baseline without <disk-state-check> or <active-workspace-files>
     const noDisk = await runContinuationCase({ config: { diskLivenessCheck: false, postCompactReinjectEnabled: false } });
@@ -876,7 +878,7 @@ await test('prepare-continuation-disk-liveness-folded-archives-and-tight-budgets
     });
     assert.doesNotMatch(tightBytesRes.text, /<active-workspace-files/);
     assert.doesNotMatch(tightBytesRes.text, /<disk-state-check/);
-    assert.match(tightBytesRes.text, /Folded archives: weave-prior-cont-1, weave-prior-cont-0\./);
+    assert.match(tightBytesRes.text, /Folded archives: weave-prior-cont-1 \(seq 1-5\), weave-prior-cont-0\./);
 
     // Tight checkpointBudgetTokens: use conservative byte-scale token estimator (1 byte = 1 token)
     // and notes fitting <= memoryLimit while <disk-state-check> (~260B) exceeds the 128B reserve.
@@ -889,7 +891,7 @@ await test('prepare-continuation-disk-liveness-folded-archives-and-tight-budgets
       config: { diskLivenessCheck: false, postCompactReinjectEnabled: false },
       prepareArgs: { compactionId: fixedCompactionId, estimateCheckpointTokens: byteEstimator },
     });
-    const longWithoutFolded = longNoDisk.text.replace(/\n\nFolded archives:[^\n]+/, '');
+    const longWithoutFolded = longNoDisk.text.replace(/\s*Folded archives:[^\n]+\./, '');
     const longBaseTokens = byteEstimator([{ type: 'text', text: longWithoutFolded }]);
     const tightBudgetTokens = longBaseTokens + 150;
     const longWithDisk = await runContinuationCase({
@@ -908,7 +910,7 @@ await test('prepare-continuation-disk-liveness-folded-archives-and-tight-budgets
     });
     assert.doesNotMatch(tightTokRes.text, /<active-workspace-files/);
     assert.doesNotMatch(tightTokRes.text, /<disk-state-check/);
-    assert.match(tightTokRes.text, /Folded archives: weave-prior-cont-1, weave-prior-cont-0\./);
+    assert.match(tightTokRes.text, /Folded archives: weave-prior-cont-1 \(seq 1-5\), weave-prior-cont-0\./);
   } finally {
     await rm(ws, { recursive: true, force: true });
   }

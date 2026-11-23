@@ -307,8 +307,8 @@ await test('issue5-helpers-resolve-error-detect-and-fallback-chain', () => {
     assert.equal(resolveReasoningEffort(null, direct), direct);
     assert.equal(resolveReasoningEffort('low', direct), direct);
   }
-  assert.equal(resolveReasoningEffort(undefined, 'low'), undefined);
-  assert.equal(resolveReasoningEffort(null, 'low'), undefined);
+  assert.equal(resolveReasoningEffort(undefined, 'low'), 'low');
+  assert.equal(resolveReasoningEffort(null, 'low'), 'low');
   assert.equal(resolveReasoningEffort('minimal', 'low'), 'minimal');
   assert.equal(resolveReasoningEffort('max', 'low'), 'low');
 
@@ -372,8 +372,9 @@ await test('issue5-cross-route-low-vs-direct-high-and-preflight', async () => {
     return calls[0];
   };
 
+  // Cross-route with 'low' sends reasoningEffort='low' (preserving API optimization while keeping temperature/stop stripped)
   const crossLow = await runCross('low');
-  assert.equal('reasoningEffort' in crossLow, false);
+  assert.equal(crossLow.reasoningEffort, 'low');
   assert.equal('temperature' in crossLow, false);
   assert.equal('stop' in crossLow, false);
 

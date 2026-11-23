@@ -446,11 +446,39 @@ await test('same-route-overflow-falls-back-cleanly-and-cross-route-strips-reason
     assert.equal(cross.calls.length, 1);
     assert.equal(cross.calls[0].provider, 'cheap-p');
     assert.equal(cross.calls[0].model, 'cheap-m');
-    assert.equal('reasoningEffort' in cross.calls[0], false, 'cross-route must NOT forward unsupported reasoningEffort');
+    assert.equal(cross.calls[0].reasoningEffort, 'low', 'cross-route forwards configured/default direct low policy rather than primary xhigh');
     assert.equal('temperature' in cross.calls[0], false, 'cross-route must NOT forward primary temperature');
     assert.match(JSON.stringify(cross.calls[0].messages.slice(0, -1)), /External content omitted from working memory/);
   } finally {
     await rm(cross.root, { recursive: true, force: true });
+  }
+
+  // (b2) Under summaryReasoningEffort="inherit", cross-route summary model NEVER receives primary reasoningEffort.
+  const inheritCross = createEngineFixture({
+    headerTarget: { provider: 'primary-p', model: 'primary-m', reasoningEffort: 'xhigh', temperature: 0.2 },
+    extraConfig: {
+      summarizationProvider: 'cheap-p',
+      summarizationModel: 'cheap-m',
+      summaryReasoningEffort: 'inherit',
+    },
+  });
+  try {
+    inheritCross.addSystem('Stable system.');
+    inheritCross.addToolPair('src/invoice.js', 'export const x = 1;\n'.repeat(50));
+    inheritCross.addUser('Keep integer cents.');
+    inheritCross.addAssistant('Details. '.repeat(300));
+
+    await inheritCross.engine._compactRegionCore(inheritCross.surface.nodes[1], inheritCross.surface.nodes.at(-1), inheritCross.agent, new AbortController().signal, {
+      manual: true,
+      policy: inheritCross.engine.config,
+    });
+    assert.equal(inheritCross.calls.length, 1);
+    assert.equal(inheritCross.calls[0].provider, 'cheap-p');
+    assert.equal(inheritCross.calls[0].model, 'cheap-m');
+    assert.equal('reasoningEffort' in inheritCross.calls[0], false, 'cross-route inherit must NOT forward primary xhigh reasoningEffort');
+    assert.equal('temperature' in inheritCross.calls[0], false, 'cross-route inherit must NOT forward primary temperature');
+  } finally {
+    await rm(inheritCross.root, { recursive: true, force: true });
   }
 });
 

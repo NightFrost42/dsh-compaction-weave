@@ -779,7 +779,16 @@ await test('cordis-root-hooks-fire-once-veto-safely-and-isolate-post-compact-fai
     assert.equal(seenPost[0].compactionId, res1.compactionId);
     assert.equal(seenPost[0].focusInstruction, 'keep user focus first');
     const prompt1 = blocksToText(f.calls[0].messages.at(-1).content);
-    assert.ok(prompt1.includes('keep user focus first | Plugin context: keep migration table v3'), 'user focus must precede hook additionalContext');
+    assert.ok(prompt1.includes('keep user focus first'), 'user focus must reach summary prompt intact');
+    assert.ok(prompt1.includes('Plugin context: keep migration table v3'), 'hook additionalContext must reach summary prompt separately');
+    assert.ok(
+      prompt1.indexOf('keep user focus first') < prompt1.indexOf('Plugin context: keep migration table v3'),
+      'user focus must precede hook additionalContext',
+    );
+    assert.ok(
+      !prompt1.includes('keep user focus first | Plugin context: keep migration table v3'),
+      'hook additionalContext must NOT be smashed into user focusInstruction',
+    );
 
     // Clear hookContext -> verify transient merge does NOT persist to next run
     hookContext = '';

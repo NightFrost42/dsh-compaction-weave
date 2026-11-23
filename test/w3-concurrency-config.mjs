@@ -249,7 +249,7 @@ await test('summary-reasoning-effort-policy-low-none-inherit-and-cross-route', a
   assert.equal(resolveReasoningEffort('low', 'low'), 'low');
   assert.equal(resolveReasoningEffort('minimal', 'low'), 'minimal');
   assert.equal(resolveReasoningEffort('none', 'low'), 'none');
-  assert.equal(resolveReasoningEffort(undefined, 'low'), undefined);
+  assert.equal(resolveReasoningEffort(undefined, 'low'), 'low');
   assert.equal(resolveReasoningEffort('high', 'none'), undefined);
   assert.equal(resolveReasoningEffort('low', 'none'), undefined);
   assert.equal(resolveReasoningEffort('xhigh', 'inherit'), 'xhigh');
@@ -305,7 +305,7 @@ await test('summary-reasoning-effort-policy-low-none-inherit-and-cross-route', a
     assert.equal(calls[0].reasoningEffort, effort, `preserve ${effort}`);
   }
   const undefCalls = await runSummary(undefined, 'reasoningEffortPolicy', 'low');
-  assert.equal('reasoningEffort' in undefCalls[0], false);
+  assert.equal(undefCalls[0].reasoningEffort, 'low');
 
   // Same-route 'none' omits reasoningEffort completely
   const noneCalls = await runSummary('xhigh', 'reasoningEffortPolicy', 'none');
@@ -320,7 +320,7 @@ await test('summary-reasoning-effort-policy-low-none-inherit-and-cross-route', a
   const legacyCalls = await runSummary('max', null, null);
   assert.equal(legacyCalls[0].reasoningEffort, 'max');
 
-  // Cross-route target NEVER receives reasoningEffort under any policy
+  // Cross-route forwards configured direct 'low' (never primary 'xhigh') while 'none' and 'inherit' omit reasoningEffort
   for (const policyVal of ['low', 'none', 'inherit']) {
     const calls = await runSummary('xhigh', 'reasoningEffortPolicy', policyVal, [
       { provider: 'fail-first', model: 'primary', reasoningEffort: 'xhigh', temperature: 0.2 },
@@ -328,7 +328,11 @@ await test('summary-reasoning-effort-policy-low-none-inherit-and-cross-route', a
     ]);
     assert.equal(calls.length, 2);
     assert.equal(calls[1].provider, 'fallback-p');
-    assert.equal('reasoningEffort' in calls[1], false, `cross-route must omit reasoningEffort under ${policyVal}`);
+    if (policyVal === 'low') {
+      assert.equal(calls[1].reasoningEffort, 'low', 'cross-route forwards direct low policy instead of dropping it');
+    } else {
+      assert.equal('reasoningEffort' in calls[1], false, `cross-route must omit reasoningEffort under ${policyVal}`);
+    }
     assert.equal('temperature' in calls[1], false);
   }
 });

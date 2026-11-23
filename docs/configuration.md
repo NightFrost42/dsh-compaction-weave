@@ -20,10 +20,10 @@
 | 摘要并发数 | `summaryConcurrency` | 2 | 1–6 整数（多块并行生成，严格按顺序提交；遇到 HTTP 429 自动降为 1） |
 | 摘要推理力度 | `summaryReasoningEffort` | `low` | `low`（默认低档）/ `none`（关闭）/ `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit`（跟随会话）；不支持时自动逐级向下回退 |
 | 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭 |
-| 启发式审计耗尽兜底策略 | `auditExhaustionPolicy` | `'fallback'` | `'fallback'`（默认：全链与重试耗尽后，外挂 `<= 3` 处经核验纯用户原话放行）/ `'block'`（严格拦截，禁用兜底） |
-| 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 LLM Token，从本地重读最近最多 5 个工作区文件，上限 24KB）/ 关闭 |
-| 超大工具结果尾部溢出 | `persistedOutputEnabled` | `true`（开启） | 开启（0 LLM，仅归档未发送尾部 ≥ 32768 字符工具输出并留首尾 1200 字预览）/ 关闭 |
-| 闲置 0-LLM 轻压缩 | `microcompactEnabled` | `true`（开启） | 开启（0 LLM，闲置超期后先保留最新 4 条热点输出，折叠更早大输出与重复读取）/ 关闭 |
+| 启发式审计耗尽兜底策略 | `auditExhaustionPolicy` | `'fallback'` | `'fallback'`（默认：全链与重试耗尽后，对纯覆盖/软溯源争议外挂 `<= 3` 处经核验纯用户原话放行；极性反转永不兜底）/ `'block'`（严格拦截，禁用兜底） |
+| 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，最多重读 5 个本地工作区文件，受 `postCompactReinjectMaxBytes` 默认 24KB 封顶）/ 关闭 |
+| 超大工具结果尾部溢出 | `persistedOutputEnabled` | `true`（开启） | 开启（0 额外摘要模型调用，仅归档未发送尾部 ≥ 32768 字符工具输出并留首尾 1200 字预览）/ 关闭 |
+| 闲置 0-LLM 轻压缩 | `microcompactEnabled` | `true`（开启） | 开启（0 LLM 调用；**需开启 `idleCompactionMinutes > 0` 才会触发**，闲置超期后先保留最新 4 条热点输出，折叠更早大输出与重复读取）/ 关闭 |
 | 最后兜底 0-LLM 急救裁剪（Snip） | `snipEnabled` | `true`（开启） | 开启（默认，0 LLM；仅在逼近 `messageBudgetTokens` 或 413 兜底时归档旧工具循环并保留 `history_read` 指针，绝不丢弃近期用户消息）/ 关闭 |
 | 回合间隙后台预生成摘要 | `sessionMemoryEnabled` | `false`（关闭） | 关闭（默认，0 额外调用）/ 开启（Opt-In；趁回合间隙在后台预生成摘要供下次压缩复用，消耗额外 API 余额与 Token 额度） |
 | 单轮压缩前后台预热上限 | `sessionMemoryMaxCallsPerSession` | `8` | 1–100 整数（两次正式压缩之间的**单周期**计费熔断上限；成功提交 Weave 压缩检查点后归零重算，`totalCallsUsed` 单调累计） |
@@ -37,7 +37,7 @@
 
 ### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
-- **`auditBlockOnLoss`（默认开启）与 `auditExhaustionPolicy`（默认 `'fallback'`）**：在摘要或分页接续漏掉有效用户约束时自动重试并阻止提交。插件已自动识别并过滤 `<system-reminder>`、`AGENTS.md` 以及宿主第一方上下文注入（保留同一消息中的真实用户正文），并在重试时先运行确定性局部行重构修复遗漏/极性反转；若整个备选目标链且至少 1 次纠偏重试均已耗尽，仍存在不超过 3 处启发式约束校验失败（含允许/禁止极性疑虑、覆盖率不足或无明确来源的 soft provenance，且全部非 `provenance` 项均可精确逐字回溯至纯用户原话、总开销 ≤ 2048 字节且仍严格缩小 token 与字节数），默认 `auditExhaustionPolicy: 'fallback'` 会将经核验的用户原话外挂于 `<pinned-source-rules>`（在 `<compacted-summary>` 外前置，二次压缩时自动剥离不滚雪球）并记录在 `auditFallback` 与进度卡片“受控兜底”提示中；结构完整性、体积缩小、`PROGRESS_FACT_CONFLICT`、`RETIRED_MEMORY_REINTRODUCED` 以及 `untrusted-source` / `revoked` 强来源检查永久严格拦截，永不兜底放行（如需重度重试后直接失败，可设为 `'block'`）。
+- **`auditBlockOnLoss`（默认开启）与 `auditExhaustionPolicy`（默认 `'fallback'`）**：在摘要或分页接续漏掉有效用户约束时自动重试并阻止提交。插件已自动识别并过滤 `<system-reminder>`、`AGENTS.md` 以及宿主第一方上下文注入（保留同一消息中的真实用户正文），并在重试时先运行确定性局部行重构修复遗漏/极性反转；若整个备选目标链且至少 1 次纠偏重试均已耗尽，仍存在不超过 3 处纯覆盖率或 `missing-source` 软溯源启发式争议（全部非 `provenance` 项均可精确逐字回溯至纯用户原话、总开销 ≤ 2048 字节且仍严格缩小 token 与字节数），默认 `auditExhaustionPolicy: 'fallback'` 会将经核验的用户原话外挂于 `<pinned-source-rules>`（在 `<compacted-summary>` 外前置，二次压缩时自动剥离不滚雪球）并记录在 `auditFallback` 与进度卡片“受控兜底”提示中；极性反转（`CONSTRAINT_POLARITY_LOST`）、结构完整性、体积缩小、`PROGRESS_FACT_CONFLICT`、`RETIRED_MEMORY_REINTRODUCED` 以及 `untrusted-source` / `revoked` 强来源检查永久严格拦截，永不兜底放行（如需重试耗尽后直接失败，可设为 `'block'`）。
 - **单次聚焦压缩与熔断重置命令（`/compact <focus>`、`/compact -- <focus>`、`/compact reset`）**：
   - `/compact <focus>`（如 `/compact 保留 API 鉴权细节和报错行号`）可在手动压缩时传入单次聚焦指令（自动去除控制字符并压缩空白，最长 500 字符），在不漏掉用户约束或虚构事实的前提下优先保留指定上下文；仅精确保留以下 7 个内建子命令：`migrate`、`backups`、`restore [backupId]`、`resume`、`cancel`、`discard`、`reset`，其余任意非空文本均解析为聚焦指令。若聚焦内容恰好以保留关键字开头（如 `-- resume notes` 或 `-- reset`），可使用 `/compact -- <focus>` 强制按聚焦指令解析。无参数的 `/compact` 保持原有默认压缩与断点续传行为不变。
   - `/compact reset` 可安全清零当前会话的熔断状态与连续失败计数（`failures: 0`、`stopped: false`、`breakerBypassed: false`），同时完整保留 `window` 观测值与已有可恢复断点；若此前因手工修改状态文件导致 `STATE_INVALID` 校验失败且确认不存在未完成压缩事务（无运行中锁及未决恢复日志），会自动以新的 SHA-256 校验和原子重建干净状态文件。
@@ -114,13 +114,13 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `persistedOutputThresholdChars` | `32768` | 触发尾部 `Persisted-Output` 溢出的最小文本块字符数（`2048–1048576` 整数） |
 | `persistedOutputHeadChars` | `1200` | 尾部溢出存根在首部保留的预览字符数（`0–8192` 整数） |
 | `persistedOutputTailChars` | `1200` | 尾部溢出存根在尾部保留的预览字符数（`0–8192` 整数） |
-| `microcompactEnabled` | `true` | 开启 **Time-Based Microcompact**：共用 `idleCompactionMinutes` 阈值，0 LLM 调用，先保留最新 `K` 条热点工具输出并折叠更早大体积输出与同路径重复读取 |
+| `microcompactEnabled` | `true` | 开启 **Time-Based Microcompact**：**需开启 `idleCompactionMinutes > 0` 才会触发**（为 `0` 时保持休眠），0 LLM 调用，先保留最新 `K` 条热点工具输出并折叠更早大体积输出与同路径重复读取 |
 | `microcompactKeepRecentTools` | `4` | 轻压缩时在尾部完整保留、不予折叠的最新成功工具输出条数 `K`（`0–50` 整数） |
 | `microcompactThresholdChars` | `2000` | 轻压缩折叠较早非错误工具输出的最小字符数（`500–262144` 整数） |
 | `microcompactHeadChars` | `200` | 轻压缩存根在首部保留的预览字符数（`0–4096` 整数） |
 | `microcompactTailChars` | `200` | 轻压缩存根在尾部保留的预览字符数（`0–4096` 整数） |
 | `microcompactRepeatedReadMinChars` | `2000` | 轻压缩去重同路径较早重复文件读取的最小字符数（`500–262144` 整数；尾部热点中的较新读取也可替代更早重复读取） |
-| `idleFullSummaryEnabled` | `true` | 闲置超时并完成 0-LLM 轻压缩后，若仍需要缩减是否允许继续运行可选的完整 LLM 闲置摘要（设为 `false` 可仅运行 0-LLM 轻压缩） |
+| `idleFullSummaryEnabled` | `true` | **需开启 `idleCompactionMinutes > 0` 才会触发**；闲置超时并完成 0-LLM 轻压缩后，若仍需要缩减是否允许继续运行可选的完整 LLM 闲置摘要（设为 `false` 可仅运行 0-LLM 轻压缩） |
 | `cachePreservePrefix` | `true` | 优先选择保留已有前缀的增量区间 |
 | `cacheMaxCheckpoints` | `4` | 达到此数量后考虑合并摘要 |
 | `cacheMinSavingsTokens` | `4096` | 增量压缩需要释放的最小规模 |
@@ -181,7 +181,8 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `summaryInputRatio` | `0.85` | 摘要输入相对模型可用窗口的 Token 预算比例 |
 | `summaryInputMaxBytes` | `2097152` | 完整摘要请求的独立 UTF-8 字节硬上限（2 MiB） |
 | `summaryConcurrency` | `2` | 多分片/分页摘要的并行生成上限（1–6；首片串行探针后并行生成、严格按顺序提交，429 自动降至 1） |
-| `summaryReasoningEffort` | `'low'` | 摘要请求推理力度策略：`low`（默认低档降耗）、`none`（省略参数）、`minimal` / `medium` / `high` / `xhigh` / `max`（直接指定思考档位，跨路由也会下发并在不支持时自动沿阶梯 `max → xhigh → high → medium → low → minimal → none → 省略` 向下回退并按路由缓存）、`inherit`（同路由沿用主会话设置） |
+| `summaryReasoningEffort` | `'low'` | 摘要请求推理力度策略：`low`（默认低档降耗，主会话未设力度或跨路由摘要时也会下发 `'low'`）、`none`（省略参数）、`minimal` / `medium` / `high` / `xhigh` / `max`（直接指定思考档位；上述直接档位在遇到 `UNSUPPORTED_REASONING_EFFORT` 时均会自动沿阶梯 `max → xhigh → high → medium → low → minimal → none → 省略` 向下回退并按路由缓存）、`inherit`（同路由沿用主会话设置） |
+| `compactionRetries` | `1` | 宿主架构/规格兼容保留占位字段（运行时摘要重试请配置 `summaryRetryCount` 与 `summaryRetryDelayMs`，本字段不参与运行期重试循环） |
 | `maxSummaryChunks` | `32` | 一次流程允许的成功分块数量 |
 | `continuationEnabled` | `true` | 开启大段历史的分页接续 |
 | `continuationMemoryBytes` | `12288` | 接续工作笔记预算 |
@@ -202,7 +203,7 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `auditEnabled` | `true` | 检查要求是否保留 |
 | `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交（极性反转在关闭时仍严格拦截） |
 | `auditProvenanceBlock` | `true` | 授权/指令来源未匹配用户原文（`provenance`）时阻断提交；设为 `false` 时仅对无依据归纳改为告警放行，但对 `untrusted-source`（外部/注入来源）与 `revoked`（已撤回授权）仍保持强拦截 |
-| `auditExhaustionPolicy` | `'fallback'` | 目标链与至少 1 次纠偏重试全部耗尽且仅剩 `<= 3` 处启发式约束冲突时的策略（可在设置页热生效）：`'fallback'`（默认：外挂经核验纯用户原话至 `<pinned-source-rules>`、`≤ 2048` 字节并严守缩小与所有强红线后受控放行）或 `'block'`（严格拦截并失败）；`summaryRetryCount === 0` 或任意结构/体积/进度/已撤回/`untrusted-source`/`revoked` 失败永不走兜底 |
+| `auditExhaustionPolicy` | `'fallback'` | 目标链与至少 1 次纠偏重试全部耗尽且仅剩 `<= 3` 处纯覆盖率/`missing-source` 启发式冲突时的策略（可在设置页热生效）：`'fallback'`（默认：外挂经核验纯用户原话至 `<pinned-source-rules>`、`≤ 2048` 字节并严守缩小与所有强红线后受控放行）或 `'block'`（严格拦截并失败）；`CONSTRAINT_POLARITY_LOST`（极性反转）、`summaryRetryCount === 0` 或任意结构/体积/进度/已撤回/`untrusted-source`/`revoked` 失败永不走兜底 |
 | `extraReferenceSourceKinds` | `[]` | 额外视为非用户参考通道的 `source.kind` 字符串数组（最多 64 项，严禁包含 `'user'` 或 `'compact-checkpoint'`）；内置已自动隔离 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge` 等桥接通道 |
 | `extraReferencePrefixes` | `[]` | 额外视为非用户注入块的裸文本前缀数组（修剪后 2–200 字符、最多 64 项）；内置已自动隔离多行记忆注入头（如 `===== 长期记忆 =====`、`【记忆导引】` 后带正文），不污染 Section 6 原话或要求审计 |
 | `diskLivenessCheck` | `true` | 压缩时在工作区目录内只读检查历史提及文件路径是否缺失或于近期改动（不调模型，非本地路径自动跳过） |
@@ -215,15 +216,15 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `postCompactReinjectEnabled` | `true` | 压缩后确定性地从本地工作区磁盘重读最近活跃文件（消耗 0 LLM Token；自动跳过 `AGENTS.md` / `CLAUDE.md`、`.env` / 密钥等敏感文件、二进制文件、逃逸软链接与远程/合成会话） |
+| `postCompactReinjectEnabled` | `true` | 压缩后确定性地从本地工作区磁盘重读最近活跃文件（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，受 `postCompactReinjectMaxBytes` 封顶；自动跳过 `AGENTS.md` / `CLAUDE.md`、`.env` / 密钥等敏感文件、二进制文件、逃逸软链接与远程/合成会话） |
 | `postCompactReinjectMaxFiles` | `5` | 压缩后重注入的本地工作区文件数量上限（`1–20` 正整数） |
 | `postCompactReinjectMaxBytes` | `24576` | 压缩后重注入文件总字节上限（`1024–262144` 整数，UTF-8 字节） |
 | `postCompactReinjectMaxFileBytes` | `6144` | 单个重注入文件的最大 UTF-8 读取字节数（`512–65536` 整数） |
 
-Weave 还在插件事件总线（`ctx.root ?? ctx`）派发两个同进程 Cordis 插件生命周期钩子，供同一宿主内的其他 DSH 插件监听扩展（不执行本地外部 Shell 命令）：
+Weave 还在插件事件总线（通过顶层安全桥接 `hookBus` 访问 Cordis 事件总线，兼容严格 `ReflectService` Proxy）派发两个同进程 Cordis 插件生命周期钩子，供同一宿主内的其他 DSH 插件监听扩展（不执行本地外部 Shell 命令）：
 
-- **`weave/pre-compact`**：压缩开始前按 `serial` 派发；任一监听器返回 `{ continue: false }` 或 `{ cancel: true }` 可否决本次压缩，返回 `{ additionalContext }`（合计上限 1000 字符）或 `{ focusInstruction }`（上限 500 字符）可向本次压缩注入上下文提示；监听器异常或超时（默认 5000ms）会记录警告并自动降级放行，避免阻塞主压缩流程。
-- **`weave/post-compact`**：压缩提交后按 `serial` 派发；严格故障隔离（监听器报错或超时仅记录警告，绝不打断或回滚已提交的压缩），可返回可选的 `{ notice }` / `{ additionalContext }` 提示文本。
+- **`weave/pre-compact`**：压缩开始前按 `serial` 派发；任一监听器返回 `{ continue: false }` 或 `{ cancel: true }` 可否决本次压缩，返回 `{ additionalContext }`（独立保留换行、合计上限 1000 字符，不挤占用户聚焦指令）或 `{ focusInstruction }`（上限 500 字符）可向本次压缩注入上下文提示；监听器异常或超时（默认 5000ms）会记录警告并自动降级放行，避免阻塞主压缩流程。
+- **`weave/post-compact`**：压缩提交后按 `serial` 派发；严格故障隔离（监听器报错或超时仅记录警告，绝不打断或回滚已提交的压缩），可返回可选的 `{ notice }` / `{ notices }` / `{ additionalContext }` 提示文本（引擎会记录通知日志并保留在压缩结果 `hookNotices` 与回执元数据中）。
 
 设置界面跟随 DSH 的中文或英文界面语言；`language` 字段单独控制生成摘要的语言。
 
