@@ -236,7 +236,7 @@ await test('command-compact-parses-strict-6-subcommands-and-focus-including-memo
   assert.deepEqual(parseCompactSubcommand({ rawArgs: '' }), { kind: 'default' });
   assert.deepEqual(parseCompactSubcommand({ args: [] }), { kind: 'default' });
 
-  // Exact 6 reserved subcommands ONLY
+  // Exact 7 reserved subcommands ONLY
   assert.deepEqual(parseCompactSubcommand('migrate'), { kind: 'migrate' });
   assert.deepEqual(parseCompactSubcommand('backups'), { kind: 'backups' });
   assert.deepEqual(parseCompactSubcommand('restore'), { kind: 'restore', backupId: undefined });
@@ -244,6 +244,15 @@ await test('command-compact-parses-strict-6-subcommands-and-focus-including-memo
   assert.deepEqual(parseCompactSubcommand('resume'), { kind: 'resume' });
   assert.deepEqual(parseCompactSubcommand('cancel'), { kind: 'cancel' });
   assert.deepEqual(parseCompactSubcommand('discard'), { kind: 'discard' });
+  assert.deepEqual(parseCompactSubcommand('reset'), { kind: 'reset' });
+  assert.deepEqual(parseCompactSubcommand('reset details'), {
+    kind: 'focus',
+    focusInstruction: 'reset details',
+  });
+  assert.deepEqual(parseCompactSubcommand('-- reset'), {
+    kind: 'focus',
+    focusInstruction: 'reset',
+  });
 
   // Phase A: `/compact memory` and `/compact memory leak focus` MUST parse as focus!
   assert.deepEqual(parseCompactSubcommand('memory'), {
