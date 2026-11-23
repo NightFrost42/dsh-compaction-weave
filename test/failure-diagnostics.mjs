@@ -50,4 +50,13 @@ await test('accepted-reconstruction-retains-linked-audit-and-optional-sharing-wa
  const dir=join(root,'reconstruction');const d=new FailureDiagnostics(dir);const result=await d.run(session,{trigger:'manual'},()=>summarizeWithChain(args(()=> 'bad',{retryCount:0,validate:r=>({ok:r.rawText==='repaired',code:'CONSTRAINT_LOST'}),reconstruct:({result})=>({...result,rawText:'repaired'}),onRejected:()=>dumpAuditRejection({storageRoot:dir,sessionId:session.id,compactionId:'reconstruction',modelRawText:'bad'})})));
  assert.equal(result.rawText,'repaired');const files=await readdir(d.root);assert.equal(files.length,1);const log=JSON.parse(await readFile(join(d.root,files[0]),'utf8'));assert.equal(log.outcome,'recovered');assert.equal(log.attempts[0].outcome,'accepted-after-reconstruction');assert.equal(log.auditReports[0].saved,true);assert.match(diagnosticText({id:'test',status:'saved',attempts:1,path:'local'}),/提交日志是可选/);assert.match(diagnosticText({id:'test',status:'saved',attempts:1,path:'local'}),/AI 脱敏也可能遗漏隐私/);
 });
+await test('provenance-untrusted-and-revoked-guidance-qualifies-external-bridge-config',()=>{
+ for(const provenanceKind of['untrusted-source','revoked']){
+  const text=failureExplanation(err('CONSTRAINT_LOST',{constraintReason:'provenance',provenanceKind,provenanceLine:'用户已同意改为每晚发两条评论。'}));
+  assert.match(text,/仅当 audit-reject 显示命中源确实属于第三方外部桥接通道/);
+  assert.match(text,/普通主对话用户请勿盲目填写/);
+  assert.match(text,/extraReferenceSourceKinds/);
+  assert.match(text,/extraReferencePrefixes/);
+ }
+});
 console.log(JSON.stringify({passed:results.filter(x=>x.pass).length,failed:results.filter(x=>!x.pass).length,results},null,2));if(results.some(x=>!x.pass))process.exitCode=1;

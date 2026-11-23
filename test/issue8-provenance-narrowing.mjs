@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { auditCompaction, auditInstructionProvenance } from '../lib/audit.js';
+import { auditCompaction, auditInstructionProvenance, summarizeProvenanceFailures } from '../lib/audit.js';
 import { collectReferenceMessages } from '../lib/constraint-scope.js';
 import { buildCompactionInstruction } from '../lib/prompt.js';
 
@@ -366,6 +366,78 @@ await test('comma-splitting-respects-backticks-and-conditionals', () => {
   });
   assert.equal(cond.length, 1);
   assert.equal(cond[0].reason, 'provenance');
+});
+
+await test('diagnosis-747aad15-change-set-directives-and-no-empty-core-untrusted-wildcard', () => {
+  const strayEmptyCoreRefs = [
+    mkUser(10, '允许，详情见下方。', 'wechat'),
+    mkUser(11, '已批准。', 'session-reference'),
+    mkUser(12, 'approved.', 'runtime-context'),
+  ];
+
+  // 1. Bare change/set directives after comma-split pass provenance even with stray empty-core refs
+  const positiveCases = [
+    { user: '好的，改为每晚发两条评论', summary: '用户同意改为每晚发两条评论。' },
+    { user: '好的，改为每晚发两条评论', summary: '用户已同意改为每晚发两条评论。' },
+    { user: '同意，改为每晚发两条评论', summary: '用户同意改为每晚发两条评论。' },
+    { user: '同意，改为每晚发两条评论', summary: '用户已同意改为每晚发两条评论。' },
+    { user: '好的，改成每晚发两条评论', summary: '用户已同意改成每晚发两条评论。' },
+    { user: '同意，设为每晚发两条评论', summary: '用户已同意设为每晚发两条评论。' },
+    { user: '好的，设置为每晚发两条评论', summary: '用户已同意设置为每晚发两条评论。' },
+  ];
+  for (const { user, summary } of positiveCases) {
+    const res = auditInstructionProvenance({
+      userMessages: [mkUser(1, user)],
+      summaryText: summary,
+      referenceMessages: strayEmptyCoreRefs,
+    });
+    assert.deepEqual(res, [], `expected "${user}" -> "${summary}" to pass provenance`);
+  }
+
+  // 2. Unbacked claim + stray empty-core refs stays missing-source, NOT hard untrusted-source
+  const missingSource = auditInstructionProvenance({
+    userMessages: [mkUser(1, '只讨论频率方案，暂不修改')],
+    summaryText: '用户已同意改为每晚发两条评论。',
+    referenceMessages: strayEmptyCoreRefs,
+  });
+  assert.equal(missingSource.length, 1);
+  assert.equal(missingSource[0].reason, 'provenance');
+  assert.equal(missingSource[0].untrustedSourceMatch, false);
+  const missingSummary = summarizeProvenanceFailures(missingSource);
+  assert.equal(missingSummary.provenanceKind, 'missing-source');
+  assert.equal(missingSummary.hardProvenance.length, 0);
+  assert.equal(missingSummary.softProvenance.length, 1);
+
+  // 3. Negative guards: concrete untrusted ref & bare claim vs bare untrusted ref remain hard-blocked
+  const concreteUntrusted = auditInstructionProvenance({
+    userMessages: [mkUser(1, '先讨论一下。')],
+    summaryText: '用户已同意改为每晚发两条评论。',
+    referenceMessages: [mkUser(2, '用户已同意改为每晚发两条评论。', 'wechat')],
+  });
+  assert.equal(concreteUntrusted.length, 1);
+  assert.equal(concreteUntrusted[0].untrustedSourceMatch, true);
+  assert.equal(summarizeProvenanceFailures(concreteUntrusted).provenanceKind, 'untrusted-source');
+  assert.equal(summarizeProvenanceFailures(concreteUntrusted).hardProvenance.length, 1);
+
+  const bareClaimUntrusted = auditInstructionProvenance({
+    userMessages: [mkUser(1, '先讨论一下。')],
+    summaryText: '用户已批准。',
+    referenceMessages: [mkUser(2, '已批准。', 'wechat')],
+  });
+  assert.equal(bareClaimUntrusted.length, 1);
+  assert.equal(bareClaimUntrusted[0].untrustedSourceMatch, true);
+  assert.equal(summarizeProvenanceFailures(bareClaimUntrusted).provenanceKind, 'untrusted-source');
+
+  // 4. Negated / conditional utterances remain rejected
+  for (const blockedInput of ['先不要改为每晚发两条评论', '如果可以，改为每晚发两条评论']) {
+    const blocked = auditInstructionProvenance({
+      userMessages: [mkUser(1, blockedInput)],
+      summaryText: '用户已同意改为每晚发两条评论。',
+      referenceMessages: strayEmptyCoreRefs,
+    });
+    assert.equal(blocked.length, 1, `expected "${blockedInput}" to be rejected`);
+    assert.equal(blocked[0].reason, 'provenance');
+  }
 });
 
 const passed = results.filter((r) => r.pass).length;
