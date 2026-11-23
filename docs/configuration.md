@@ -33,7 +33,7 @@
 
 供应商和模型一起选择或一起清空。点击“清除（跟随会话模型）”会清除模型覆盖及其输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、闲置时间、审计拦截、工作区文件重注入、尾部溢出、闲置轻压缩、最后兜底急救裁剪（Snip）以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
 
-**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`auditBlockOnLoss`、`auditExhaustionPolicy`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession` 与 `contextCollapseEnabled`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
+**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`auditBlockOnLoss`、`auditExhaustionPolicy`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes` 与 `maxVisibleImages`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
 
 ### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
@@ -195,6 +195,8 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `archiveEnabled` | `true` | 替换选区历史前归档原文与附件（默认使用无损 `zstd` 压缩并以 `0o700` / `0o600` 权限落盘，绝不自动删除） |
 | `archiveDir` | 自动 | 自定义历史归档目录 |
 | `archiveWarnBytes` | `536870912`（512 MiB） | 本地归档（`sessions/`）占用超过阈值时仅触发卡片温和提醒（`0` 关闭提醒；`0–102400 MiB` 对应字节范围，提供设置页手动无损压缩旧段与确认清理孤儿归档入口） |
+| `maxVisibleAttachmentBytes` | `16777216`（16 MiB） | 可见表面未卸载图片字节高水位阈值（`0` 关闭字节触发；超过阈值时采用高低双水位迟滞策略，单批原生 `image/offload` 卸载较早图片并保留最新 6 张热点图片以维持 KV 缓存稳定，不重置周期会话记忆计数） |
+| `maxVisibleImages` | `24` | 可见表面未卸载图片张数高水位阈值（`0` 关闭张数触发，允许 `1–500`；另设长边 `>2000px` 超过 `20` 张护栏；触线时单批卸载至低水位，且严格不改写 `user/message` 原文） |
 | `auditEnabled` | `true` | 检查要求是否保留 |
 | `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交（极性反转在关闭时仍严格拦截） |
 | `auditProvenanceBlock` | `true` | 授权/指令来源未匹配用户原文（`provenance`）时阻断提交；设为 `false` 时仅对无依据归纳改为告警放行，但对 `untrusted-source`（外部/注入来源）与 `revoked`（已撤回授权）仍保持强拦截 |
