@@ -12,7 +12,7 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 | Model | `summarizationModel` | Follow conversation | Models offered by the provider |
 | Output limit | `maxTokens` | 8192 | 1–1000000 |
 | Trigger ratio | `thresholdRatio` | 0.8 | 0.5–0.95 |
-| Compact before resuming | `idleCompactionMinutes` | 0 (off) | 0 disables it; presets or custom input from 1–43200 whole minutes, up to 30 days |
+| Compact before resuming | `idleCompactionMinutes` | 0 (off) | 0 disables it; **not** scheduled in the background—runs 0-LLM microcompaction / optional idle summary only when you return and send the next message; 1–43200 whole minutes, up to 30 days |
 | Minimum reduction | `minimumReductionRatio` | 0.2 | 0.05–0.9 |
 | Additional retries | `summaryRetryCount` | 2 | 0–4 |
 | Base delay | `summaryRetryDelayMs` | 1000 | 0–30000 ms |
@@ -24,8 +24,8 @@ Open **Settings → Summary model**, or the summary settings in the plugin detai
 | Spill oversized tail tool outputs | `persistedOutputEnabled` | `true` (on) | On (0 LLM, archives only unsent tail tool outputs ≥ 32768 chars with 1200-char head/tail preview) / Off |
 | Idle 0-LLM microcompaction | `microcompactEnabled` | `true` (on) | On (0 LLM, preserves newest 4 hot outputs and folds older oversized outputs & repeated reads after idle timeout) / Off |
 | Last-resort 0-LLM emergency pruning (Snip) | `snipEnabled` | `true` (on) | On (default, 0 LLM; triggers only near `messageBudgetTokens` or on 413 after regular compaction/continuation fails, archiving old tool loops with `history_read` pointers without dropping recent user messages) / Off |
-| Background session memory | `sessionMemoryEnabled` | `false` (off) | Off (default, 0 extra calls) / On (opt-in; runs background idle LLM calls consuming API balance & token quota) |
-| Session Memory call limit per session | `sessionMemoryMaxCallsPerSession` | `8` | 1–100 integer (per-session billing fuse halting background memory calls once reached) |
+| Pre-generate summaries in background between turns | `sessionMemoryEnabled` | `false` (off) | Off (default, 0 extra calls) / On (opt-in; pre-warms rolling summaries between turns in the background, consuming extra API balance & token quota) |
+| Background memory pre-warm limit per cycle | `sessionMemoryMaxCallsPerSession` | `8` | 1–100 integer (**per-cycle** billing fuse between committed Weave compactions; resets `callsUsed` on committed compaction checkpoint while keeping monotonic `totalCallsUsed`) |
 | Expired-window context collapse | `contextCollapseEnabled` | `false` (off) | Off (default) / On (opt-in; triggers ONLY inside the expired `idleCompactionMinutes` resume window after 0-LLM microcompaction, never during warm prompt cache; may invoke a summary LLM call consuming API balance) |
 
 The UI displays timing in seconds; configuration fields use milliseconds. A retry count of 2 allows up to 3 attempts for each unfinished summary or page. Consecutive retries use exponential backoff, capped at 30 seconds.
@@ -147,22 +147,22 @@ Weave reduces context in strictly ordered, cache-conscious tiers:
 | `snipMinSavingsTokens` | `1024` | Minimum net token savings required before Snip archives a candidate span (`0–131072` integer) |
 | `snipMaxSpansPerRescue` | `4` | Maximum contiguous spans archived in a single emergency Snip rescue pass (`1–20` integer) |
 
-### Background Session Memory & Expired-Window Context Collapse (Opt-In, Default Off)
+### Background Summary Pre-Warming Between Turns & Expired-Window Context Collapse (Opt-In, Default Off)
 
 Both features are **strictly opt-in (`false` by default)**: when disabled, they incur **0 extra LLM calls and 0 extra charges**.
 
-- **Background Session Memory**: When enabled, pre-generates rolling session summaries during idle gaps using an explicit `coveredThroughSeq` watermark over compactable prefixes while preserving the recent working tail, and verifies checksums, `sourceHash`, `policyFingerprint`, and tool-pair balance before reuse. Bounded by minimum tokens, update intervals, cooldown, 12KB payload cap, and a persistent per-session **billing fuse** (`sessionMemoryMaxCallsPerSession`, surviving `clear()`) to prevent runaway background billing.
+- **Pre-generate Summaries in Background Between Turns (`sessionMemoryEnabled`)**: Distinct from `idleCompactionMinutes` above (**not** scheduled in the background—`idleCompactionMinutes` runs only when you return and send the next message), enabling this toggle pre-generates rolling summaries in the background between turns using an explicit `coveredThroughSeq` watermark while preserving the recent working tail. If foreground compaction arrives while a compatible in-flight pre-warm is running, it waits briefly (default `4000 ms`) to reuse it with 0 extra LLM calls, or cancels and falls back cleanly on timeout or focus mismatch; reuses strictly verify checksums, `sourceHash`, `policyFingerprint`, and tool-pair balance. Bounded by min tokens, update intervals, cooldown, 12 KB payload cap, and a persistent **per-cycle billing fuse** (`sessionMemoryMaxCallsPerSession`, preserving monotonic `totalCallsUsed` across `clear()`, reset/rollback/backup restore/0-LLM pruning, and resetting `callsUsed` ONLY after a committed Weave compaction checkpoint or `bili` fold-adopt commit) to prevent runaway background billing.
 - **Expired-Window Context Collapse**: Enforces **expired-TTL cache-safe gating**—triggers **ONLY** inside the expired `idleCompactionMinutes` resume window **after** Tier 1 0-LLM **Time-Based Microcompact** (and before optional Tier 3 full idle summary). **NEVER** runs during active turns or warm prompt caches, and stays completely inactive when `idleCompactionMinutes` is `0`. Collapses earlier uncollapsed raw sub-phases progressively up to `contextCollapseMaxSpanTokens` while protecting the recent working tail via the **intersection** of `contextCollapseKeepRecentTokens` and `contextCollapseKeepRecentTurns` (ignoring non-user `<system-reminder>` / bridge messages and keeping tool call/result pairs unsplit). May invoke a summary LLM call consuming API balance.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `sessionMemoryEnabled` | `false` | Opt-in toggle for background idle session-memory pre-generation (`false` by default; enabling runs background LLM calls consuming API balance and token quota) |
-| `sessionMemoryMinTokens` | `24576` | Minimum compactable context tokens required before background Session Memory runs (`4096–1000000` integer) |
+| `sessionMemoryEnabled` | `false` | Opt-in toggle for background summary pre-warming between turns (`false` by default; enabling runs background LLM calls consuming API balance and token quota) |
+| `sessionMemoryMinTokens` | `24576` | Minimum compactable context tokens required before background pre-warming runs (`4096–1000000` integer) |
 | `sessionMemoryUpdateIntervalTokens` | `16384` | Minimum new token delta beyond the existing `coveredThroughSeq` watermark to trigger an incremental refresh (`2048–500000` integer) |
 | `sessionMemoryUpdateIntervalTurns` | `4` | Minimum new authentic user turn delta beyond `coveredThroughSeq` to trigger an incremental refresh (`1–100` integer) |
-| `sessionMemoryCooldownMs` | `60000` | Minimum cooldown interval in milliseconds between background Session Memory LLM calls (`0–3600000` integer) |
-| `sessionMemoryMaxBytes` | `12288` | Maximum UTF-8 byte size allowed for a persisted Session Memory payload (`2048–65536` integer; oversized entries are cleanly skipped) |
-| `sessionMemoryMaxCallsPerSession` | `8` | Per-session background Session Memory LLM call cap / billing fuse (`1–100` integer; monotonic persisted counter preserved across `clear()`) |
+| `sessionMemoryCooldownMs` | `60000` | Minimum cooldown interval in milliseconds between background pre-warm LLM calls (`0–3600000` integer) |
+| `sessionMemoryMaxBytes` | `12288` | Maximum UTF-8 byte size allowed for a persisted session memory payload (`2048–65536` integer; oversized entries are cleanly skipped) |
+| `sessionMemoryMaxCallsPerSession` | `8` | Background memory pre-warm limit per cycle / per-cycle billing fuse (`1–100` integer; `callsUsed` resets after a committed Weave compaction checkpoint while keeping monotonic `totalCallsUsed`, preserved across `clear()`, rollback, restore, and 0-LLM pruning) |
 | `contextCollapseEnabled` | `false` | Opt-in toggle for progressive Context Collapse inside the expired `idleCompactionMinutes` resume window (`false` by default; never triggers during warm prompt cache) |
 | `contextCollapseMinTokens` | `49152` | Minimum total surface tokens required before Context Collapse activates (`8192–1000000` integer) |
 | `contextCollapseMaxSpanTokens` | `32768` | Maximum prefix token span collapsed in a single progressive step (`4096–500000` integer, leaving intermediate/recent history intact) |

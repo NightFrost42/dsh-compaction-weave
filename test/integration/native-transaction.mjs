@@ -1088,10 +1088,11 @@ await test('native-transaction-zstd-phase-c-session-memory-reuse-prestep-and-reo
     assert.equal(archived.ok,true);
     assert.ok(archived.entries.some(e=>e.text.includes('Preserve integer cents in all ledgers.')));
 
-    // Stored memory invalidated while monotonic callsUsed fuse remains 1!
+    // Stored memory invalidated AND current-cycle callsUsed reset after committed compaction while monotonic totalCallsUsed stays 1!
     const postStatus=phaseCEngine.sessionMemoryStatusFor(f.session.id);
     assert.equal(postStatus.ready,false);
-    assert.equal(postStatus.callsUsed,1);
+    assert.equal(postStatus.callsUsed,0);
+    assert.equal(postStatus.totalCallsUsed,1);
 
     f.session.append('step/end',{turn:2,step:1});
     f.session.append('turn/end',{turn:2});

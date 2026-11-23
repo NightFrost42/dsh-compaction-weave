@@ -661,15 +661,17 @@ for (const language of ['zh', 'en']) {
       assert.equal(ccCheckbox.props.checked, false);
       assert.equal(ccCheckbox.props['aria-describedby'], 'weave-context-collapse-hint');
 
-      // Explicit warning copy for billing & expired-TTL cache safety
+      // Explicit warning & disambiguated copy for background pre-warming, billing fuse & expired-TTL cache safety
       const pageText = textOf(h.render());
       if (language === 'zh') {
-        assert.match(pageText, /默认关闭.*后台闲置 LLM 调用.*API 余额.*Token 额度/);
-        assert.match(pageText, /1–100 整数计费熔断/);
+        assert.match(pageText, /非后台定时压缩.*回合间隙后台预生成摘要/);
+        assert.match(pageText, /默认关闭.*回合间隙.*API 余额.*Token 额度/);
+        assert.match(pageText, /每次成功压缩后自动清零重算/);
         assert.match(pageText, /默认关闭.*idleCompactionMinutes 闲置恢复窗口.*Microcompact.*热提示词缓存.*API 余额/);
       } else {
-        assert.match(pageText, /Opt-in \(disabled by default\).*background idle LLM calls.*API balance.*token quota/);
-        assert.match(pageText, /integer 1–100 billing fuse/);
+        assert.match(pageText, /Not scheduled in the background.*Pre-generate summaries in background between turns/);
+        assert.match(pageText, /Opt-in \(disabled by default\).*background between turns.*API balance.*token quota/);
+        assert.match(pageText, /automatically resets after each successful compaction commit/);
         assert.match(pageText, /Opt-in \(disabled by default\).*expired idleCompactionMinutes resume window.*Microcompact.*NEVER runs during a warm prompt cache.*API balance/);
       }
 
@@ -701,9 +703,9 @@ for (const language of ['zh', 'en']) {
       for (const badCalls of ['', '0', '101', '1.5', '1e2', 'abc']) {
         h.change('weave-session-memory-max-calls', badCalls);
         await h.click('save');
-        assert.match(h.statusText(), language === 'zh' ? /1–100 之间的整数/ : /integer from 1 to 100/);
+        assert.match(h.statusText(), language === 'zh' ? /1–100 之间的整数/ : /integer between 1 and 100/);
         await h.click('clear');
-        assert.match(h.statusText(), language === 'zh' ? /1–100 之间的整数/ : /integer from 1 to 100/);
+        assert.match(h.statusText(), language === 'zh' ? /1–100 之间的整数/ : /integer between 1 and 100/);
       }
       assert.equal(h.requests.filter(r => r.method === 'set').length, setCountBeforeInvalid);
 

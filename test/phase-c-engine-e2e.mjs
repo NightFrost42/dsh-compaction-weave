@@ -492,11 +492,12 @@ await test('session-memory-exact-reuse-zero-llm-with-validation-archive-disk-liv
       assert.equal(archived.ok, true);
       assert.ok(archived.entries.some((e) => e.text.includes('Never disable TLS verification.')));
 
-      // Stored session memory must be invalidated after surface replacement while keeping monotonic callsUsed!
+      // Stored session memory must be invalidated AND current-cycle callsUsed reset after committed compaction while keeping monotonic totalCallsUsed!
       const afterStatus = f.engine.sessionMemoryStatusFor(f.session.id);
       assert.equal(afterStatus.ready, false, 'stored memory must be cleared after surface replacement');
       assert.equal(afterStatus.coveredThroughSeq, null);
-      assert.equal(afterStatus.callsUsed, 1, 'monotonic callsUsed must stay intact across invalidation');
+      assert.equal(afterStatus.callsUsed, 0, 'per-cycle callsUsed must reset after committed compaction checkpoint');
+      assert.equal(afterStatus.totalCallsUsed, 1, 'monotonic totalCallsUsed must accumulate across cycles');
 
       // Verify validation rejection degrades seamlessly to live LLM summary (without failing!)
       const fDegrade = await createPhaseCFixture({

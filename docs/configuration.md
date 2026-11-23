@@ -12,7 +12,7 @@
 | 摘要模型 | `summarizationModel` | 跟随会话 | 供应商提供的模型 |
 | 输出上限 | `maxTokens` | 8192 | 1–1000000 |
 | 触发比例 | `thresholdRatio` | 0.8 | 0.5–0.95 |
-| 闲置后先压缩 | `idleCompactionMinutes` | 0（关闭） | 0 表示关闭；预设或自定义 1–43200 整数分钟，最长 30 天 |
+| 闲置后先压缩 | `idleCompactionMinutes` | 0（关闭） | 0 表示关闭；非后台定时执行，仅在离开超期后**回来发下一条消息前**先做 0-LLM 轻压缩 / 可选闲置摘要；1–43200 整数分钟，最长 30 天 |
 | 最小压缩幅度 | `minimumReductionRatio` | 0.2 | 0.05–0.9 |
 | 额外重试次数 | `summaryRetryCount` | 2 | 0–4 |
 | 重试基础间隔 | `summaryRetryDelayMs` | 1000 | 0–30000 毫秒 |
@@ -24,8 +24,8 @@
 | 超大工具结果尾部溢出 | `persistedOutputEnabled` | `true`（开启） | 开启（0 LLM，仅归档未发送尾部 ≥ 32768 字符工具输出并留首尾 1200 字预览）/ 关闭 |
 | 闲置 0-LLM 轻压缩 | `microcompactEnabled` | `true`（开启） | 开启（0 LLM，闲置超期后先保留最新 4 条热点输出，折叠更早大输出与重复读取）/ 关闭 |
 | 最后兜底 0-LLM 急救裁剪（Snip） | `snipEnabled` | `true`（开启） | 开启（默认，0 LLM；仅在逼近 `messageBudgetTokens` 或 413 兜底时归档旧工具循环并保留 `history_read` 指针，绝不丢弃近期用户消息）/ 关闭 |
-| 后台会话记忆 | `sessionMemoryEnabled` | `false`（关闭） | 关闭（默认，0 额外调用）/ 开启（Opt-In；在空闲期运行后台 LLM 调用并额外消耗 API 余额与 Token 额度） |
-| 每会话记忆调用上限 | `sessionMemoryMaxCallsPerSession` | `8` | 1–100 整数（计费熔断上限；达到后本会话停止后台记忆调用） |
+| 回合间隙后台预生成摘要 | `sessionMemoryEnabled` | `false`（关闭） | 关闭（默认，0 额外调用）/ 开启（Opt-In；趁回合间隙在后台预生成摘要供下次压缩复用，消耗额外 API 余额与 Token 额度） |
+| 单轮压缩前后台预热上限 | `sessionMemoryMaxCallsPerSession` | `8` | 1–100 整数（两次正式压缩之间的**单周期**计费熔断上限；成功提交 Weave 压缩检查点后归零重算，`totalCallsUsed` 单调累计） |
 | 过期窗口上下文折叠 | `contextCollapseEnabled` | `false`（关闭） | 关闭（默认）/ 开启（Opt-In；仅在超过 `idleCompactionMinutes` 闲置恢复窗口、且 0-LLM 轻压缩之后触发，绝不在热提示词缓存期间修改历史，可能调用摘要 LLM 消耗 API 余额） |
 
 设置页用秒展示等待时间与间隔，配置字段使用毫秒。重试次数指首次请求之后的额外尝试：设置为 2 时，每个未完成的摘要或页面最多尝试 3 次。连续重试采用指数退避，间隔最高 30 秒。
@@ -147,22 +147,22 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `snipMinSavingsTokens` | `1024` | Snip 单个候选连续区间至少需净释放的最小 token 数（`0–131072` 整数） |
 | `snipMaxSpansPerRescue` | `4` | 单次 Snip 急救流程最多归档裁剪的连续区间数量上限（`1–20` 整数） |
 
-### 后台会话记忆与过期窗口上下文折叠（默认关闭，Opt-In）
+### 回合间隙后台预生成摘要与过期窗口上下文折叠（默认关闭，Opt-In）
 
 以下两项特性均采用**严格默认关闭（`false`）**的 Opt-In 策略：未显式启用时 **0 额外 LLM 调用、0 额外计费**。
 
-- **后台会话记忆（Session Memory）**：启用后在空闲期运行后台滚动摘要预生成，通过显式 `coveredThroughSeq` 水印追踪已覆盖前缀并保留近期尾部工作区上下文，复用前校验校验和、`sourceHash`、`policyFingerprint` 与工具配对完整性；受最小 token、间隔、冷却、12KB 体积上限与跨 `clear()` 持久保留的**单会话计费熔断**（`sessionMemoryMaxCallsPerSession`）约束，避免后台失控扣费。
+- **回合间隙后台预生成摘要（`sessionMemoryEnabled`）**：注意区分上方的“闲置后先压缩（`idleCompactionMinutes`）”——后者**不是后台定时压缩**，而是在您离开超期并回来发下一条消息前现场运行 0-LLM 轻压缩 / 可选闲置摘要；开启本项后，才会在对话回合间隙真正运行后台摘要预热，通过显式 `coveredThroughSeq` 水印追踪已覆盖前缀并保留近期尾部工作区上下文，前台压缩若撞上正在进行且兼容的后台预生成，将先短限时等待复用（默认 `4000 ms`，超时自动取消回退），复用前严格校验校验和、`sourceHash`、`policyFingerprint` 与工具配对完整性；受最小 token、间隔、冷却、12KB 体积上限与跨 `clear()` 持久保留的**单周期计费熔断**（`sessionMemoryMaxCallsPerSession`，仅在成功提交 Weave 压缩检查点或 `bili` 折衷合并提交后归零当前周期 `callsUsed` 并保留单调递增的 `totalCallsUsed`；回滚、还原备份或 0-LLM 局部裁剪绝不重置）约束，避免后台失控扣费。
 - **过期窗口上下文折叠（Context Collapse）**：采用**过期 TTL 缓存安全门控**，**仅**在超过 `idleCompactionMinutes` 闲置恢复窗口、且 Tier 1 **0-LLM 轻压缩（Microcompact）** 执行之后触发（`idleCompactionMinutes` 为 `0` 或热提示词缓存期间**绝不触发**）；按 `contextCollapseMaxSpanTokens` 渐进折叠较早未折叠阶段，同时以 `contextCollapseKeepRecentTokens` 与 `contextCollapseKeepRecentTurns` 的交集（取保护范围更早的一侧，且忽略 `<system-reminder>` 与桥接通道非用户消息、不拆断工具调用/结果配对）严格保留近期工作尾部。触发时可能调用摘要 LLM 并消耗 API 余额。
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `sessionMemoryEnabled` | `false` | Opt-In 开关：是否启用后台闲置会话记忆预生成（默认 `false` 关闭；启用后会运行后台 LLM 调用消耗 API 余额与 Token 额度） |
-| `sessionMemoryMinTokens` | `24576` | 触发后台 Session Memory 所需的最小可压缩上下文 token 数（`4096–1000000` 整数） |
+| `sessionMemoryEnabled` | `false` | Opt-In 开关：是否在回合间隙后台预生成摘要供下次压缩复用（默认 `false` 关闭；启用后会运行后台 LLM 调用消耗 API 余额与 Token 额度） |
+| `sessionMemoryMinTokens` | `24576` | 触发后台预热所需的最小可压缩上下文 token 数（`4096–1000000` 整数） |
 | `sessionMemoryUpdateIntervalTokens` | `16384` | 已有有效 `coveredThroughSeq` 水印后，触发增量更新所需的新增 token 增量（`2048–500000` 整数） |
 | `sessionMemoryUpdateIntervalTurns` | `4` | 已有有效 `coveredThroughSeq` 水印后，触发增量更新所需的新增真实用户回合数（`1–100` 整数） |
-| `sessionMemoryCooldownMs` | `60000` | 两次后台 Session Memory LLM 调用之间的最小冷却间隔（`0–3600000` 整数毫秒） |
-| `sessionMemoryMaxBytes` | `12288` | 单条持久化 Session Memory 载荷的 UTF-8 最大字节上限（`2048–65536` 整数；超限则安全跳过落盘） |
-| `sessionMemoryMaxCallsPerSession` | `8` | 每会话后台 Session Memory 调用次数上限 / 计费熔断（`1–100` 整数；单调持久化计数，经 `clear()` 仍保留） |
+| `sessionMemoryCooldownMs` | `60000` | 两次后台预热 LLM 调用之间的最小冷却间隔（`0–3600000` 整数毫秒） |
+| `sessionMemoryMaxBytes` | `12288` | 单条持久化会话记忆载荷的 UTF-8 最大字节上限（`2048–65536` 整数；超限则安全跳过落盘） |
+| `sessionMemoryMaxCallsPerSession` | `8` | 单轮压缩前后台预热上限 / 单周期计费熔断（`1–100` 整数；每次成功提交 Weave 压缩检查点后归零重算当前周期 `callsUsed` 并累计 `totalCallsUsed`，普通 `clear()`、回滚、还原备份及 0-LLM 局部裁剪绝不归零） |
 | `contextCollapseEnabled` | `false` | Opt-In 开关：是否启用过期 `idleCompactionMinutes` 恢复窗口内的渐进 Context Collapse（默认 `false` 关闭；仅在过期闲置窗口 Microcompact 之后触发，绝不破坏热提示词缓存） |
 | `contextCollapseMinTokens` | `49152` | 触发 Context Collapse 所需的最小表面消息总 token 数（`8192–1000000` 整数） |
 | `contextCollapseMaxSpanTokens` | `32768` | 单次渐进 Context Collapse 最多折叠的前缀 token 跨度上限（`4096–500000` 整数，避免一次吞并整段中间/近期历史） |

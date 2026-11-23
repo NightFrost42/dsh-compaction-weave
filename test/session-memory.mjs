@@ -1130,6 +1130,7 @@ await test('lifecycle-guards-busy-stopped-pending-drift-and-cancel', async () =>
       coveredThroughSeq: null,
       updatedAt: null,
       callsUsed: 0,
+      totalCallsUsed: 0,
       maxCalls: 8,
     });
     assert.equal(mgrCancel.matchForSpan(null, [1, 2], policy), null);
