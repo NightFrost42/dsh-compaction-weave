@@ -178,8 +178,8 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | --- | --- | --- |
 | `preserveRecentMessages` | `32` | 近期用户原话条数上限 |
 | `preserveRecentUserTokens` | `4096` | 近期原话预算 |
-| `summaryInputRatio` | `0.75` | 摘要输入相对模型窗口的预算比例 |
-| `summaryInputMaxBytes` | `458752` | 完整摘要请求的 UTF-8 字节预算 |
+| `summaryInputRatio` | `0.85` | 摘要输入相对模型可用窗口的 Token 预算比例 |
+| `summaryInputMaxBytes` | `2097152` | 完整摘要请求的独立 UTF-8 字节硬上限（2 MiB） |
 | `summaryConcurrency` | `2` | 多分片/分页摘要的并行生成上限（1–6；首片串行探针后并行生成、严格按顺序提交，429 自动降至 1） |
 | `summaryReasoningEffort` | `'low'` | 摘要请求推理力度策略：`low`（默认低档降耗）、`none`（省略参数）、`minimal` / `medium` / `high` / `xhigh` / `max`（直接指定思考档位，跨路由也会下发并在不支持时自动沿阶梯 `max → xhigh → high → medium → low → minimal → none → 省略` 向下回退并按路由缓存）、`inherit`（同路由沿用主会话设置） |
 | `maxSummaryChunks` | `32` | 一次流程允许的成功分块数量 |

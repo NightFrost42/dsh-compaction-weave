@@ -178,8 +178,8 @@ Both features are **strictly opt-in (`false` by default)**: when disabled, they 
 | --- | --- | --- |
 | `preserveRecentMessages` | `32` | Maximum recent verbatim user messages |
 | `preserveRecentUserTokens` | `4096` | Recent-quote budget |
-| `summaryInputRatio` | `0.75` | Summary input budget relative to the model window |
-| `summaryInputMaxBytes` | `458752` | Complete summary request's UTF-8 byte budget |
+| `summaryInputRatio` | `0.85` | Summary input token budget relative to the available model window |
+| `summaryInputMaxBytes` | `2097152` | Independent UTF-8 byte hard ceiling for the complete summary request (2 MiB) |
 | `summaryConcurrency` | `2` | Maximum concurrent summary workers (`1–6`; probes chunk 0 serially, then generates remaining chunks in parallel and commits strictly in order; drops to 1 on HTTP 429) |
 | `summaryReasoningEffort` | `'low'` | Reasoning effort policy for summary calls: `low` (default reduced effort), `none` (omit reasoning effort), `minimal` / `medium` / `high` / `xhigh` / `max` (explicit level forwarded even cross-route, automatically stepping down `max → xhigh → high → medium → low → minimal → none → omit` and caching rejected efforts per route on `UNSUPPORTED_REASONING_EFFORT`), or `inherit` (keep session setting on same-route) |
 | `maxSummaryChunks` | `32` | Maximum successful chunks in a workflow |

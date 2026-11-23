@@ -81,8 +81,8 @@ $$D = \min(T - 1,\ \lfloor \text{currentInput} \times 0.8 \rfloor)$$
 
 - **主会话上下文计量**：优先读取宿主提供的估算值或按历史请求 `usage` 分摊的单条消息成本；缺失时回退到启发式文本估算 `approxTokens`。
 - **同模型路由原样前缀复用（`preservePrefixCache`）**：在常规压缩的**首次尝试**（非闲置模式、非后台分页模式）中，如果解析出的主摘要目标（`provider/model`）与当前会话**已持久化的模型路由**完全一致，且把“系统消息 + 保留前缀 + 待压缩区间”原样一字节不改地发送也装得进预算上限（包含宿主按节点计价的图片/音频等多模态开销），Weave 就会保持前缀原封不动，仅在请求末尾追加渠道标记与“只总结增量区间、不要复述前缀”的说明。这样摘要请求有更大机会直接命中服务商侧已经算好的 KV 缓存，避免把长前缀重算一遍。
-- **摘要请求容量规划与降级回退**：跨模型摘要、原文装不下上限或开启外部投影重选时，系统会把大段技能目录、运行上下文和文件/网页读取输出折算为简短坐标提示，并将序列化后的每个 **UTF-8 字节** 视为 1 个保守预算单位。设摘要窗口为 $\text{summaryWindow}$、摘要输出上限为 $\text{output}$、安全余量为 $\text{margin} = \min(\text{headroomTokens},\ \lfloor \text{summaryWindow} / 4 \rfloor)$，在默认输入比例 `0.75` 与默认单次字节上限 `458752`（448 KiB，两者均为可配置参数的默认值）下，先对可用窗口做非负收敛，再计算单次摘要请求上限：
-  $$\text{Limit} = \left\lfloor \frac{\min(\max(0,\ \text{summaryWindow} - \text{output} - \text{margin}) \times 0.75,\ 458752)}{\text{scale}} \right\rfloor$$
+- **摘要请求容量规划与降级回退**：跨模型摘要、原文装不下上限或开启外部投影重选时，系统会把大段技能目录、运行上下文和文件/网页读取输出折算为简短坐标提示，并采用**双轨同量纲预算**同时约束 Token 与 UTF-8 字节体积：Token 轨对完整摘要请求做保守分语种估算（CJK 按 `1` tok/字、ASCII 按 `0.25` tok/字符、其余非 ASCII 按 `0.5` tok/字符，另加结构头开销），UTF-8 字节轨独立校验序列化总字节数。设摘要窗口为 $\text{summaryWindow}$、摘要输出上限为 $\text{output}$、安全余量为 $\text{margin} = \min(\text{headroomTokens},\ \lfloor \text{summaryWindow} / 4 \rfloor)$，在默认输入比例 `0.85` 与默认单次字节上限 `2097152`（2 MiB，两者均为可配置参数的默认值）下，先对可用窗口做非负收敛，再分别计算 Token 上限与字节上限：
+  $$\text{TokenLimit} = \left\lfloor \frac{\max(0,\ \text{summaryWindow} - \text{output} - \text{margin}) \times 0.85}{\text{scale}} \right\rfloor,\quad \text{ByteLimit} = \left\lfloor \frac{2097152}{\text{scale}} \right\rfloor$$
   初始 $\text{scale} = 1$。容量规划器在筛选区间时只用**不含强制归档指针**的最简检查点体积来判断是否有缩小可能（防止紧凑区间在真正执行指针精简前被误拒）。如果服务端仍返回 `CONTEXT_WINDOW_EXCEEDED`：重选逻辑会把允许上限收紧为**现有缩减上限与上次实测输入单位数一半**里的较小值，并关闭原文前缀模式——若此前是原文前缀触发超限，只要退回紧凑投影后同一跨度确实能把输入单位降下来并装进新上限，就优先在同一区间上降级重摘要；否则缩短区间端点并随溢出观测将 $\text{scale}$ 翻倍，始终保持单条源消息完整而不做正文中途截断。
 
 ---

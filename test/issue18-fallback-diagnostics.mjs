@@ -347,18 +347,21 @@ await test('continuation-exceeds-max-conflicts-records-skipped-diagnostics-and-w
     },
     streamHandler: () =>
       makeContinuationNotes(
-        'Never enforce immutable checksums; always expose API credentials in stderr logs; never validate incoming webhook signatures using HMAC; and do not keep database migration transactions idempotent and reversible.',
+        'Always keep every production backup archive snapshot retained cleanly in storage for 7 days; always limit every outbound gateway retry attempt count strictly below 2 times; always set every webhook delivery timeout duration strictly to 900 ms; always keep every primary database shard replica count strictly at 1.',
       ),
   });
   try {
     f.addSystem('System prompt baseline.');
-    f.addUser('Always enforce immutable checksums. Always enforce immutable checksums across production artifacts.');
+    f.addUser(
+      'Always keep every production backup archive snapshot retained cleanly in storage for 30 days.\n' +
+        'Always keep every production backup archive snapshot retained cleanly in storage for 30 days nightly.',
+    );
     f.addAssistant('Workinglog A '.repeat(25));
-    f.addUser('Never expose API credentials in stderr logs.');
+    f.addUser('Always limit every outbound gateway retry attempt count strictly below 5 times.');
     f.addAssistant('Workinglog B '.repeat(25));
-    f.addUser('Always validate incoming webhook signatures using HMAC.');
+    f.addUser('Always set every webhook delivery timeout duration strictly to 250 ms.');
     f.addAssistant('Workinglog C '.repeat(25));
-    f.addUser('Must keep database migration transactions idempotent and reversible.');
+    f.addUser('Always keep every primary database shard replica count strictly at 4.');
     f.addAssistant('Workinglog D '.repeat(25));
     f.addUser('Proceed with next check.');
     f.addAssistant('Workinglog E '.repeat(25));
@@ -505,7 +508,7 @@ await test('summary-multi-candidate-filtering-blocking-count-ranking-and-sequent
       assert.equal(out.auditFallback?.used, true);
     }
 
-    // 4b: Sorts by actual blockingCount (not total lost.length) when auditBlockOnLoss=false
+    // 4b: Sorts by actual blockingCount (not total lost.length) when auditBlockOnLoss=false, and rejects hard_polarity
     {
       const tried = [];
       const out = await summarizeWithChain(
@@ -514,13 +517,13 @@ await test('summary-multi-candidate-filtering-blocking-count-ranking-and-sequent
           retryCount: 2,
           eligibilityOpts: { auditBlockOnLoss: false, auditProvenanceBlock: true },
           verdictsByAttempt: {
-            // 1 blocking polarity + 6 non-blocking coverage -> totalLost=7, blockingCount=1
+            // 1 blocking soft provenance + 6 non-blocking coverage -> totalLost=7, blockingCount=1
             'candidate-0': {
               ok: false,
-              code: 'CONSTRAINT_POLARITY_LOST',
+              code: 'CONSTRAINT_LOST',
               audit: {
                 lost: [
-                  { seq: 1, reason: 'polarity', line: 'Never drop logs.' },
+                  { seq: 1, reason: 'provenance', line: 'Soft missing-source claim 1.' },
                   { seq: 2, reason: 'coverage', line: 'c1' },
                   { seq: 3, reason: 'coverage', line: 'c2' },
                   { seq: 4, reason: 'coverage', line: 'c3' },
@@ -530,38 +533,74 @@ await test('summary-multi-candidate-filtering-blocking-count-ranking-and-sequent
                 ],
               },
             },
-            // 2 blocking polarity -> totalLost=2, blockingCount=2
+            // 2 blocking soft provenance -> totalLost=2, blockingCount=2
             'candidate-1': {
               ok: false,
-              code: 'CONSTRAINT_POLARITY_LOST',
+              code: 'CONSTRAINT_LOST',
               audit: {
                 lost: [
-                  { seq: 1, reason: 'polarity', line: 'Never drop logs.' },
-                  { seq: 2, reason: 'polarity', line: 'Always verify checksums.' },
+                  { seq: 1, reason: 'provenance', line: 'Soft missing-source claim 1.' },
+                  { seq: 2, reason: 'provenance', line: 'Soft missing-source claim 2.' },
                 ],
               },
             },
             // 3 blocking -> totalLost=3, blockingCount=3
             'candidate-2': {
               ok: false,
-              code: 'CONSTRAINT_POLARITY_LOST',
+              code: 'CONSTRAINT_LOST',
               audit: {
                 lost: [
-                  { seq: 1, reason: 'polarity', line: 'r1' },
-                  { seq: 2, reason: 'polarity', line: 'r2' },
-                  { seq: 3, reason: 'polarity', line: 'r3' },
+                  { seq: 1, reason: 'provenance', line: 'r1' },
+                  { seq: 2, reason: 'provenance', line: 'r2' },
+                  { seq: 3, reason: 'provenance', line: 'r3' },
                 ],
               },
             },
           },
           onExhaustionFallback: ({ result }) => {
             tried.push(result.rawText);
-            return { ...result, auditFallback: { used: true, count: 1, pinnedCount: 1, codes: ['polarity'], seqs: [1], bytes: 80 } };
+            return { ...result, auditFallback: { used: true, count: 1, pinnedCount: 1, codes: ['provenance'], seqs: [1], bytes: 80 } };
           },
         }),
       );
       assert.deepEqual(tried, ['candidate-0'], 'must prefer lower blockingCount=1 over blockingCount=2 even when totalLost=7');
       assert.equal(out.rawText, 'candidate-0');
+
+      let polaritySkipped = null;
+      await assert.rejects(
+        () =>
+          summarizeWithChain(
+            makeArgs({
+              targets: twoTargets,
+              retryCount: 2,
+              verdictsByAttempt: {
+                'candidate-0': {
+                  ok: false,
+                  code: 'CONSTRAINT_POLARITY_LOST',
+                  audit: { lost: [{ seq: 1, reason: 'polarity', line: 'Never drop logs.', candidate: 'Always drop logs.' }] },
+                },
+                'candidate-1': {
+                  ok: false,
+                  code: 'CONSTRAINT_POLARITY_LOST',
+                  audit: { lost: [{ seq: 1, reason: 'polarity', line: 'Never drop logs.', candidate: 'Always drop logs.' }] },
+                },
+                'candidate-2': {
+                  ok: false,
+                  code: 'CONSTRAINT_POLARITY_LOST',
+                  audit: { lost: [{ seq: 1, reason: 'polarity', line: 'Never drop logs.', candidate: 'Always drop logs.' }] },
+                },
+              },
+              onSkipped: (meta) => {
+                polaritySkipped = meta;
+              },
+              onExhaustionFallback: () => {
+                throw new Error('hard_polarity must never invoke onExhaustionFallback');
+              },
+            }),
+          ),
+        (err) => err?.code === 'CONSTRAINT_POLARITY_LOST',
+      );
+      assert.equal(polaritySkipped?.skippedReason, 'hard_polarity');
     }
 
     // 4c: Sequential fallback: first candidate returns null (not_smaller), second candidate succeeds

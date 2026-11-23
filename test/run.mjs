@@ -575,7 +575,7 @@ test('countEngineRows 数到 isolate 组里的嵌套行', () => {
       ] },
     ] },
   ];
-  assert.equal(countEngineRows(plugins), 1, '只数引擎，不数 command-compact');
+  assert.equal(countEngineRows(plugins), 2, '同时统计官方引擎行与 command-compact 行');
 });
 
 test('renameOfficialRows 原地换名并保留 id 与位置', () => {
@@ -649,7 +649,7 @@ const REAL_PRESET_TREE = [
 ];
 
 test('countEngineRows 数得到 preset 的 config.plugins 里的引擎行', () => {
-  assert.equal(countEngineRows(REAL_PRESET_TREE), 1);
+  assert.equal(countEngineRows(REAL_PRESET_TREE), 2);
 });
 
 test('renameOfficialRows 能改到 preset 的 config.plugins 里的引擎行', () => {
@@ -2238,13 +2238,13 @@ await atest('C01: 会话对象重建之后，首次锁定的窗口不能重新�
 
   // 宿主重建了 session 实例（进程重启后恢复、切分支），逻辑 id 不变。
   const rebuilt = lockWindow({ ...base, session: { id: 'session-c01' }, adapterWindow: 32768 });
-  assert.equal(rebuilt.safetyWindow, 32768, '更小的可信值必须能收紧');
-  assert.equal(rebuilt.firstResolved, 200000, '首次解析值要一直记得');
+  assert.equal(rebuilt.safetyWindow, 32768, '更小的可信值必须能收紧并替换不可信兜底');
+  assert.equal(rebuilt.firstResolved, 32768, '首个可信值替代兜底成为 firstResolved');
 
   // 再换一个对象、并报一个更大的窗口 —— 不许放大回去。
   const bigger = lockWindow({ ...base, session: { id: 'session-c01' }, adapterWindow: 1000000 });
   assert.equal(bigger.safetyWindow, 32768, '更大的值一律忽略，窗口只能单调变小');
-  assert.equal(peekLockedWindow({ id: 'session-c01' }, 'p', 'm'), 200000);
+  assert.equal(peekLockedWindow({ id: 'session-c01' }, 'p', 'm'), 32768);
 });
 
 await atest('C10: 否定被丢掉时必须算约束丢失，不能只看词覆盖', async () => {
@@ -3103,7 +3103,7 @@ await atest('V8-11: 元数据连续三次变小，每一次都必须被接受', 
   assert.equal(fourth.safetyWindow, 32768, '更大的值一律忽略，窗口只降不升');
 });
 
-await atest('V8-11: 兜底值被任何可信值替换，不区分方向', async () => {
+await atest('V8-11: 兜底值被任何可信值替换，且不可信兜底不得反杀已锁可信大窗口', async () => {
   resetWindowCache();
   const session = { id: 'session-window-fallback-up' };
   const base = { session, provider: 'p', model: 'm', providerMap: {}, fallback: 200000, clampMin: 65536 };
@@ -3111,14 +3111,20 @@ await atest('V8-11: 兜底值被任何可信值替换，不区分方向', async 
   // 第一次没有可信值，落到 fallback。
   const guessed = lockWindow({ ...base, adapterWindow: undefined });
   assert.equal(guessed.source, 'fallback');
+  assert.equal(guessed.window, 200000);
 
-  // 后来适配器报出一个**更大**的值。旧实现只允许"往下换"，
-  // 于是 1000000 进不来，阈值一直按 200000 算 —— 对真实 1M 窗口的模型
-  // 来说，压缩会早得离谱，每轮都在烧摘要调用。
+  // 后来适配器报出真实的 1M 窗口：必须覆盖替换之前的 fallback 猜测，不能继续死锁在 200k。
   const corrected = lockWindow({ ...base, adapterWindow: 1000000 });
-  assert.equal(corrected.window, 200000, '首次会话窗口不可变化');
-  assert.equal(corrected.safetyWindow, 200000, '安全预算不随更大元数据放宽');
-  assert.equal(corrected.source, 'locked');
+  assert.equal(corrected.window, 1000000, '可信元数据必须能升级替代此前 fallback');
+  assert.equal(corrected.firstResolved, 1000000);
+  assert.equal(corrected.safetyWindow, 1000000);
+  assert.equal(corrected.source, 'adapter');
+
+  // 若之后再出现一次解析超时回退为 fallback，不得把已锁 1M 安全预算打回 200k。
+  const afterTimeout = lockWindow({ ...base, adapterWindow: undefined });
+  assert.equal(afterTimeout.window, 1000000);
+  assert.equal(afterTimeout.safetyWindow, 1000000);
+  assert.equal(afterTimeout.source, 'locked');
 });
 
 await atest('V8-03: 崩溃留下的孤儿压缩锁，下次启动必须能关上', async () => {

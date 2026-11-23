@@ -333,6 +333,20 @@ for (const { label, contextWindow, maxTokens, expectedBudget } of [
             firstResolved: contextWindow,
             safetyWindow: contextWindow,
             source: 'locked',
+            provider: 'p',
+            model: 'm',
+            trusted: true,
+            byRoute: {
+              'p/m': {
+                window: contextWindow,
+                firstResolved: contextWindow,
+                safetyWindow: contextWindow,
+                source: 'locked',
+                provider: 'p',
+                model: 'm',
+                trusted: true,
+              },
+            },
           },
         });
         const diagFiles = await readdir(join(root, 'diagnostics')).catch(() => []);

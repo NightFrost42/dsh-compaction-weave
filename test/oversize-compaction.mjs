@@ -448,11 +448,11 @@ await test('summary-budget-single-target-capacity-without-clamping', async () =>
   assert.equal(multiCap.targets.length, 2);
   assert.deepEqual(resolvedCalls, ['big/primary-1m', 'small/fallback-32k']);
   const clampedLimit = capacityLimit(multiCap);
-  assert.equal(clampedLimit, Math.floor((32_000 - 4096 - 4096) * 0.5));
+  assert.equal(clampedLimit, Math.floor((32_000 - 4096 - 4096) * 0.5) * 4);
 
   // capacityLimit with { singleTarget: true } on an already-resolved multi-target capacity
   const primaryOnlyFromMulti = capacityLimit(multiCap, { singleTarget: true });
-  assert.equal(primaryOnlyFromMulti, Math.floor((1_000_000 - 4096 - 4096) * 0.5));
+  assert.equal(primaryOnlyFromMulti, Math.min(Math.floor((1_000_000 - 4096 - 4096) * 0.5) * 4, 1_000_000));
   assert.ok(primaryOnlyFromMulti > clampedLimit * 20);
 
   // resolveSummaryCapacity with { singleTarget: true }: resolves only primary and stores singleTarget: true
@@ -466,7 +466,7 @@ await test('summary-budget-single-target-capacity-without-clamping', async () =>
   // planSummaryRange with { singleTarget: true } on multi-target capacity uses 1M primary instead of clamping to 32k fallback
   const fSpan = makeMockSession();
   fSpan.addSystem('System.');
-  const aBig = fSpan.addAssistant('report-payload '.repeat(2500)); // ~37.5KB > clamped 32k fallback limit (~11.9KB), < 1M primary limit
+  const aBig = fSpan.addAssistant('report-payload '.repeat(3500)); // ~52.5KB (~13.1k tok) > clamped 32k fallback limit (11,904 tok / 47,616 B), < 1M primary limit
   const spanRange = { start: aBig.seq, end: aBig.seq };
   assert.throws(
     () => planSummaryRange(fSpan.session, spanRange, multiCap),

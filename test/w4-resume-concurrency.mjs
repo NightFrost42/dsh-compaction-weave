@@ -256,6 +256,7 @@ async function createFixture({
   const resolved = resolveConfig({
     archiveDir: join(root, 'archive'),
     language: 'en',
+    summaryInputMaxBytes: 120000,
     summaryRetryCount: 0,
     summaryRetryDelayMs: 10,
     ...config,

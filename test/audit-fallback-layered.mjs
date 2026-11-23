@@ -1010,6 +1010,34 @@ await test('4-hard-redlines-and-garbage-caps-strictly-block-fallback', async () 
     language: 'en',
   });
   assert.equal(bridgePayload, null, 'non-user channel item must never be promoted into pinned user rules');
+
+  // 4F) Unresolved polarity flip NEVER falls back via <pinned-source-rules> (hard_polarity)
+  const fPolarity = await createFixture({
+    extraConfig: { summaryRetryCount: 1, auditCoverageThreshold: 0.9 },
+    streamHandler: () =>
+      makeStructuredSummary({
+        2: 'Delete production logs freely.',
+      }),
+  });
+  try {
+    fPolarity.addSystem('Sys.');
+    // Case-variant duplicate lines make reconstructDisputedLines refuse ambiguous auto-repair so polarity stays unresolved.
+    fPolarity.addUser('Never delete production LOGS.\nNever delete production logs.');
+    fPolarity.addAssistant('Working log trace. ' + 'Execution telemetry detail '.repeat(80));
+    fPolarity.addUser('Continue.');
+    await assert.rejects(
+      () => fPolarity.engine.compactNow(fPolarity.agent, new AbortController().signal),
+      (err) => (err?.cause ?? err)?.code === 'CONSTRAINT_POLARITY_LOST',
+    );
+    assert.equal(fPolarity.events.some((e) => e.data?.source?.kind === 'compact-checkpoint'), false);
+    const diagFiles = readdirSync(join(fPolarity.root, 'weave', 'diagnostics')).filter((n) => n.endsWith('.json'));
+    assert.equal(diagFiles.length, 1);
+    const diagJson = JSON.parse(readFileSync(join(fPolarity.root, 'weave', 'diagnostics', diagFiles[0]), 'utf8'));
+    assert.equal(diagJson.auditFallback?.used, false);
+    assert.equal(diagJson.auditFallback?.skippedReason, 'hard_polarity');
+  } finally {
+    await fPolarity.cleanup();
+  }
 });
 
 await test('5-continuation-mapreduce-no-map-leak-and-secondary-compaction-stripping', async () => {
@@ -1064,21 +1092,23 @@ await test('5-continuation-mapreduce-no-map-leak-and-secondary-compaction-stripp
     },
     streamHandler: (req) => {
       const promptJoined = (req.messages ?? []).map((m) => blocksToText(m.content)).join('\n');
-      const reversedClaim = 'Always delete snapshots.\nAlways preserve staging logs cleanly.';
+      const unconditionalClaim = 'Enforce snapshot checksums.';
       if (promptJoined.includes('Independent notes for page') || promptJoined.includes('merging multiple summary pages')) {
         // Reduce call MUST NOT receive <pinned-source-rules> from map pages
         assert.doesNotMatch(promptJoined, /<pinned-source-rules/, 'map fallback must never leak <pinned-source-rules> into reduce');
-        return makeContinuationNotes(reversedClaim, 'Safe continuation merge.');
+        return makeContinuationNotes(unconditionalClaim, 'Safe continuation merge.');
       }
       if (promptJoined.includes('BEGIN ARCHIVED TRANSCRIPT DATA')) {
-        return makeContinuationNotes(reversedClaim);
+        return makeContinuationNotes(unconditionalClaim);
       }
-      return makeContinuationNotes(reversedClaim);
+      return makeContinuationNotes(unconditionalClaim);
     },
   });
   try {
     f.addSystem('System prompt baseline.');
-    const uConstraint = f.addUser('Never delete snapshots. Never delete snapshots in staging.');
+    const uConstraint = f.addUser(
+      'Only enforce snapshot checksums if staging passes.\nOnly enforce snapshot checksums if staging passes and logs flush.',
+    );
     f.addAssistant('Working through phase 1. ' + 'Detailed telemetry record alpha '.repeat(150));
     f.addUser('Continue working through phase two.');
     f.addAssistant('Working through phase 2. ' + 'Detailed telemetry record beta '.repeat(150));
