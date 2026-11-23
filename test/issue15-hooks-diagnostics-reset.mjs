@@ -181,7 +181,7 @@ function createRpcInvoker(routeHandler) {
   return async (method, params = {}) => {
     const req = new EventEmitter();
     req.method = 'POST';
-    req.headers = { host: '127.0.0.1:8080', origin: 'http://127.0.0.1:8080' };
+    req.headers = { host: '127.0.0.1:8080', origin: 'http://127.0.0.1:8080', 'content-type': 'application/json' };
     req.destroy = () => {};
     let resolvedBody = '';
     const res = {

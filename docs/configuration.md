@@ -19,6 +19,7 @@
 | 每次等待上限 | `summaryTimeoutMs` | 180000 | 5000–3600000 毫秒 |
 | 摘要并发数 | `summaryConcurrency` | 2 | 1–6 整数（多块并行生成，严格按顺序提交；遇到 HTTP 429 自动降为 1） |
 | 摘要推理力度 | `summaryReasoningEffort` | `low` | `low`（默认低档）/ `none`（关闭）/ `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit`（跟随会话）；不支持时自动逐级向下回退 |
+| CJK 预算保守权重 | `summaryCjkTokensPerChar` | `0.75` | `0.5–1.5`（默认 `0.75`，使 128k 中文会话正常保留前部 KV 缓存；需要兼容较碎分词器时可调到 `1.0`） |
 | 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭 |
 | 启发式审计耗尽兜底策略 | `auditExhaustionPolicy` | `'fallback'` | `'fallback'`（默认：全链与重试耗尽后，对纯覆盖/软溯源争议外挂 `<= 3` 处经核验纯用户原话放行；极性反转永不兜底）/ `'block'`（严格拦截，禁用兜底） |
 | 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，最多重读 5 个本地工作区文件，受 `postCompactReinjectMaxBytes` 默认 24KB 封顶）/ 关闭 |
@@ -33,11 +34,11 @@
 
 供应商和模型一起选择或一起清空。点击“清除（跟随会话模型）”会清除模型覆盖及其输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、闲置时间、审计拦截、工作区文件重注入、尾部溢出、闲置轻压缩、最后兜底急救裁剪（Snip）以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
 
-**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`auditBlockOnLoss`、`auditExhaustionPolicy`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes` 与 `maxVisibleImages`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
+**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`summaryCjkTokensPerChar`、`auditBlockOnLoss`、`auditExhaustionPolicy`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes` 与 `maxVisibleImages`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
 
 ### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
-- **`auditBlockOnLoss`（默认开启）与 `auditExhaustionPolicy`（默认 `'fallback'`）**：在摘要或分页接续漏掉有效用户约束时自动重试并阻止提交。插件已自动识别并过滤 `<system-reminder>`、`AGENTS.md` 以及宿主第一方上下文注入（保留同一消息中的真实用户正文），并在重试时先运行确定性局部行重构修复遗漏/极性反转；若整个备选目标链且至少 1 次纠偏重试均已耗尽，仍存在不超过 3 处纯覆盖率或 `missing-source` 软溯源启发式争议（全部非 `provenance` 项均可精确逐字回溯至纯用户原话、总开销 ≤ 2048 字节且仍严格缩小 token 与字节数），默认 `auditExhaustionPolicy: 'fallback'` 会将经核验的用户原话外挂于 `<pinned-source-rules>`（在 `<compacted-summary>` 外前置，二次压缩时自动剥离不滚雪球）并记录在 `auditFallback` 与进度卡片“受控兜底”提示中；极性反转（`CONSTRAINT_POLARITY_LOST`）、结构完整性、体积缩小、`PROGRESS_FACT_CONFLICT`、`RETIRED_MEMORY_REINTRODUCED` 以及 `untrusted-source` / `revoked` 强来源检查永久严格拦截，永不兜底放行（如需重试耗尽后直接失败，可设为 `'block'`）。
+- **`auditBlockOnLoss`（默认开启）与 `auditExhaustionPolicy`（默认 `'fallback'`）**：在摘要或分页接续漏掉有效用户约束时自动重试并阻止提交。插件已自动识别并过滤 `<system-reminder>`、`AGENTS.md` 以及宿主第一方上下文注入（保留同一消息中的真实用户正文），并在重试时先运行确定性局部行重构修复遗漏/极性反转；若当前摘要目标且至少 1 次纠偏重试均已耗尽，仍存在不超过 3 处纯覆盖率或 `missing-source` 软溯源启发式争议（全部非 `provenance` 项均可精确逐字回溯至纯用户原话、总开销 ≤ 2048 字节且仍严格缩小 token 与字节数），默认 `auditExhaustionPolicy: 'fallback'` 会将经核验的用户原话外挂于 `<pinned-source-rules>`（在 `<compacted-summary>` 外前置，二次压缩时自动剥离不滚雪球）并记录在 `auditFallback` 与进度卡片“受控兜底”提示中；极性反转（`CONSTRAINT_POLARITY_LOST`）、结构完整性、体积缩小、`PROGRESS_FACT_CONFLICT`、`RETIRED_MEMORY_REINTRODUCED` 以及 `untrusted-source` / `revoked` 强来源检查永久严格拦截，永不兜底放行（如需重试耗尽后直接失败，可设为 `'block'`）。
 - **单次聚焦压缩与熔断重置命令（`/compact <focus>`、`/compact -- <focus>`、`/compact reset`）**：
   - `/compact <focus>`（如 `/compact 保留 API 鉴权细节和报错行号`）可在手动压缩时传入单次聚焦指令（自动去除控制字符并压缩空白，最长 500 字符），在不漏掉用户约束或虚构事实的前提下优先保留指定上下文；仅精确保留以下 7 个内建子命令：`migrate`、`backups`、`restore [backupId]`、`resume`、`cancel`、`discard`、`reset`，其余任意非空文本均解析为聚焦指令。若聚焦内容恰好以保留关键字开头（如 `-- resume notes` 或 `-- reset`），可使用 `/compact -- <focus>` 强制按聚焦指令解析。无参数的 `/compact` 保持原有默认压缩与断点续传行为不变。
   - `/compact reset` 可安全清零当前会话的熔断状态与连续失败计数（`failures: 0`、`stopped: false`、`breakerBypassed: false`），同时完整保留 `window` 观测值与已有可恢复断点；若此前因手工修改状态文件导致 `STATE_INVALID` 校验失败且确认不存在未完成压缩事务（无运行中锁及未决恢复日志），会自动以新的 SHA-256 校验和原子重建干净状态文件。
@@ -180,6 +181,7 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `preserveRecentUserTokens` | `4096` | 近期原话预算 |
 | `summaryInputRatio` | `0.85` | 摘要输入相对模型可用窗口的 Token 预算比例 |
 | `summaryInputMaxBytes` | `2097152` | 完整摘要请求的独立 UTF-8 字节硬上限（2 MiB） |
+| `summaryCjkTokensPerChar` | `0.75` | 摘要请求规划对 CJK/韩文/假名的保守每字 token 估算权重（`0.5–1.5`，支持在设置页热生效；需兼容较碎旧分词器时可调至 `1.0`） |
 | `summaryConcurrency` | `2` | 多分片/分页摘要的并行生成上限（1–6；首片串行探针后并行生成、严格按顺序提交，429 自动降至 1） |
 | `summaryReasoningEffort` | `'low'` | 摘要请求推理力度策略：`low`（默认低档降耗，主会话未设力度或跨路由摘要时也会下发 `'low'`）、`none`（省略参数）、`minimal` / `medium` / `high` / `xhigh` / `max`（直接指定思考档位；上述直接档位在遇到 `UNSUPPORTED_REASONING_EFFORT` 时均会自动沿阶梯 `max → xhigh → high → medium → low → minimal → none → 省略` 向下回退并按路由缓存）、`inherit`（同路由沿用主会话设置） |
 | `compactionRetries` | `1` | 宿主架构/规格兼容保留占位字段（运行时摘要重试请配置 `summaryRetryCount` 与 `summaryRetryDelayMs`，本字段不参与运行期重试循环） |
@@ -203,7 +205,7 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `auditEnabled` | `true` | 检查要求是否保留 |
 | `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交（极性反转在关闭时仍严格拦截） |
 | `auditProvenanceBlock` | `true` | 授权/指令来源未匹配用户原文（`provenance`）时阻断提交；设为 `false` 时仅对无依据归纳改为告警放行，但对 `untrusted-source`（外部/注入来源）与 `revoked`（已撤回授权）仍保持强拦截 |
-| `auditExhaustionPolicy` | `'fallback'` | 目标链与至少 1 次纠偏重试全部耗尽且仅剩 `<= 3` 处纯覆盖率/`missing-source` 启发式冲突时的策略（可在设置页热生效）：`'fallback'`（默认：外挂经核验纯用户原话至 `<pinned-source-rules>`、`≤ 2048` 字节并严守缩小与所有强红线后受控放行）或 `'block'`（严格拦截并失败）；`CONSTRAINT_POLARITY_LOST`（极性反转）、`summaryRetryCount === 0` 或任意结构/体积/进度/已撤回/`untrusted-source`/`revoked` 失败永不走兜底 |
+| `auditExhaustionPolicy` | `'fallback'` | 当前摘要目标与至少 1 次纠偏重试全部耗尽且仅剩 `<= 3` 处纯覆盖率/`missing-source` 启发式冲突时的策略（可在设置页热生效）：`'fallback'`（默认：外挂经核验纯用户原话至 `<pinned-source-rules>`、`≤ 2048` 字节并严守缩小与所有强红线后受控放行）或 `'block'`（严格拦截并失败）；`CONSTRAINT_POLARITY_LOST`（极性反转）、`summaryRetryCount === 0` 或任意结构/体积/进度/已撤回/`untrusted-source`/`revoked` 失败永不走兜底 |
 | `extraReferenceSourceKinds` | `[]` | 额外视为非用户参考通道的 `source.kind` 字符串数组（最多 64 项，严禁包含 `'user'` 或 `'compact-checkpoint'`）；内置已自动隔离 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge` 等桥接通道 |
 | `extraReferencePrefixes` | `[]` | 额外视为非用户注入块的裸文本前缀数组（修剪后 2–200 字符、最多 64 项）；内置已自动隔离多行记忆注入头（如 `===== 长期记忆 =====`、`【记忆导引】` 后带正文），不污染 Section 6 原话或要求审计 |
 | `diskLivenessCheck` | `true` | 压缩时在工作区目录内只读检查历史提及文件路径是否缺失或于近期改动（不调模型，非本地路径自动跳过） |

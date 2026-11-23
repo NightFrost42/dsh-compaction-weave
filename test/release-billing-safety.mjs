@@ -812,17 +812,17 @@ await test('http-rpc-enforces-same-origin-method-size-and-reactive-never-repeats
           Promise.resolve(done).catch(() => {});
         });
 
-      const crossSite = await invoke('POST', { host: '127.0.0.1:3000', 'sec-fetch-site': 'cross-site' }, '{}');
+      const crossSite = await invoke('POST', { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'sec-fetch-site': 'cross-site', 'content-type': 'application/json' }, '{}');
       assert.equal(crossSite.status, 403);
 
-      const badMethod = await invoke('GET', { host: '127.0.0.1:3000' }, undefined);
+      const badMethod = await invoke('GET', { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000' }, undefined);
       assert.equal(badMethod.status, 405);
 
-      const oversized = await invoke('POST', { host: '127.0.0.1:3000' }, 'x'.repeat(MAX_BODY_BYTES + 1));
+      const oversized = await invoke('POST', { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' }, 'x'.repeat(MAX_BODY_BYTES + 1));
       assert.equal(oversized.status, 400);
       assert.equal(oversized.body?.error?.code, 'payload-too-large');
 
-      const statusRes = await invoke('POST', { host: '127.0.0.1:3000' }, JSON.stringify({ method: 'status', params: { sessionId: 's1' } }));
+      const statusRes = await invoke('POST', { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' }, JSON.stringify({ method: 'status', params: { sessionId: 's1' } }));
       assert.equal(statusRes.status, 200);
       assert.equal(statusRes.body?.ok, true);
       assert.equal(statusRes.body?.value?.active, false);

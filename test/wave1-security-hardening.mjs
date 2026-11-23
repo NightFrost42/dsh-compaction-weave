@@ -822,11 +822,26 @@ await test('4-dual-track-summary-budget-enables-200k-single-call-and-keeps-small
     );
     assert.equal(fitsCapacity(verbatim, cap, { singleTarget: true }), true, 'preservePrefixCache: true must pass dual-track capacity');
 
-    // CJK text counts conservatively (1 tok/char): 140k CJK chars exceeds 134,986 token limit even though ~420 KB < 2 MiB
-    const cjkReq = buildSummaryRequest({ messages: [{ role: 'user', content: [{ type: 'text', text: '汉'.repeat(140000) }] }] });
-    assert.ok(cjkReq.inputTokens >= 140000);
+    // Default CJK weight is 0.75 tok/char: 190k CJK chars (>= 142,500) exceeds 134,986 token limit
+    // even though ~570 KB < 2 MiB; compatibility mode (1.0 tok/char) still rejects 140k CJK chars.
+    const cjkReq = buildSummaryRequest({ messages: [{ role: 'user', content: [{ type: 'text', text: '汉'.repeat(190000) }] }] });
+    assert.ok(cjkReq.inputTokens >= 142500);
     assert.throws(
       () => assertSummaryCapacity(cjkReq, cap, { provider: 'deepseek', model: 'deepseek-chat' }),
+      (e) => e.localCapacityRejection === true && e.code === 'CONTEXT_WINDOW_EXCEEDED',
+    );
+    const compatCap = await resolveSummaryCapacity(
+      f200k.engine.ctx,
+      { targets: [{ provider: 'deepseek', model: 'deepseek-chat' }] },
+      resolveConfig({ summaryCjkTokensPerChar: 1.0 }).config,
+    );
+    const compatCjkReq = buildSummaryRequest(
+      { messages: [{ role: 'user', content: [{ type: 'text', text: '汉'.repeat(140000) }] }] },
+      { cjkTokensPerChar: 1.0 },
+    );
+    assert.ok(compatCjkReq.inputTokens >= 140000);
+    assert.throws(
+      () => assertSummaryCapacity(compatCjkReq, compatCap, { provider: 'deepseek', model: 'deepseek-chat' }),
       (e) => e.localCapacityRejection === true && e.code === 'CONTEXT_WINDOW_EXCEEDED',
     );
 
@@ -926,9 +941,11 @@ await test('5-and-6-route-window-isolation-fallback-upgrade-legacy-recovery-and-
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }
 
-  // 4) Item 6: resolveSummaryTargets and _resolveSpec prioritize live agent.options over stale requestHeader
+  // 4) Item 6 / DSH 0.2.2-rc.1 contract: resolveSummaryTargets and _resolveSpec prioritize
+  // live modelSelection / agent.model.current() -> session.requestHeader() -> initial agent.options.
   const switchedAgent = {
-    options: { provider: 'new-provider', model: 'new-1m', reasoningEffort: 'medium' },
+    options: { provider: 'initial-provider', model: 'initial-legacy', reasoningEffort: 'low' },
+    model: { current: () => ({ provider: 'new-provider', model: 'new-1m', reasoningEffort: 'medium' }) },
     session: {
       id: `live-target-${randomUUID().slice(0, 6)}`,
       requestHeader: () => ({ config: { provider: 'old-provider', model: 'old-64k', reasoningEffort: 'high' } }),
@@ -937,9 +954,24 @@ await test('5-and-6-route-window-isolation-fallback-upgrade-legacy-recovery-and-
   const chain = resolveSummaryTargets({ config: resolveConfig({}).config, agent: switchedAgent });
   assert.equal(chain.targets[0].provider, 'new-provider');
   assert.equal(chain.targets[0].model, 'new-1m');
-  assert.equal(chain.targets[0].source, 'agent');
+  assert.equal(chain.targets[0].source, 'model');
   assert.equal(chain.targets[1].provider, 'old-provider');
   assert.equal(chain.targets[1].source, 'session');
+  assert.equal(chain.targets[2].provider, 'initial-provider');
+  assert.equal(chain.targets[2].source, 'agent');
+
+  // Without agent.model.current(), session.requestHeader() beats stale initial agent.options
+  const headerSwitchedAgent = {
+    options: { provider: 'initial-provider', model: 'initial-legacy' },
+    session: {
+      id: `hdr-target-${randomUUID().slice(0, 6)}`,
+      requestHeader: () => ({ config: { provider: 'header-provider', model: 'header-32k' } }),
+    },
+  };
+  const headerChain = resolveSummaryTargets({ config: resolveConfig({}).config, agent: headerSwitchedAgent });
+  assert.equal(headerChain.targets[0].provider, 'header-provider');
+  assert.equal(headerChain.targets[0].source, 'session');
+  assert.equal(headerChain.targets[1].provider, 'initial-provider');
 
   const fEngine = await createSynthFixture({
     extraConfig: {
@@ -950,7 +982,8 @@ await test('5-and-6-route-window-isolation-fallback-upgrade-legacy-recovery-and-
     fEngine.engine.ctx.llm.resolveModelInfo = async (p, m) => ({ contextWindow: p === 'new-provider' ? 1000000 : 65536 });
     const liveAgent = {
       session: fEngine.session,
-      options: { provider: 'new-provider', model: 'new-1m' },
+      options: { provider: 'initial-provider', model: 'initial-legacy' },
+      model: { current: () => ({ provider: 'new-provider', model: 'new-1m' }) },
     };
     const spec = await fEngine.engine._resolveSpec(liveAgent, null, undefined);
     assert.equal(spec.provider, 'new-provider');

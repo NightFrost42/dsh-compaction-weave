@@ -824,7 +824,7 @@ await test('stub-compatibility-with-preserved-memory-progress-provenance-and-arc
     const stubText1 = blocksToText(stub1.data.content);
     assert.ok(Buffer.byteLength(stubText1, 'utf8') <= MAX_SNIP_STUB_TEXT_BYTES);
     assert.ok(stubText1.includes('archived via emergency Snip'));
-    assert.ok(stubText1.includes(`history_read(compactionId="${committed.compactionIds[0]}")`));
+    assert.ok(stubText1.includes(`history_read({ compactionId: "${committed.compactionIds[0]}" })`));
     assert.ok(stubText1.includes('src/release.js'));
     assert.equal(stub1.data.source.kind, 'compact-checkpoint');
     assert.equal(stub1.data.source.snip, true);

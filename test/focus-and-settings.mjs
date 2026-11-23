@@ -609,7 +609,7 @@ for (const language of ['zh', 'en']) {
       assert.equal(h.field('weave-session-memory-enabled')?.props?.checked, false);
 
       const pageText = textOf(h.render());
-      assert.match(pageText, language === 'zh' ? /0 LLM Token/ : /0 LLM tokens/);
+      assert.match(pageText, language === 'zh' ? /0 次额外摘要模型调用/ : /0 extra summary LLM calls/);
       assert.match(pageText, /24KB/);
       assert.match(pageText, /AGENTS\.md/);
 

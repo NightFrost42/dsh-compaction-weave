@@ -1322,7 +1322,7 @@ await test('rpc-status-exposes-sanitized-sessionMemory-without-leaking-prose-or-
     let responseBody = '';
     const req = Object.assign(Readable.from([body]), {
       method: 'POST',
-      headers: { host: '127.0.0.1:3000', 'content-type': 'application/json' },
+      headers: { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' },
     });
     const res = {
       statusCode: 0,

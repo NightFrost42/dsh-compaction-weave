@@ -379,7 +379,7 @@ function makeFullHostFixture({
       }
       const req = new EventEmitter();
       req.method = 'POST';
-      req.headers = { host: '127.0.0.1:3000' };
+      req.headers = { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' };
       req.destroy = () => {};
       const res = {
         statusCode: 0,
