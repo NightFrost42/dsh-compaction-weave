@@ -75,7 +75,7 @@ async function fixture(extra) {
     calls.push(options); const text = response(options,calls.length); if (text instanceof Error) throw text;
     yield {type:'text-delta',text}; yield {type:'usage',usage:{inputTokens:100,outputTokens:10,totalTokens:110}}; yield {type:'finish',kind:'stop'};
   }}};
-  let engine = new WeaveCompactionEngine(ctx, resolveConfig({summaryRetryCount:1,summaryRetryDelayMs:0,archiveDir:join(root,'archive'), summaryInputMaxBytes:50000,
+  let engine = new WeaveCompactionEngine(ctx, resolveConfig({summaryRetryCount:1,summaryRetryDelayMs:0,auditExhaustionPolicy:'block',archiveDir:join(root,'archive'), summaryInputMaxBytes:50000,
     maxSummaryChunks:32, windowFallback:1000000, continuationMaxExtraCalls:extra}).config);
   engine.historyToolsAvailable = true;
   const agent = {session, options:{provider:'p',model:'m'}, runMaintenance:fn => fn(new AbortController().signal)};
