@@ -42,6 +42,7 @@
   - `/compact <focus>`（如 `/compact 保留 API 鉴权细节和报错行号`）可在手动压缩时传入单次聚焦指令（自动去除控制字符并压缩空白，最长 500 字符），在不漏掉用户约束或虚构事实的前提下优先保留指定上下文；仅精确保留以下 6 个内建子命令：`migrate`、`backups`、`restore [backupId]`、`resume`、`cancel`、`discard`，其余任意非空文本均解析为聚焦指令。若聚焦内容恰好以保留关键字开头（如 `-- resume notes`），可使用 `/compact -- <focus>` 强制按聚焦指令解析。无参数的 `/compact` 保持原有默认压缩与断点续传行为不变。
 - **实时压缩进度卡片与暂停/断点续传**：自动压缩、手动 `/compact`、分页接续或兼容转换进行时，对话输入框上方会自动显示实时进度卡片，包含阶段状态、进度条、波次/分块/页码、并发路数与限流状态、重试次数、摘要模型、token 变化、掩码统计、流式接收活跃度与计时，并支持点击**暂停**中断当前任务；空闲且无需迁移/续传时完全隐藏。当压缩因用户暂停、超时、错误或进程崩溃中断时，已提交的分片全部保留，未完成进度会自动保存断点：普通中断（`interrupted`）会在下一条消息前自动续传，也可在进度卡片点击**继续**或执行 `/compact resume` 立即继续；额度耗尽（`paused_budget`）或达到失败阈值（`paused_failure`）时不会自动触发续传，避免静默续费或阻塞对话，排查后可点击**继续**、执行 `/compact` / `/compact resume`，或点击**放弃进度** / `/compact discard` 清理未完成断点（原始完整备份始终保留）。命令行对应子命令：`/compact resume`、`/compact cancel`、`/compact discard`。
 - **billion-context 兼容转换与完整备份**：仅当当前会话实际检测到未迁移的 `billion-context` / `billion-context-dsh` 折叠块或工具记录时，进度卡片才会按需出现“兼容转换为 Weave”入口（普通会话及已完成转换的会话不显示）。执行不可逆转换前，插件会先在独立存储目录 `<DSH_HOME>/storages/dsh-compaction-weave/backups/` 下创建并经 SHA-256 校验原始字节（完整保留 `.v4.jsonl.zstd` / `.v4.jsonl` 编码，不向 DSH 会话目录写入杂项文件）；多次备份始终保护首次生成的原始基线备份不被覆盖；命令行亦可使用 `/compact migrate`、`/compact backups` 与 `/compact restore [backupId]`。
+- **与其他压缩/裁剪插件共存注意**：请避免同时启用多个会修改 `compaction-basic` 的上下文压缩或裁剪类插件（例如 `billion-context` 或其他改写 `compaction-basic` 的插件）；停用或卸载同类插件后请重载 DSH，并检查配置中是否残留 `disabled: true` 或 `auto: false`。
 
 首次安装或升级插件本体仍需按 DSH 提示重载宿主，才能加载新版代码；上述无需重启仅适用于摘要设置页的设置变更。
 

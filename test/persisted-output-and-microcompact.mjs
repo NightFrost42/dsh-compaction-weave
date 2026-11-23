@@ -18,7 +18,11 @@ const attachmentFixture = {
 };
 
 import { CompactionArchive } from '../lib/history.js';
+import { selectContinuationWave, sourcePages } from '../lib/continuation.js';
 import { blocksToText } from '../lib/meter.js';
+import { buildSummarizationInput } from '../lib/region.js';
+import { measureSummaryRange } from '../lib/summary-budget.js';
+import { resolveConfig } from '../lib/config.js';
 import {
   MAX_MASK_STAGE_REFS,
   MICROCOMPACT_SUPERSEDED_MARKER,
@@ -784,6 +788,74 @@ await test('microcompact-maxBatchRefs-hasMore-ascending-order-across-passes', as
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+await test('repeated-read-min-chars-forwards-to-summary-budget-and-continuation', () => {
+  const f = makeSession({ openTurn: 1 });
+  f.addSystem('System prompt.');
+  const u1 = f.addUser('Inspect src/app.js carefully.');
+  const c1 = f.addAssistantToolCall([{ name: 'view_file', args: { path: 'src/app.js' } }]);
+  const r1 = f.addToolResult(c1.callEvents[0], 'OLD_READ_V1_' + 'A'.repeat(750));
+  const c2 = f.addAssistantToolCall([{ name: 'view_file', args: { path: 'src/app.js' } }]);
+  const r2 = f.addToolResult(c2.callEvents[0], 'NEW_READ_V2_' + 'B'.repeat(750));
+
+  const seqs = [u1.seq, c1.assistantEvent.seq, r1.seq, c2.assistantEvent.seq, r2.seq];
+  const defaultPolicy = resolveConfig().config;
+  const loweredPolicy = resolveConfig({ microcompactRepeatedReadMinChars: 500 }).config;
+
+  // 1. Summary input projection forwards microcompactRepeatedReadMinChars
+  const defaultInput = buildSummarizationInput(f.session, seqs, { policy: defaultPolicy });
+  const loweredInput = buildSummarizationInput(f.session, seqs, { policy: loweredPolicy });
+  const defaultJson = JSON.stringify(defaultInput.messages);
+  const loweredJson = JSON.stringify(loweredInput.messages);
+  assert.ok(defaultJson.includes('OLD_READ_V1_'), 'default 2000 threshold keeps 762-char repeated read verbatim');
+  assert.equal(defaultJson.includes('Earlier read of src/app.js'), false);
+  assert.equal(loweredJson.includes('OLD_READ_V1_'), false, 'lowered 500 threshold must supersede earlier read');
+  assert.ok(loweredJson.includes('Earlier read of src/app.js'));
+  assert.ok(loweredJson.includes('NEW_READ_V2_'), 'newest repeated read stays verbatim');
+
+  // 2. Budget measurement reflects lowered repeated-read threshold
+  const range = { start: u1.seq, end: r2.seq };
+  const defaultMeasured = measureSummaryRange(f.session, range, { policy: defaultPolicy });
+  const loweredMeasured = measureSummaryRange(f.session, range, { policy: loweredPolicy });
+  assert.ok(
+    loweredMeasured.requestUnits < defaultMeasured.requestUnits,
+    `expected lowered threshold requestUnits (${loweredMeasured.requestUnits}) < default (${defaultMeasured.requestUnits})`,
+  );
+
+  // 3. Continuation sourcePages forwards policy.microcompactRepeatedReadMinChars
+  const defaultPages = sourcePages(f.session, seqs, 4096, { policy: defaultPolicy });
+  const loweredPages = sourcePages(f.session, seqs, 4096, { policy: loweredPolicy });
+  assert.ok(defaultPages.join('\n').includes('OLD_READ_V1_'));
+  assert.equal(loweredPages.join('\n').includes('OLD_READ_V1_'), false);
+  assert.ok(loweredPages.join('\n').includes('Earlier read of src/app.js'));
+  assert.ok(loweredPages.join('\n').includes('NEW_READ_V2_'));
+
+  // 4. selectContinuationWave uses the same lowered threshold when packing 1-page waves
+  const defaultLen = Buffer.byteLength(defaultPages.join('\n'), 'utf8');
+  const loweredLen = Buffer.byteLength(loweredPages.join('\n'), 'utf8');
+  assert.ok(loweredLen < defaultLen);
+  const wavePageLimit = Math.max(1024, Math.floor((defaultLen + loweredLen) / 2));
+  const waveDefault = selectContinuationWave(f.session, {
+    policy: defaultPolicy,
+    pageLimit: wavePageLimit,
+    maxPages: 1,
+  });
+  const waveLowered = selectContinuationWave(f.session, {
+    policy: loweredPolicy,
+    pageLimit: wavePageLimit,
+    maxPages: 1,
+  });
+  assert.ok(waveDefault && waveLowered);
+  assert.ok(
+    waveDefault.end < r2.seq,
+    `without dedup, total ${defaultLen}B exceeds ${wavePageLimit}B 1-page limit (got end=${waveDefault.end})`,
+  );
+  assert.equal(
+    waveLowered.end,
+    r2.seq,
+    `with 500-char dedup forwarded, total ${loweredLen}B fits ${wavePageLimit}B 1-page limit (got end=${waveLowered.end}, expected=${r2.seq})`,
+  );
 });
 
 const passed = results.filter((r) => r.pass).length;
