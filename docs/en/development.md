@@ -74,7 +74,7 @@ The runtime package follows `package.json.files`; the source archive uses an exp
 5. If publishing to npm manually from a local machine, publish the verified tarball (keep the leading `./` on npm 11+ so relative tarball paths are not parsed as GitHub `owner/repo` shorthand):
 
 ```bash
-npm publish ./dist/dsh-compaction-weave-0.5.0.tgz --tag latest --access public
+npm publish ./dist/dsh-compaction-weave-0.5.1.tgz --tag latest --access public
 ```
 
 Stable releases publish under the `latest` npm tag (prereleases use `next` in `publishConfig.tag`).
