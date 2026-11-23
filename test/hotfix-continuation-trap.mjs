@@ -214,7 +214,7 @@ async function createTrapFixture({
     addAssistant,
     async dispose() {
       engine.dispose();
-      await rm(root, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     },
   };
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -28,6 +28,7 @@ import { resolveReasoningEffort, summarizeWithChain } from '../lib/summary.js';
 import { isFatalAuthError, isRateLimitError, runConcurrentPool } from '../lib/concurrency.js';
 import { prepareContinuation } from '../lib/continuation.js';
 import { CompactionProgressTracker } from '../lib/progress-tracker.js';
+import { CompactionArchive } from '../lib/history.js';
 
 const results = [];
 async function test(name, fn) {
@@ -563,6 +564,77 @@ await test('pool-aborts-siblings-immediately-on-signal-fatal-auth-and-commit-err
   });
   await assert.rejects(pCommit, (err) => err.code === 'ENOSPC');
   assert.equal(commitSiblingsAborted, 2);
+});
+
+await test('pool-drains-cooperative-cleanup-bounds-uncooperative-workers-and-aborts-writeSpan', async () => {
+  // (a) Cooperative sibling cleanup (~30ms, longer than setImmediate) must finish BEFORE pool rejects
+  const ext = new AbortController();
+  let cleanupFinished = false;
+  const pCoop = runConcurrentPool([0, 1], {
+    concurrency: 2,
+    signal: ext.signal,
+    worker: async (_item, index, sig) => {
+      if (index === 0) {
+        await delay(5);
+        ext.abort(Object.assign(new Error('early stop'), { code: 'ABORTED' }));
+        throw ext.signal.reason;
+      }
+      try {
+        await delay(5000, undefined, { signal: sig });
+      } finally {
+        await delay(30);
+        cleanupFinished = true;
+      }
+    },
+  });
+  await assert.rejects(pCoop, (err) => err.code === 'ABORTED');
+  assert.equal(cleanupFinished, true, 'cooperative sibling async cleanup must finish before pool settles');
+
+  // (b) Uncooperative worker ignoring signal still settles within abortDrainTimeoutMs without hanging
+  const extBounded = new AbortController();
+  let releaseStubborn = null;
+  const stubbornDone = new Promise((resolve) => {
+    releaseStubborn = resolve;
+  });
+  const startedAt = Date.now();
+  const pBounded = runConcurrentPool([0, 1], {
+    concurrency: 2,
+    signal: extBounded.signal,
+    abortDrainTimeoutMs: 40,
+    worker: async (_item, index) => {
+      if (index === 0) {
+        await delay(5);
+        extBounded.abort(Object.assign(new Error('stop now'), { code: 'ABORTED' }));
+        return 'ok';
+      }
+      await stubbornDone;
+      return 'stubborn';
+    },
+  });
+  await assert.rejects(pBounded, (err) => err.code === 'ABORTED');
+  const elapsedMs = Date.now() - startedAt;
+  releaseStubborn?.();
+  await delay(10);
+  assert.ok(elapsedMs < 1000, `bounded drain must not hang on uncooperative workers (elapsed=${elapsedMs}ms)`);
+
+  // (c) CompactionArchive.writeSpan returns null immediately on aborted signal with zero disk writes
+  const archiveRoot = await mkdtemp(join(tmpdir(), 'weave-w3-abort-archive-'));
+  try {
+    const archive = new CompactionArchive({ root: archiveRoot });
+    const ac = new AbortController();
+    ac.abort(Object.assign(new Error('aborted before writeSpan'), { code: 'ABORTED' }));
+    const wrote = await archive.writeSpan({
+      sessionId: 'sess-aborted-write',
+      compactionId: 'weave-aborted-span',
+      entries: [{ seq: 0, type: 'user/message', role: 'user', text: 'hello' }],
+      signal: ac.signal,
+    });
+    assert.equal(wrote, null, 'aborted writeSpan must return null');
+    const rootEntries = await readdir(archiveRoot);
+    assert.deepEqual(rootEntries, [], 'aborted writeSpan must not leave span files or index.jsonl on disk');
+  } finally {
+    await rm(archiveRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
 });
 
 // ── 4. Continuation Optional Map-Reduce Concurrency ─────────────────────────
