@@ -20,6 +20,7 @@ If all attempts are exhausted, the conversation displays the failure reason and 
 | Oversized input or tool group | Weave automatically runs batched Stage-1 observation masking on oversized sessions, uses the primary summary target's own context window, folds checkpoints hierarchically across rolling waves, and caps tool-source references per chunk/wave; if a single message or tool group still exceeds limits, adjust the summary model window or input budgets using the diagnostic estimates |
 | Continuation call budget exhausted | Resolve the reported cause, then run `/compact` to grant a fresh call budget for remaining pages |
 | Migrating from `billion-context` or encountering legacy fold blocks | When replacing the official compaction row, Weave automatically strips stale `disabled: true` left by prior gates/patches and warns if `auto: false` was inherited (remove `auto: false` from your profile patch or set `engine.auto: true` to re-enable auto-compaction). Existing `billion-context` / `billion-context-dsh` sessions can be converted via the conditional **Convert to Weave** button in the progress card or `/compact migrate`; Weave creates and SHA-256 verifies a raw-byte full-session backup beforehand. Use **Restore backup** or `/compact backups` / `/compact restore [backupId]` to roll back (open sessions lock writes and restore atomically when reopened or after reloading DSH) |
+| Foreground modal or error about `billion-context` coexistence / local proxy `413` (`BILI_COEXISTENCE_CONFLICT` / `BILI_PROXY_CONFLICT` / `preflight_compress_failed`) | Open Plugin Manager and disable or uninstall `billion-context` (`billion-context-dsh`), restore any model provider `baseUrl` still pointing to bili's `127.0.0.1` / `localhost` loopback proxy back to the direct upstream endpoint, and **fully restart DSH** (even if toggled off in the UI, a full restart is required to clear in-memory hooks and local proxy listeners). Genuine direct upstream HTTP `413` / `model window` errors are routed cleanly through overflow compaction / effective Snip rescue |
 | Recovery or write-quarantine notice | Keep the transaction journal and `.rollback` backup in storage, restart DSH, and inspect the recovery outcome |
 | Host compatibility or private method check notice | Verify that your DSH version falls within `>=0.2.2-rc.1 <1.0.0-0` (native atomic commits are verified on `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3`); with default `strictHostFingerprints: false`, minor host updates changing private persistence internals emit a one-time notice and fall back to public `Session.append(replace)` + `sessions.flush()` when no unrecovered `.rollback`/`.tail` atomic journal exists, whereas `strictHostFingerprints: true` or unrecovered atomic journals block compaction and retain recovery files |
 
@@ -59,7 +60,7 @@ For a command-line profile, stop the profile before upgrading from npm or a loca
 
 ```bash
 dsh plugin --profile web add dsh-compaction-weave
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.4.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.5.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

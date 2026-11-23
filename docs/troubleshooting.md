@@ -20,6 +20,7 @@
 | 输入或单组工具消息过大 | 插件会在超长会话上自动执行第一级分批工具输出掩码、按主摘要目标独立计算窗口容量、按波次分层折叠检查点并限制每块/每波工具引用上限；若单条消息或单组工具仍超限，请根据诊断中的估算值调高摘要模型窗口或输入预算配置 |
 | 后台分页调用额度耗尽 | 排查提示原因后，输入 `/compact` 为剩余未完成页面续批一轮调用额度 |
 | 从 `billion-context` 切到 Weave 后无法自动压缩或遇到旧折叠块 | Weave 接管官方压缩行时会自动清除残留的 `disabled: true`；若日志提示继承了 `auto: false`，请从 profile patch 中移除 `auto: false` 或显式配置 `engine.auto: true`。旧会话中的 `billion-context` / `billion-context-dsh` 折叠块或工具记录可通过进度卡片中的“兼容转换为 Weave”按钮或 `/compact migrate` 一键转换，转换前会自动创建并经 SHA-256 校验完整原始会话备份；如需回退，可点击卡片中的“还原备份”或执行 `/compact backups`、`/compact restore [backupId]`（已打开的会话会先锁定写入，在关闭重开或重载 DSH 后自动完成原子还原） |
+| 弹出 `billion-context` 并存/代理残留警告或 `413` `preflight_compress_failed`（`BILI_COEXISTENCE_CONFLICT` / `BILI_PROXY_CONFLICT`） | 请在插件管理页停用或卸载 `billion-context`（含 `billion-context-dsh`），检查模型供应商 `baseUrl` 是否仍指向 bili 的 `127.0.0.1` / `localhost` 本地代理并还原为直连上游地址，然后**彻底重启一次 DSH**（即使刚才已在界面里关闭过 `billion-context` 也必须彻底重启以清理内存钩子与代理端口）；普通上游 HTTP `413` / `model window` 窗口溢出由 Weave 接管重试与合法 Snip 兜底 |
 | 会话恢复或写隔离提示 | 保留存储目录中的事务日志与 `.rollback` 备份，重启宿主后查看恢复结果 |
 | 宿主兼容或私有方法校验提示 | 核对当前 DSH 版本是否处于 `>=0.2.2-rc.1 <1.0.0-0` 范围（正式原子事务实测覆盖 `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`）；在默认 `strictHostFingerprints: false` 下，若宿主小更新调整私有持久化方法，插件会在确认无未恢复 `.rollback`/`.tail` 原子日志后发出一次兼容提示并自动改走公开 `Session.append(replace)` + `sessions.flush()`；仅当设为 `strictHostFingerprints: true` 或存在未恢复原子日志时才会阻止压缩并保留恢复材料 |
 
@@ -59,7 +60,7 @@
 
 ```bash
 dsh plugin --profile web add dsh-compaction-weave
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.4.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.4.5.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 
