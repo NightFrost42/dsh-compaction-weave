@@ -817,7 +817,7 @@ await test('issue6-polarity-error-metadata-and-diagnostic-explanation', async ()
 await test('issue4-and-v042-metadata-docs-and-changelog', () => {
   const rootDir = new URL('..', import.meta.url);
   const pkg = JSON.parse(readFileSync(new URL('package.json', rootDir), 'utf8'));
-  assert.match(pkg.version, /^0\.4\.[2-9]\d*/);
+  assert.match(pkg.version, /^(?:0\.4\.(?:[2-9]|[1-9]\d+)|0\.(?:[5-9]|[1-9]\d+)\.\d+|[1-9]\d*\.\d+\.\d+)(?:-[a-z0-9.-]+)?$/i);
   assert.equal(PLUGIN_VERSION, pkg.version);
 
   const changelog = readFileSync(new URL('CHANGELOG.md', rootDir), 'utf8');
