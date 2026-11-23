@@ -354,7 +354,10 @@ async function createIsolatedSessionFixture({
     const sessDir = join(engine.archive.root, 'sessions');
     try {
       const entries = await readdir(sessDir, { recursive: true });
-      return entries.filter((f) => String(f).endsWith('.jsonl') || String(f).endsWith('.json')).length;
+      return entries.filter((f) => {
+        const name = String(f);
+        return name.endsWith('.jsonl.zstd') || name.endsWith('.jsonl') || name.endsWith('.json');
+      }).length;
     } catch {
       return 0;
     }

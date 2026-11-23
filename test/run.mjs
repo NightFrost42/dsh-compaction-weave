@@ -13,6 +13,7 @@ const imageId='sha256:'+createHash('sha256').update(imageBytes).digest('hex');
 const fileId='sha256:'+createHash('sha256').update(fileBytes).digest('hex');
 const attachmentFixture={async readImage(){return {data:imageBytes};},async *readFileStream(){yield fileBytes;}};
 import { readFile, writeFile, rm } from 'node:fs/promises';
+import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -2301,16 +2302,28 @@ await atest('C09: 完整归档能逐字读回，且校验通过', async () => {
   });
 });
 
+const readSpanText = async (file) => (
+  file.endsWith('.zstd')
+    ? zstdDecompressSync(await readFile(file)).toString('utf8')
+    : await readFile(file, 'utf8')
+);
+const writeSpanText = async (file, text) => {
+  if (file.endsWith('.zstd')) {
+    await writeFile(file, zstdCompressSync(Buffer.from(text, 'utf8')));
+  } else {
+    await writeFile(file, text, 'utf8');
+  }
+};
+
 await atest('C09: 坏行不能被静默跳过，必须报 damaged', async () => {
   await withTempArchive(async (archive, root) => {
-    await archive.writeSpan({
+    const file = await archive.writeSpan({
       sessionId: 'session-c09',
       compactionId: 'cmp-2',
       entries: [{ seq: 1, type: 'user/message', role: 'user', text: 'alpha' }],
     });
-    const file = join(archive.dirFor('session-c09'), 'cmp-2.jsonl');
-    const raw = await readFile(file, 'utf8');
-    await writeFile(file, `${raw}{ this is not json\n`, 'utf8');
+    const raw = await readSpanText(file);
+    await writeSpanText(file, `${raw}{ this is not json\n`);
 
     const result = await archive.readSpan('session-c09', 'cmp-2');
     assert.equal(result.ok, false);
@@ -2321,7 +2334,7 @@ await atest('C09: 坏行不能被静默跳过，必须报 damaged', async () => 
 
 await atest('C09: 被截断的归档要报 truncated 并给出应有条数', async () => {
   await withTempArchive(async (archive, root) => {
-    await archive.writeSpan({
+    const file = await archive.writeSpan({
       sessionId: 'session-c09',
       compactionId: 'cmp-3',
       entries: [
@@ -2330,10 +2343,9 @@ await atest('C09: 被截断的归档要报 truncated 并给出应有条数', asy
         { seq: 3, type: 'user/message', role: 'user', text: 'three' },
       ],
     });
-    const file = join(archive.dirFor('session-c09'), 'cmp-3.jsonl');
-    const lines = (await readFile(file, 'utf8')).split('\n');
+    const lines = (await readSpanText(file)).split('\n');
     // 只留头部 + 第一条，模拟写入过程中断电。
-    await writeFile(file, `${lines[0]}\n${lines[1]}\n`, 'utf8');
+    await writeSpanText(file, `${lines[0]}\n${lines[1]}\n`);
 
     const result = await archive.readSpan('session-c09', 'cmp-3');
     assert.equal(result.ok, false);
@@ -2345,15 +2357,14 @@ await atest('C09: 被截断的归档要报 truncated 并给出应有条数', asy
 
 await atest('C09: 内容被改过要报 checksum，而不是当成正常', async () => {
   await withTempArchive(async (archive, root) => {
-    await archive.writeSpan({
+    const file = await archive.writeSpan({
       sessionId: 'session-c09',
       compactionId: 'cmp-4',
       entries: [{ seq: 1, type: 'user/message', role: 'user', text: 'original' }],
     });
-    const file = join(archive.dirFor('session-c09'), 'cmp-4.jsonl');
-    const lines = (await readFile(file, 'utf8')).split('\n');
+    const lines = (await readSpanText(file)).split('\n');
     lines[1] = JSON.stringify({ seq: 1, type: 'user/message', role: 'user', text: 'tampered' });
-    await writeFile(file, `${lines.join('\n')}`, 'utf8');
+    await writeSpanText(file, `${lines.join('\n')}`);
 
     const result = await archive.readSpan('session-c09', 'cmp-4');
     assert.equal(result.ok, false);
@@ -2372,14 +2383,13 @@ await atest('C09: 文件不存在要报 missing，不能抛出去', async () => 
 
 await atest('C09: history_read 遇到不完整归档必须在正文前面写出警告', async () => {
   await withTempArchive(async (archive, root) => {
-    await archive.writeSpan({
+    const file = await archive.writeSpan({
       sessionId: 'session-c09',
       compactionId: 'cmp-5',
       entries: [{ seq: 1, type: 'user/message', role: 'user', text: 'alpha' }],
     });
-    const file = join(archive.dirFor('session-c09'), 'cmp-5.jsonl');
-    const raw = await readFile(file, 'utf8');
-    await writeFile(file, `${raw}garbage line\n`, 'utf8');
+    const raw = await readSpanText(file);
+    await writeSpanText(file, `${raw}garbage line\n`);
 
     const out = await runTool('history_read', archive, { compactionId: 'cmp-5' }, { session: { id: 'session-c09' } });
     assert.match(out, /INCOMPLETE/);
@@ -2391,14 +2401,13 @@ await atest('C09: history_read 遇到不完整归档必须在正文前面写出�
 
 await atest('C09: history_search 命中不完整归档时要标记出来', async () => {
   await withTempArchive(async (archive, root) => {
-    await archive.writeSpan({
+    const file = await archive.writeSpan({
       sessionId: 'session-c09',
       compactionId: 'cmp-6',
       entries: [{ seq: 1, type: 'user/message', role: 'user', text: 'find me here' }],
     });
-    const file = join(archive.dirFor('session-c09'), 'cmp-6.jsonl');
-    const raw = await readFile(file, 'utf8');
-    await writeFile(file, `${raw}broken\n`, 'utf8');
+    const raw = await readSpanText(file);
+    await writeSpanText(file, `${raw}broken\n`);
 
     const out = await runTool('history_search', archive, { query: 'find me' }, { session: { id: 'session-c09' } });
     assert.match(out, /incomplete archive/);
@@ -2407,20 +2416,17 @@ await atest('C09: history_search 命中不完整归档时要标记出来', async
 
 await atest('C09: 头部字段被改过必须报出来，不能只看 entries 和 checksum', async () => {
   await withTempArchive(async (archive, root) => {
-    const write = async (compactionId) => {
-      await archive.writeSpan({
-        sessionId: 'session-c09',
-        compactionId,
-        entries: [{ seq: 1, type: 'user/message', role: 'user', text: 'original' }],
-      });
-      return join(archive.dirFor('session-c09'), `${compactionId}.jsonl`);
-    };
+    const write = async (compactionId) => archive.writeSpan({
+      sessionId: 'session-c09',
+      compactionId,
+      entries: [{ seq: 1, type: 'user/message', role: 'user', text: 'original' }],
+    });
     const tamper = async (file, mutate) => {
-      const lines = (await readFile(file, 'utf8')).split('\n');
+      const lines = (await readSpanText(file)).split('\n');
       const header = JSON.parse(lines[0]);
       mutate(header);
       lines[0] = JSON.stringify(header);
-      await writeFile(file, lines.join('\n'), 'utf8');
+      await writeSpanText(file, lines.join('\n'));
     };
 
     // 版本不对：字段含义可能已经变了，不能按当前规则解读。
@@ -2739,7 +2745,7 @@ await atest('V7-06: 无关否定词不能掩盖约束反转', async () => {
 
 await atest('V7-07: 归档读不完整时不许声称"历史里没有"', async () => {
   await withTempArchive(async (archive, root) => {
-    await archive.writeSpan({
+    const file = await archive.writeSpan({
       sessionId: 'session-v707',
       compactionId: 'cmp-v707',
       entries: [
@@ -2748,9 +2754,8 @@ await atest('V7-07: 归档读不完整时不许声称"历史里没有"', async (
       ],
     });
     // 把含关键词的那一行截断：readSpan 会报 truncated。
-    const file = join(archive.dirFor('session-v707'), 'cmp-v707.jsonl');
-    const lines = (await readFile(file, 'utf8')).split('\n');
-    await writeFile(file, `${lines.slice(0, 2).join('\n')}\n`, 'utf8');
+    const lines = (await readSpanText(file)).split('\n');
+    await writeSpanText(file, `${lines.slice(0, 2).join('\n')}\n`);
 
     const result = await archive.search('session-v707', 'UNIQUE_BACKUP_REQUIREMENT');
     assert.equal(result.hits.length, 0);
@@ -3043,12 +3048,12 @@ await atest('V8-08: 缺 checksum 的归档不能被当成完整', async () => {
       compactionId: 'compaction-1',
       entries: [{ seq: 1, type: 'user/message', role: 'user', text: 'original' }],
     });
-    const raw = await readFile(file, 'utf8');
+    const raw = await readSpanText(file);
     const lines = raw.split('\n');
     const header = JSON.parse(lines[0]);
     delete header.checksum;
     lines[0] = JSON.stringify(header);
-    await writeFile(file, lines.join('\n'), 'utf8');
+    await writeSpanText(file, lines.join('\n'));
 
     const read = await archive.readSpan(sessionId, 'compaction-1');
     assert.equal(read.ok, false, '没有校验和就不能声称完整');
