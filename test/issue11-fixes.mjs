@@ -226,6 +226,84 @@ await test('A4-explicit-colloquial-numeric-corrections-pass-new-value-and-reject
   }
 });
 
+await test('A5-bare-short-command-verb-skips-polarity-while-object-and-negated-short-directives-stay-strict', () => {
+  // Bare 2-char command verb / single English bare verb without object, negation, condition, or scalar
+  // (e.g. Issue #11 seq=14096 "重启") must not false-trigger polarity against "不用重启"
+  for (const [src, summary] of [
+    ['重启', '已修复配置，不用重启；继续观察。'],
+    ['重启。', '本次修改不用重启。'],
+    ['- 重启', '无需重启'],
+    ['restart', 'No need to restart the service.'],
+  ]) {
+    const r = auditCompaction({
+      userMessages: [{ seq: 14096, text: src }],
+      summaryText: makeEnSummary(summary),
+      includeAllConflicts: true,
+    });
+    assert.deepEqual(r.lost, [], `expected no loss for bare "${src}" -> "${summary}", got ${JSON.stringify(r)}`);
+    assert.equal(r.polarityFlips, 0);
+  }
+
+  // Real short directives with negation, explicit object, or conditional predicate MUST still block polarity flips
+  for (const [src, bad] of [
+    ['别重启', '可以直接重启。'],
+    ['重启服务', '不用重启服务。'],
+    ['do not restart', 'Please restart now.'],
+    ['restart server', 'Do not restart server.'],
+    ['如果失败，重启', '如果失败，不用重启。'],
+  ]) {
+    const r = auditCompaction({
+      userMessages: [{ seq: 14096, text: src }],
+      summaryText: makeEnSummary(bad),
+      includeAllConflicts: true,
+    });
+    assert.ok(
+      r.lost.some((item) => item.reason === 'polarity'),
+      `expected strict polarity reject for "${src}" -> "${bad}", got ${JSON.stringify(r)}`,
+    );
+    assert.ok(r.polarityFlips >= 1);
+  }
+});
+
+await test('A6-mixed-polarity-condensed-paraphrase-passes-while-dropped-or-flipped-prohibition-blocks', () => {
+  const src = '若 g14 仍在 L1，结论只能写『EXTRA 补卡生效』，不许写『mem_get 生效』。';
+
+  // Condensed paraphrase omitting only "结论" (0.875 full coverage / 0.8333 consequence coverage)
+  // and verbatim retention both pass cleanly with zero polarity flips
+  for (const okSummary of [
+    '若 g14 仍在 L1，只能写「EXTRA 补卡生效」，不许写「mem_get 生效」。',
+    src,
+  ]) {
+    const r = auditCompaction({
+      userMessages: [{ seq: 35577, text: src }],
+      summaryText: makeEnSummary(okSummary),
+      includeAllConflicts: true,
+    });
+    assert.deepEqual(r.lost, [], `expected pass for "${okSummary}", got ${JSON.stringify(r)}`);
+    assert.equal(r.polarityFlips, 0);
+  }
+
+  // Dropping, flipping, or swapping the negative prohibition clause MUST strictly trigger polarity
+  for (const badSummary of [
+    '若 g14 仍在 L1，只能写「EXTRA 补卡生效」。',
+    '若 g14 仍在 L1，只能写「EXTRA 补卡生效」；后续待定。',
+    '若 g14 仍在 L1，只能写「EXTRA 补卡生效」，允许写「mem_get 生效」。',
+    '若 g14 仍在 L1，只能写「EXTRA 补卡生效」，可写「mem_get 生效」。',
+    '若 g14 仍在 L1，不许写「EXTRA 补卡生效」，只能写「mem_get 生效」。',
+  ]) {
+    const r = auditCompaction({
+      userMessages: [{ seq: 35577, text: src }],
+      summaryText: makeEnSummary(badSummary),
+      includeAllConflicts: true,
+    });
+    assert.ok(
+      r.lost.some((item) => item.reason === 'polarity'),
+      `expected strict polarity block for "${badSummary}", got ${JSON.stringify(r)}`,
+    );
+    assert.ok(r.polarityFlips >= 1);
+  }
+});
+
 // ────────────────────────────────────────────────── Part B: Foreign bili output detection & repair
 
 await test('B1-detectForeignBiliSummaryOutput-and-isExternalFoldEvent-boundaries', () => {
