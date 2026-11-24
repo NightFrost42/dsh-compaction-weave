@@ -230,6 +230,642 @@ await test('P0-1-rpc-enforces-connection-auth-host-origin-and-json-content-type'
   }
 });
 
+await test('Issue19-rpc-index-inject-token-and-same-origin-header-fallback', async () => {
+  let registered = null;
+  let routeDisposed = false;
+  let webServerDispose = null;
+  let connectionService = null;
+  let firstBootToken = null;
+  const indexInjectListeners = new Set();
+  const dispose = mountGate(
+    {
+      on() {},
+      provide() {},
+      get(name) {
+        return name === 'connection' ? connectionService : null;
+      },
+      inject(deps, cb) {
+        if (Array.isArray(deps) && deps.includes('connection')) {
+          return cb({ connection: connectionService });
+        }
+        if (Array.isArray(deps) && deps.includes('webServer')) {
+          webServerDispose = cb({
+            on(event, listener) {
+              if (event === 'webserver/index-inject') {
+                indexInjectListeners.add(listener);
+                return () => indexInjectListeners.delete(listener);
+              }
+              return () => {};
+            },
+            effect(fn) {
+              return fn();
+            },
+            webServer: {
+              host: '127.0.0.1',
+              register(route) {
+                registered = route;
+                return () => { routeDisposed = true; };
+              },
+            },
+          });
+          return webServerDispose;
+        }
+        return () => {};
+      },
+    },
+    {},
+  );
+  try {
+    assert.ok(registered?.handler);
+    assert.equal(indexInjectListeners.size, 1, 'must subscribe to webserver/index-inject');
+
+    const injectTable = [];
+    for (const listener of indexInjectListeners) listener(injectTable);
+    const tokenEntry = injectTable.find((row) => row?.kind === 'global' && row?.name === '__WEAVE_RPC_TOKEN__');
+    assert.ok(tokenEntry && typeof tokenEntry.value === 'string' && tokenEntry.value.length >= 32, 'must inject random __WEAVE_RPC_TOKEN__ global');
+    const validToken = tokenEntry.value;
+    firstBootToken = validToken;
+
+    // Non-array table should not crash listener
+    for (const listener of indexInjectListeners) listener(null);
+
+    const send = (method, headers, body = '{"method":"get"}') =>
+      new Promise((resolveRes) => {
+        const req = Object.assign(new EventEmitter(), { method, headers });
+        const out = { statusCode: 200, headers: {}, body: '' };
+        const res = {
+          set statusCode(code) { out.statusCode = code; },
+          get statusCode() { return out.statusCode; },
+          setHeader(k, v) { out.headers[k.toLowerCase()] = v; },
+          end(chunk = '') {
+            out.body = String(chunk);
+            resolveRes({ status: out.statusCode, json: JSON.parse(out.body) });
+          },
+        };
+        const p = registered.handler(req, res);
+        if (body !== undefined) req.emit('data', Buffer.from(body));
+        req.emit('end');
+        Promise.resolve(p).catch(() => {});
+      });
+
+    // Tier 2: No connection + missing/empty Origin + valid x-weave-rpc-token => 200
+    const tokenMissingOrigin = await send('POST', {
+      host: '127.0.0.1:3000',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    });
+    assert.equal(tokenMissingOrigin.status, 200);
+    assert.equal(tokenMissingOrigin.json.ok, true);
+
+    const tokenUpperHeaderEmptyOrigin = await send('POST', {
+      Host: '127.0.0.1:3000',
+      Origin: '',
+      'X-Weave-Rpc-Token': validToken,
+      'Content-Type': 'application/json',
+    });
+    assert.equal(tokenUpperHeaderEmptyOrigin.status, 200);
+    assert.equal(tokenUpperHeaderEmptyOrigin.json.ok, true);
+
+    // Forged / wrong tokens (different length, same length, multibyte UTF-8 same string length) => 403
+    const forgedShort = await send('POST', {
+      host: '127.0.0.1:3000',
+      'x-weave-rpc-token': 'forged',
+      'content-type': 'application/json',
+    });
+    assert.equal(forgedShort.status, 403);
+    assert.equal(forgedShort.json.error?.message, 'missing origin refused');
+
+    const flipped = (validToken[0] === 'A' ? 'B' : 'A') + validToken.slice(1);
+    const forgedSameLen = await send('POST', {
+      host: '127.0.0.1:3000',
+      'x-weave-rpc-token': flipped,
+      'content-type': 'application/json',
+    });
+    assert.equal(forgedSameLen.status, 403);
+
+    const forgedMultibyte = await send('POST', {
+      host: '127.0.0.1:3000',
+      'x-weave-rpc-token': '中' + validToken.slice(1),
+      'content-type': 'application/json',
+    });
+    assert.equal(forgedMultibyte.status, 403);
+
+    // Valid token MUST NOT bypass cross-site Origin, Origin: null, cross-site Sec-Fetch-Site, untrusted Host, GET, or non-JSON
+    const tokenCrossOrigin = await send('POST', {
+      host: '127.0.0.1:3000',
+      origin: 'https://evil.example',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    });
+    assert.equal(tokenCrossOrigin.status, 403);
+    assert.equal(tokenCrossOrigin.json.error?.message, 'origin does not match host');
+
+    const tokenNullOrigin = await send('POST', {
+      host: '127.0.0.1:3000',
+      origin: 'null',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    });
+    assert.equal(tokenNullOrigin.status, 403);
+    assert.equal(tokenNullOrigin.json.error?.message, 'opaque origin refused');
+
+    const tokenCrossFetchSite = await send('POST', {
+      host: '127.0.0.1:3000',
+      'sec-fetch-site': 'Cross-Site',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    });
+    assert.equal(tokenCrossFetchSite.status, 403);
+
+    const tokenBadHost = await send('POST', {
+      host: 'evil.attacker:3000',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    });
+    assert.equal(tokenBadHost.status, 403);
+
+    const tokenGet = await send('GET', {
+      host: '127.0.0.1:3000',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    }, '');
+    assert.equal(tokenGet.status, 405);
+
+    const tokenBadMime = await send('POST', {
+      host: '127.0.0.1:3000',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'text/plain',
+    });
+    assert.equal(tokenBadMime.status, 415);
+
+    // Tier 3: No connection, no token + missing Origin + Sec-Fetch-Site: same-origin or same-origin Referer => 200
+    const sameOriginFetch = await send('POST', {
+      host: '127.0.0.1:3000',
+      'sec-fetch-site': '  Same-Origin  ',
+      'content-type': 'application/json',
+    });
+    assert.equal(sameOriginFetch.status, 200);
+    assert.equal(sameOriginFetch.json.ok, true);
+
+    const sameSiteNotEnough = await send('POST', {
+      host: '127.0.0.1:3000',
+      'sec-fetch-site': 'same-site',
+      'content-type': 'application/json',
+    });
+    assert.equal(sameSiteNotEnough.status, 403);
+    assert.equal(sameSiteNotEnough.json.error?.message, 'missing origin refused');
+
+    const sameOriginReferer = await send('POST', {
+      host: '127.0.0.1:3000',
+      referer: 'http://127.0.0.1:3000/settings?tab=weave',
+      'content-type': 'application/json',
+    });
+    assert.equal(sameOriginReferer.status, 200);
+    assert.equal(sameOriginReferer.json.ok, true);
+
+    const ipv6Referer = await send('POST', {
+      host: '[::1]:3000',
+      referer: 'http://[::1]:3000/settings',
+      'content-type': 'application/json',
+    });
+    assert.equal(ipv6Referer.status, 200);
+
+    // Cross-site / wrong-port / non-http(s) / userinfo / relative Referer + missing Origin => 403
+    for (const badReferer of [
+      'http://evil.example/',
+      'http://127.0.0.1:9999/settings',
+      'ftp://127.0.0.1:3000/settings',
+      'http://user@127.0.0.1:3000/settings',
+      '/settings',
+    ]) {
+      const res = await send('POST', {
+        host: '127.0.0.1:3000',
+        referer: badReferer,
+        'content-type': 'application/json',
+      });
+      assert.equal(res.status, 403, `bad referer must be refused: ${badReferer}`);
+      assert.equal(res.json.error?.message, 'missing origin refused');
+    }
+
+    // Duplicate / comma-joined Sec-Fetch-Site and array/duplicate security headers => 403
+    const dupFetchSiteJoined = await send('POST', {
+      host: '127.0.0.1:3000',
+      'sec-fetch-site': 'cross-site, same-origin',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    });
+    assert.equal(dupFetchSiteJoined.status, 403);
+    assert.equal(dupFetchSiteJoined.json.error?.message, 'cross-site request refused');
+
+    const dupFetchSiteArray = await send('POST', {
+      host: '127.0.0.1:3000',
+      'sec-fetch-site': ['same-origin', 'cross-site'],
+      'content-type': 'application/json',
+    });
+    assert.equal(dupFetchSiteArray.status, 403);
+
+    const dupOriginArray = await send('POST', {
+      host: '127.0.0.1:3000',
+      origin: ['', 'https://evil.example'],
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    });
+    assert.equal(dupOriginArray.status, 403);
+
+    const dupTokenArray = await send('POST', {
+      host: '127.0.0.1:3000',
+      'x-weave-rpc-token': [validToken, 'junk'],
+      'content-type': 'application/json',
+    });
+    assert.equal(dupTokenArray.status, 403);
+
+    const dupHostMixedCase = await send('POST', {
+      Host: '127.0.0.1:3000',
+      host: 'evil.attacker:3000',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    });
+    assert.equal(dupHostMixedCase.status, 403);
+
+    // Non-HTTP(S) Origin schemes, userinfo, and path in Origin => 403
+    for (const badOrigin of [
+      'ftp://127.0.0.1:3000',
+      'ws://127.0.0.1:3000',
+      'http://evil@127.0.0.1:3000',
+      'http://127.0.0.1:3000/evil',
+    ]) {
+      const res = await send('POST', {
+        host: '127.0.0.1:3000',
+        origin: badOrigin,
+        'x-weave-rpc-token': validToken,
+        'content-type': 'application/json',
+      });
+      assert.equal(res.status, 403, `bad origin must be refused: ${badOrigin}`);
+    }
+
+    // Scheme-aware default-port normalization: reject 80 vs https 443 confusion, accept https :443
+    const port80VsHttpsOrigin = await send('POST', {
+      host: '127.0.0.1:80',
+      origin: 'https://127.0.0.1',
+      'content-type': 'application/json',
+    });
+    assert.equal(port80VsHttpsOrigin.status, 403);
+
+    const port80VsHttpsReferer = await send('POST', {
+      host: '127.0.0.1:80',
+      referer: 'https://127.0.0.1/settings',
+      'content-type': 'application/json',
+    });
+    assert.equal(port80VsHttpsReferer.status, 403);
+
+    const https443Origin = await send('POST', {
+      host: '127.0.0.1:443',
+      origin: 'https://127.0.0.1',
+      'content-type': 'application/json',
+    });
+    assert.equal(https443Origin.status, 200);
+
+    const https443Referer = await send('POST', {
+      host: '127.0.0.1:443',
+      referer: 'https://127.0.0.1:443/settings',
+      'content-type': 'application/json',
+    });
+    assert.equal(https443Referer.status, 200);
+
+    // Contradictory Tier-3 headers => 403
+    const sameOriginEvilReferer = await send('POST', {
+      host: '127.0.0.1:3000',
+      'sec-fetch-site': 'same-origin',
+      referer: 'https://evil.example/pwn',
+      'content-type': 'application/json',
+    });
+    assert.equal(sameOriginEvilReferer.status, 403);
+
+    const sameSiteWithSameOriginReferer = await send('POST', {
+      host: '127.0.0.1:3000',
+      'sec-fetch-site': 'same-site',
+      referer: 'http://127.0.0.1:3000/settings',
+      'content-type': 'application/json',
+    });
+    assert.equal(sameSiteWithSameOriginReferer.status, 403);
+
+    // Naked local curl (no connection, no token, no Origin, no Referer, no same-origin) => 403 missing origin refused
+    const nakedCurl = await send('POST', {
+      host: '127.0.0.1:3000',
+      'content-type': 'application/json',
+    });
+    assert.equal(nakedCurl.status, 403);
+    assert.equal(nakedCurl.json.error?.message, 'missing origin refused');
+
+    // Tier 1 precedence: when connection service rejects with 401, valid token must NOT bypass it
+    connectionService = {
+      requestRejection(req) {
+        return req.headers?.authorization === 'Bearer ok' ? undefined : 401;
+      },
+    };
+    const tokenCannotBypassConn = await send('POST', {
+      host: '127.0.0.1:3000',
+      'x-weave-rpc-token': validToken,
+      'content-type': 'application/json',
+    });
+    assert.equal(tokenCannotBypassConn.status, 401);
+  } finally {
+    webServerDispose?.();
+    dispose?.();
+  }
+  assert.equal(routeDisposed, true, 'webServer route disposer must run');
+  assert.equal(indexInjectListeners.size, 0, 'webserver/index-inject listener must be disposed without leak');
+
+  // Process-level token persists across plugin reload/toggle so one-shot Electron boot global keeps working
+  let reloadedRoute = null;
+  let reloadDispose = null;
+  const reloadListeners = new Set();
+  const disposeReload = mountGate(
+    {
+      on() {},
+      provide() {},
+      get() { return null; },
+      inject(deps, cb) {
+        if (Array.isArray(deps) && deps.includes('webServer')) {
+          reloadDispose = cb({
+            on(event, listener) {
+              if (event === 'webserver/index-inject') {
+                reloadListeners.add(listener);
+                return () => reloadListeners.delete(listener);
+              }
+              return () => {};
+            },
+            effect(fn) { return fn(); },
+            webServer: {
+              host: '127.0.0.1',
+              register(route) {
+                reloadedRoute = route;
+                return () => { throw new Error('dispose route boom'); };
+              },
+            },
+          });
+          return reloadDispose;
+        }
+        return () => {};
+      },
+    },
+    {},
+  );
+  try {
+    const reloadTable = [];
+    for (const listener of reloadListeners) {
+      listener(reloadTable);
+      listener(reloadTable);
+    }
+    const tokenRows = reloadTable.filter((row) => row?.kind === 'global' && row?.name === '__WEAVE_RPC_TOKEN__');
+    assert.equal(tokenRows.length, 1, 'index-inject listener must deduplicate __WEAVE_RPC_TOKEN__ in a table');
+    assert.equal(tokenRows[0].value, firstBootToken, 'process-level rpcToken must survive plugin reload/toggle');
+    const reloadedRes = await new Promise((resolveRes) => {
+      const req = Object.assign(new EventEmitter(), {
+        method: 'POST',
+        headers: {
+          host: '127.0.0.1:3000',
+          'x-weave-rpc-token': firstBootToken,
+          'content-type': 'application/json',
+        },
+      });
+      const out = { statusCode: 200, body: '' };
+      const res = {
+        set statusCode(code) { out.statusCode = code; },
+        get statusCode() { return out.statusCode; },
+        setHeader() {},
+        end(chunk = '') {
+          out.body = String(chunk);
+          resolveRes({ status: out.statusCode, json: JSON.parse(out.body) });
+        },
+      };
+      Promise.resolve(reloadedRoute.handler(req, res)).catch(() => {});
+      req.emit('data', Buffer.from('{"method":"get"}'));
+      req.emit('end');
+    });
+    assert.equal(reloadedRes.status, 200);
+    assert.equal(reloadedRes.json.ok, true);
+  } finally {
+    assert.throws(() => reloadDispose?.(), /dispose route boom/);
+    disposeReload?.();
+  }
+  assert.equal(reloadListeners.size, 0, 'index-inject listener must still clean up when disposeRoute throws');
+
+  // Verify cleanup when webServer.register throws after host.on succeeded
+  const leakedListeners = new Set();
+  const disposeOnFail = mountGate(
+    {
+      on() {},
+      provide() {},
+      get(name) {
+        if (name === 'llm') {
+          return {
+            listProviders: () => [{ id: 'deepseek' }],
+            listModels: async () => ['deepseek-chat'],
+          };
+        }
+        return null;
+      },
+      inject(deps, cb) {
+        if (Array.isArray(deps) && deps.includes('webServer')) {
+          return cb({
+            on(event, listener) {
+              if (event === 'webserver/index-inject') {
+                leakedListeners.add(listener);
+                return () => leakedListeners.delete(listener);
+              }
+              return () => {};
+            },
+            effect(fn) { return fn(); },
+            webServer: {
+              host: '127.0.0.1',
+              register() { throw new Error('route conflict'); },
+            },
+          });
+        }
+        return () => {};
+      },
+    },
+    {},
+  );
+  disposeOnFail?.();
+  assert.equal(leakedListeners.size, 0, 'failed webServer.register must clean up webserver/index-inject listener');
+});
+
+await test('Issue19-client-attaches-rpc-token-header-on-rpc-and-status-poller', async () => {
+  // End-to-end simulation of DSH Desktop 0.2.3-alpha.2 (no connection service, missing Origin header):
+  // lib/index.js injects __WEAVE_RPC_TOKEN__ -> lib/client.js attaches x-weave-rpc-token on both rpc() & status poller -> 200
+  let registered = null;
+  let webServerDispose = null;
+  const indexInjectListeners = new Set();
+  const disposeHost = mountGate(
+    {
+      on() {},
+      provide() {},
+      get(name) {
+        if (name === 'llm') {
+          return {
+            listProviders: () => [{ id: 'deepseek' }],
+            listModels: async () => ['deepseek-chat'],
+          };
+        }
+        return null;
+      },
+      inject(deps, cb) {
+        if (Array.isArray(deps) && deps.includes('webServer')) {
+          webServerDispose = cb({
+            on(event, listener) {
+              if (event === 'webserver/index-inject') {
+                indexInjectListeners.add(listener);
+                return () => indexInjectListeners.delete(listener);
+              }
+              return () => {};
+            },
+            effect(fn) { return fn(); },
+            webServer: {
+              host: '127.0.0.1',
+              register(route) {
+                registered = route;
+                return () => {};
+              },
+            },
+          });
+          return webServerDispose;
+        }
+        return () => {};
+      },
+    },
+    {},
+  );
+  try {
+    const injectTable = [];
+    for (const listener of indexInjectListeners) listener(injectTable);
+    const tokenEntry = injectTable.find((row) => row?.kind === 'global' && row?.name === '__WEAVE_RPC_TOKEN__');
+    assert.ok(tokenEntry?.value);
+
+    const clientSource = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
+    const dispatchToHost = (options) =>
+      new Promise((resolveRes) => {
+        const req = Object.assign(new EventEmitter(), {
+          method: options.method,
+          // Simulate DSH Desktop 0.2.3-alpha.2: loopback Host, no Origin, no Referer, no Sec-Fetch-Site
+          headers: { host: '127.0.0.1:3000', ...options.headers },
+        });
+        const out = { statusCode: 200, body: '' };
+        const res = {
+          set statusCode(code) { out.statusCode = code; },
+          get statusCode() { return out.statusCode; },
+          setHeader() {},
+          end(chunk = '') {
+            out.body = String(chunk);
+            resolveRes({ status: out.statusCode, text: async () => out.body });
+          },
+        };
+        const p = registered.handler(req, res);
+        req.emit('data', Buffer.from(options.body));
+        req.emit('end');
+        Promise.resolve(p).catch(() => {});
+      });
+
+    const runClientProbe = async (injectedToken, { onWindowOnly = false } = {}) => {
+      let mod = null;
+      const slots = new Map();
+      const observed = [];
+      const pending = [];
+      const effects = [];
+      const React = {
+        createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
+        useState: (init) => [typeof init === 'function' ? init() : init, () => {}],
+        useMemo: (fn) => fn(),
+        useRef: (init) => ({ current: init }),
+        useCallback: (fn) => fn,
+        useEffect: (fn) => { effects.push(fn); },
+      };
+      const sandbox = {
+        window: {
+          ...(onWindowOnly && injectedToken !== undefined ? { __WEAVE_RPC_TOKEN__: injectedToken } : {}),
+          __ModuleLoader__: {
+            load: (decl) => { mod = decl.factory(() => React); },
+          },
+        },
+        ...(!onWindowOnly && injectedToken !== undefined ? { __WEAVE_RPC_TOKEN__: injectedToken } : {}),
+        document: { hidden: false, addEventListener() {}, removeEventListener() {} },
+        console,
+        AbortController,
+        setTimeout: () => 1,
+        clearTimeout: () => {},
+        fetch: (_url, options) => {
+          const payload = JSON.parse(options.body);
+          const task = dispatchToHost(options).then(async (res) => {
+            const raw = await res.text();
+            observed.push({ method: payload.method, headers: { ...options.headers }, status: res.status, json: JSON.parse(raw) });
+            return { status: res.status, text: async () => raw };
+          });
+          pending.push(task);
+          return task;
+        },
+      };
+      vm.runInNewContext(clientSource, sandbox);
+      mod.apply({
+        slots: {
+          inject: (_n, cb) => cb(),
+          register: (desc, comp) => { slots.set(desc.name, comp); return () => {}; },
+        },
+        effect: (cb) => cb(),
+        locale: {
+          register: () => () => {},
+          bind: () => (k) => k,
+        },
+      });
+      // Mount settings section (triggers rpc('get') and rpc('models')) and conversation dock (triggers status poller)
+      const Settings = slots.get('settings.section');
+      const Dock = slots.get('conversation.input.dock');
+      assert.equal(typeof Settings, 'function');
+      assert.equal(typeof Dock, 'function');
+      Settings({});
+      Dock({ sessionId: 'sess-issue19' });
+      const cleanups = effects.map((fn) => fn()).filter((c) => typeof c === 'function');
+      await Promise.allSettled(pending);
+      for (const cleanup of cleanups) cleanup();
+      return observed;
+    };
+
+    // With injected token: all 3 calls (get, models, status) carry x-weave-rpc-token and get HTTP 200
+    const withToken = await runClientProbe(tokenEntry.value);
+    const methodsWithToken = new Set(withToken.map((r) => r.method));
+    assert.ok(methodsWithToken.has('get'), 'settings section must call rpc(get)');
+    assert.ok(methodsWithToken.has('models'), 'settings section must call rpc(models)');
+    assert.ok(methodsWithToken.has('status'), 'conversation dock must poll status');
+    for (const call of withToken) {
+      assert.equal(call.headers['x-weave-rpc-token'], tokenEntry.value, `${call.method} must send x-weave-rpc-token`);
+      assert.equal(call.status, 200, `${call.method} must succeed with 200 without Origin header`);
+      assert.equal(call.json.ok, true, `${call.method} must return ok: true`);
+    }
+
+    // Also works when injected onto window.__WEAVE_RPC_TOKEN__ in a separate window object
+    const withWindowToken = await runClientProbe(tokenEntry.value, { onWindowOnly: true });
+    assert.ok(withWindowToken.length >= 3);
+    for (const call of withWindowToken) {
+      assert.equal(call.headers['x-weave-rpc-token'], tokenEntry.value);
+      assert.equal(call.status, 200);
+      assert.equal(call.json.ok, true);
+    }
+
+    // Without injected token (or whitespace-only): header is omitted and naked missing-Origin request is rejected with 403
+    for (const blank of [undefined, '', '   ']) {
+      const withoutToken = await runClientProbe(blank);
+      assert.ok(withoutToken.length >= 3);
+      for (const call of withoutToken) {
+        assert.equal('x-weave-rpc-token' in call.headers, false, `${call.method} must omit token header when unset/blank`);
+        assert.equal(call.status, 403, `${call.method} without token/origin/referer must be refused with 403`);
+      }
+    }
+  } finally {
+    webServerDispose?.();
+    disposeHost?.();
+  }
+});
+
 // ── 2. P0-2: runConcurrentPool awaits in-flight ordered commits & propagates pool signal ──
 
 await test('P0-2-concurrent-pool-drains-ordered-commit-and-aborts-pool-signal-on-reject', async () => {
