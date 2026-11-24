@@ -561,6 +561,65 @@ await test('bm25f-long-primary-uses-salient-excerpt-while-exact-keeps-window', (
   assert.ok(exactRes.hits[0].excerpt.includes('EXACT_BILLING_TOKEN_99'));
 });
 
+await test('B4-1-partial-overrides-truncates-high-score-unit-within-rem-budget', () => {
+  const highScoringLongRule =
+    '- Must keep `src/billing/ledger.ts` and `lib/history.js` invariant `CENTS_PER_DOLLAR = 100` enforced with `--strict` timeout=5000ms without float rounding during nightly settlement batch processing across all partitions.';
+  const higherScoreShorter = '- Must verify `lib/config.js` schema checks on v0.5.2 cleanly.';
+  const doc = [highScoringLongRule, higherScoreShorter].join('\n');
+
+  // Query boosts higherScoreShorter (~59 chars) to rank #1, leaving rem ~140 >= 72 for truncated high-scoring long rule (budgetChars=200)
+  const out = extractSalientProse(doc, { budgetChars: 200, queryTokens: ['aconfig', 'aschema', 'av0.5.2'] });
+  assert.ok(codePointLength(out) <= 200);
+  assert.ok(out.includes('lib/config.js'));
+  assert.ok(out.includes('src/billing/ledger.ts'), `expected high-score oversized unit truncated & included, got:\n${out}`);
+  assert.ok(out.indexOf('src/billing/ledger.ts') < out.indexOf('lib/config.js'), 'original order must be preserved');
+
+  // Negative control: rem < 72 must NOT append partial truncation
+  const tightOut = extractSalientProse(doc, { budgetChars: 110, queryTokens: ['aconfig', 'aschema', 'av0.5.2'] });
+  assert.ok(codePointLength(tightOut) <= 110);
+  assert.ok(tightOut.includes('lib/config.js'));
+  assert.equal(tightOut.includes('src/billing/ledger.ts'), false, 'rem < 72 must not truncate into partial unit');
+});
+
+await test('B4-2-relative-strongest-heading-gate-and-B4-3-stem-stopword-query-parsing', () => {
+  const doc = [
+    '## Billing Settlement Architecture',
+    '- Enforce integer cents calculation in `src/billing/ledger.ts`.',
+    '',
+    '## Summary Decisions',
+    '- Adjust sidebar button border radius and padding spacing cleanly.',
+    '- Confirm footer copyright year formatting alignment.',
+    '',
+    '## Background Notes',
+    'Thank you for waiting while everything runs smoothly step by step.',
+  ].join('\n');
+
+  // B4.2 + B4.3: query has stopword ('the'), stem token ('sbill'), and 'asettlement'.
+  // Strong heading "## Billing Settlement Architecture" wins; weak cue heading "## Summary Decisions" must NOT boost unrelated UI bullet.
+  const focused = extractSalientProse(doc, {
+    budgetChars: 155,
+    queryTokens: ['the', 'sbill', 'asettlement'],
+  });
+  assert.ok(codePointLength(focused) <= 155);
+  assert.ok(focused.includes('src/billing/ledger.ts'), `expected billing bullet under strong heading, got:\n${focused}`);
+  assert.equal(focused.includes('copyright year'), false, 'weak heading must not boost unrelated item in query mode');
+
+  // B4.3 negative control: queryTokens containing ONLY stopwords falls back unfiltered cleanly
+  const stopFallbackDoc = [
+    '- Must keep `should` flag documented for audit v1.2.3.',
+    '- Other verbose filler entry without keywords ok.',
+  ].join('\n');
+  const stopOnly = extractSalientProse(stopFallbackDoc, {
+    budgetChars: 160,
+    queryTokens: ['the', 'ashould'],
+  });
+  assert.ok(stopOnly.includes('should'), 'all-stopword queryTokens must fall back unfiltered');
+
+  // B4.2 query-less mode preserves HEADING_CUE_RE behavior unchanged
+  const noQuery = extractSalientProse(doc, { budgetChars: 350 });
+  assert.ok(noQuery.includes('## Summary Decisions') || noQuery.includes('src/billing/ledger.ts'));
+});
+
 const passed = results.filter((r) => r.pass).length;
 const failed = results.filter((r) => !r.pass).length;
 console.log(JSON.stringify({ passed, failed, results }, null, 2));
