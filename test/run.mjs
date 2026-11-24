@@ -1160,7 +1160,10 @@ test('V3-F06: modelPolicies 校验与宿主同强度（重复 / 互斥 / 成对 
 await atest('V3-F07: 归档失败必须中止压缩，不能带着 archivePath=null 提交', async () => {
   // 压缩提交后被折叠消息只剩归档一处可读，归档悄悄失败等于把"可回查"作废。
   // 这里用源码级断言守住那段守卫：删掉它，这条用例立刻红。
-  const source = await readFile(new URL('../lib/engine.js', import.meta.url), 'utf8');
+  const source = [
+    await readFile(new URL('../lib/engine.js', import.meta.url), 'utf8'),
+    await readFile(new URL('../lib/engine/span-commit.js', import.meta.url), 'utf8'),
+  ].join('\n');
   assert.match(source, /error\.code = 'ARCHIVE_FAILED'/, '归档失败必须抛 ARCHIVE_FAILED');
   assert.match(
     source,
