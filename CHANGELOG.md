@@ -1,5 +1,24 @@
 # 更新记录
 
+## [0.5.2] - 2026-11-24
+
+- **审计与溯源假阳修复（Issue #11 收口）**：
+  - [audit.js](lib/audit.js) 在覆盖率（`extractConstraintLines` / `isPureQuestion`）与溯源两侧统一跳过无结尾标点中文疑问句（如 `see-now不能做到同样的事吗`、`storyboard能不能做到`、`端口是不是改成8080`），并拒绝疑问语气非授权句；
+  - [action-state.js](lib/action-state.js) 修复尾缀剥离顺序（`现在提前开始任务吧`），[audit.js](lib/audit.js) 在 `ACTION_DIRECTIVE_RE` 与 `VERB_FAMILY_RES` 补全 `开始 / 开工 / 开跑 / 启动 / 继续 / exec`、支持加粗/空括号剥离与「时间状语/动作 + `吧`」口语执行授权，并补齐受严密动词族/作用域/括号防夹带守卫保护的括号外标签与验证 `seq N` 引用溯源（覆盖 `Round4 于 22:00 提前开跑（用户批准提前）`、`**round4 提前开跑**（用户 seq 35367 批准）`、`**Round4（用户 seq 35367 批准）**：新房测试提前开跑` 等摘要归因写法，同时继续严防借 `seq` 洗白跨动词/跨环境或未授权动作）；
+  - 修复围栏代码块内误拆行、`ownedByPeer` 跨条目吞并丢失数字/文件名（`lineFactsPreservedIn`）、`规则1：` 等条目序号误作标量（保护 `0.58` / `1.5s` / `0.5GB` 等小数），以及跨段 `seq=35577` 条件句（含 `只要`）混合极性等价改写放行与全部否定子句覆盖校验。
+- **通用确定性审计规则增强**：
+  - [audit.js](lib/audit.js) 收齐中文并列否定作用域（`随后 / 然后 / 接着 / 继而` 及含情态覆写的 `或允许 / 以及仍然需要` 等连接词）并消除纯摘要独立模式下顿号/逗号并列否定（如 `不得覆盖、删除已有文件或修改生产环境`）的误报；
+  - [audit.js](lib/audit.js) 与 [action-state.js](lib/action-state.js) 补齐英文规范情态词 `shall`、`shall not`、`may not`（严格排除裸 `may`）、`required to`、`prohibited from`、`ought to`、`ought not to`；
+  - [audit.js](lib/audit.js) 增加无歧义同族单位精确换算等价放行（`1000ms == 1s`、`60s == 1min`、`60min == 1h`、`24h == 1d`、`1024KB == 1MB`、`1024MB == 1GB` 等，继续拒绝 `1 month == 30d` 与不等数值）及通用 CLI Flag（`--flag` / `--no-flag`）与布尔开关（`key: false/true`、`key=false/true`）极性一致性校验；引入有界缓存与倒排候选预过滤（`subQueriesForLine` / `lineIdsByFeat`），消除多规则共享词元时的 $O(N^3)$ 主线程卡顿。
+- **路由自适应推理强度、`observationMaskingEnabled` 设置页与独立 `maxTokens`**：
+  - [config.js](lib/config.js)、[summary.js](lib/summary.js) 与 [client.js](lib/client.js) 将 `summaryReasoningEffort` 默认值改为路由自适应 `'auto'`（Anthropic/Claude 同路由继承主会话思考强度以复用提示词缓存，非 Anthropic 路由有思考时收敛为 `'low'`，主会话未开思考时不强行开启；用户手动选择始终优先）并完善模型级与跨路由回退逻辑；
+  - 新增可热配置与设置页调节的 `summaryCjkTokensPerChar`（默认 `0.75`，支持调至 `1.0`）与 `observationMaskingEnabled` 开关，并在 [summary-config.js](lib/summary-config.js) 支持未覆盖摘要模型时独立保存 `maxTokens` 及显式 `clear` RPC；[meter.js](lib/meter.js) 对齐 Stage-1 与规划阶段估算口径。
+- **安全边界、契约一致性与生命周期可靠性加固**：
+  - [index.js](lib/index.js) 为 HTTP RPC 接入 `ctx.connection?.requestRejection(req)` 并加强回环/`Host`/`Origin`/`sec-fetch-site`/`Content-Type: application/json` 校验，修复 `compaction/end` 遗留 `activeCompactions` 竞态并移除不兼容 `agent/request` 监听（改以 `AsyncLocalStorage` 在 `agent/pre-step` 透传 `modelSelection`）；
+  - [engine.js](lib/engine.js) 与 [session-memory.js](lib/session-memory.js) 避免跨模型切换首轮沿用旧路由 `header.config.maxTokens`、`MAX_TOKENS` 误进内容重试阻断缩跨度，限制 `lastRunAt` LRU（512 上限）并清理 `_disposed` 状态；[transaction-host.js](lib/transaction-host.js) 与 [atomic-replace.js](lib/atomic-replace.js) 加固 `committed` 恢复幂等、Windows 原子替换与 DSH `0.2.2-rc.1` 归一化指纹。
+- **常驻工具 Schema 精简与文档对齐**：
+  - 精简 [history.js](lib/history.js) `HISTORY_TOOLS`（尤其 `history_read`）与 `HISTORY_SNAPSHOT_WARNING` 描述，并在 [README.md](README.md)、[README.en.md](README.en.md)、[配置说明](docs/configuration.md)、[Configuration](docs/en/configuration.md) 及设置页补齐启发式 Token 估算口径与 4 工具常驻 Schema 体积说明；新增 [wave1-security-hardening.mjs](test/wave1-security-hardening.mjs)–[wave4-audit-hardening.mjs](test/wave4-audit-hardening.mjs) 等回归套件。
+
 ## [0.5.1] - 2026-11-24
 
 - **高熵工具预览与 `history_read` 图片元数据防爆**：新增 [tool-preview.js](lib/tool-preview.js)，在 [observation-mask.js](lib/observation-mask.js) 与 [reference-input.js](lib/reference-input.js) 启用 3 级高熵预览（中段异常聚簇 `[L<n>]` 窗口、白名单扩展名零 AST 声明骨架、160 KiB 内 2 层浅 JSON 摘要）及双缩小门禁（`history_search`/`history_read` 默认放宽至 500 chars）；[history.js](lib/history.js) 与 [tools.js](lib/tools.js) 在 `history_read` 读取图片时默认返回 SHA-256 校验元数据（保留 `rawBase64: true` 兼容）。

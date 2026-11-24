@@ -44,15 +44,15 @@
 > 3. **确认选择 Weave 后的清理与迁移提示**：先停用或卸载 `billion-context`、将供应商 `baseUrl` 还原为直连上游地址；如有需要保留的旧会话历史，可向用户说明重启后可在会话中使用 `/compact migrate`（或进度卡片按钮）先备份再安全转换为 Weave 格式。
 > 4. **务必明确提醒彻底重启 DSH**：无论是在插件管理页关闭还是卸载 `billion-context`，只要刚改过启用状态或代理配置，都必须**明确提醒用户彻底重启一次 DSH 主程序**（仅热停用仍可能遗留同进程内存钩子与本地代理端口导致 `BILI_COEXISTENCE_CONFLICT` / `413` 冲突）。
 
-支持 **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`**（`0.2.2-rc.1` 起的 `0.2.x–0.x` 系列），原生原子事务已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，并在默认 `strictHostFingerprints: false` 下支持宿主后续小版本调整私有持久化方法时平顺降级至公开 `Session.append(replace)` + `sessions.flush()`（同时继续拦截未恢复 `.rollback`/`.tail` 日志），运行环境需 **Node.js 24.9+**。正式版已同步发布到 **[npm（`latest`）](https://www.npmjs.com/package/dsh-compaction-weave)** 与 [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest)：优先推荐通过 npm 安装 `dsh-compaction-weave`（自动跟踪 `latest` 更新提示并免除 `allowBuilds` 构建授权），也可使用 Releases 页面提供的 `dsh-compaction-weave.tgz`（无版本号最新包）、`dsh-compaction-weave-0.5.1.tgz` 或本地打包生成的 `.tgz` 文件。
+支持 **DeepSeek Harness `>=0.2.2-rc.1 <1.0.0-0`**（`0.2.2-rc.1` 起的 `0.2.x–0.x` 系列），原生原子事务已实测 **DSH `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`**，并在默认 `strictHostFingerprints: false` 下支持宿主后续小版本调整私有持久化方法时平顺降级至公开 `Session.append(replace)` + `sessions.flush()`（同时继续拦截未恢复 `.rollback`/`.tail` 日志），运行环境需 **Node.js 24.9+**。正式版已同步发布到 **[npm（`latest`）](https://www.npmjs.com/package/dsh-compaction-weave)** 与 [GitHub Releases](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest)：优先推荐通过 npm 安装 `dsh-compaction-weave`（自动跟踪 `latest` 更新提示并免除 `allowBuilds` 构建授权），也可使用 Releases 页面提供的 `dsh-compaction-weave.tgz`（无版本号最新包）、`dsh-compaction-weave-0.5.2.tgz` 或本地打包生成的 `.tgz` 文件。
 
 ### 桌面端
 
 - **通过 npm / 插件市场安装（推荐，可自动获取更新）**：在 `dsh-market` 搜索或点击安装 `dsh-compaction-weave`（或使用 **插件 → 添加插件** 安装 npm 包名 `dsh-compaction-weave`），后续将自动跟踪 npm `latest` 标签提示升级。
 - **通过离线 `.tgz` 手动安装 / 升级**：
-  1. 从 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest) 下载 `dsh-compaction-weave.tgz` 或 `dsh-compaction-weave-0.5.1.tgz`。
+  1. 从 [Releases 页面](https://github.com/NightFrost42/dsh-compaction-weave/releases/latest) 下载 `dsh-compaction-weave.tgz` 或 `dsh-compaction-weave-0.5.2.tgz`。
   2. 升级安装时，先在 **插件** 页面卸载旧版 Weave，保留独立存储目录中的历史归档与设置；首次安装可跳过此步。
-  3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.5.1.tgz`），完成安装并启用。
+  3. 打开 **插件 → 添加插件**，填入安装包绝对路径（如 `C:/Downloads/dsh-compaction-weave-0.5.2.tgz`），完成安装并启用。
   4. **重启 DSH**，在插件详情页确认版本号已更新。
 
 ### 命令行
@@ -66,7 +66,7 @@ dsh plugin --profile web add dsh-compaction-weave
 如需离线安装或手动指定版本 `.tgz` 包，也可改用本地文件路径：
 
 ```bash
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.5.1.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.5.2.tgz
 ```
 
 请将 `web` 替换为实际使用的命令行 profile 名称，完成后重新启动该 profile。桌面端用户请参考上方的插件管理页流程。
