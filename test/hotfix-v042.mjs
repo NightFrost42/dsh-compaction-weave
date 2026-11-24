@@ -257,8 +257,8 @@ await test('pr3-followup-placeholder-titles-and-cjk-preservation-without-clobber
 
 await test('issue5-config-and-summary-config-support-all-8-efforts', async () => {
   assert.deepEqual(REASONING_EFFORT_LADDER, ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none']);
-  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
-  assert.equal(DEFAULT_CONFIG.summaryReasoningEffort, 'low');
+  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['auto', 'low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
+  assert.equal(DEFAULT_CONFIG.summaryReasoningEffort, 'auto');
 
   for (const effort of SUMMARY_REASONING_EFFORTS) {
     assert.equal(normalizeSummaryReasoningEffort(effort), effort);

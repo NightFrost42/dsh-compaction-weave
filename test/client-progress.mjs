@@ -1760,8 +1760,8 @@ for (const language of ['zh', 'en']) {
     assert.equal(h.field('weave-summary-concurrency').props.min, 1);
     assert.equal(h.field('weave-summary-concurrency').props.max, 6);
     const reasoningField = h.field('weave-summary-reasoning-effort');
-    assert.equal(reasoningField.props.value, 'low');
-    assert.deepEqual(reasoningField.children.map(o => o.props.value), ['low', 'none', 'minimal', 'medium', 'high', 'xhigh', 'max', 'inherit']);
+    assert.equal(reasoningField.props.value, 'auto');
+    assert.deepEqual(reasoningField.children.map(o => o.props.value), ['auto', 'low', 'none', 'minimal', 'medium', 'high', 'xhigh', 'max', 'inherit']);
 
     const fullText = textOf(h.render());
     assert.match(fullText, /429/);

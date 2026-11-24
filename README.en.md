@@ -97,7 +97,9 @@ Adjust common options under **Settings → Compaction** (or on the plugin detail
 | Summary provider and model | Follow conversation | Leave blank to reuse the active chat model, or configure a dedicated summary model |
 | Summary output limit | 8192 tokens | Maximum output length allowed for a single summary response |
 | Summary concurrency | 2 | Bounded 1–6 parallel chunk generation & auditing with strictly ordered serial commits and automatic HTTP 429 backoff to `1` |
-| Summary reasoning effort | `low` | Lowers reasoning effort on summary calls by default to improve speed and cost; also accepts `none`, `minimal`, `medium`, `high`, `xhigh`, `max`, or `inherit` with automatic downward fallback |
+| Summary reasoning effort | `auto` | Route-aware by default (Anthropic/Claude same-route inherits session reasoning effort to preserve prompt caches; non-Anthropic caps active thinking to `low`; stays off when the session has thinking disabled). Also accepts explicit `low`, `none`, `minimal`, `medium`, `high`, `xhigh`, `max`, or `inherit` with automatic downward fallback |
+| Stage-1 observation masking | On | Archive-backed 0-LLM masking of older oversized tool results before LLM summarization during pressure or manual compaction |
+| Conservative CJK budget weight | `0.75` | `0.5–1.5`; heuristic tokens-per-char multiplier for CJK/Hangul/Kana budget planning (vs target model BPE). `0.75` keeps prefix KV caching active on 128k Chinese sessions; raise to `1.0` for finer CJK tokenizers |
 | Strict retention audit blocking | On | Blocks and regenerates summaries failing retention checks; disabling (`auditBlockOnLoss: false`) logs warnings instead |
 | Pressure breaker policy | `confirm` | Controls automatic compaction after repeated failures: block with Retry / 2-step Confirm bypass (`confirm`), warn & bypass under request budget (`degrade`), or strictly block (`block`) |
 | Automatic trigger ratio | 80% | Combined with next-reply output reservation and headroom to set the trigger threshold |
@@ -107,7 +109,11 @@ Adjust common options under **Settings → Compaction** (or on the plugin detail
 | Per-request timeout | 180 seconds | Timeout limit for each summary request |
 | Compact after inactivity | Off | Presets or custom 1–43200 minutes (30 days); compact existing history before resuming after the interval |
 
-Retry settings take effect independently of summary model selection. See [Configuration](docs/en/configuration.md) and [Compaction principles and diagrams](docs/en/principles.md) for prefix preservation, verbatim quote budgets, summary language (`auto` / `zh` / `en`), continuation paging options, and the restrictions when local archiving is disabled (`archiveEnabled: false`).
+Retry settings and output limit overrides (`maxTokens` can also be saved independently without overriding the summary model) take effect across turns; **Clear (follow session model)** clears both the model override and output limit while saving the rest of the hot-applied controls. See [Configuration](docs/en/configuration.md) and [Compaction principles and diagrams](docs/en/principles.md) for prefix preservation, verbatim quote budgets, summary language (`auto` / `zh` / `en`), continuation paging options, and the restrictions when local archiving is disabled (`archiveEnabled: false`).
+
+> **Token estimation & permanent tool-schema footprint**:
+> - **Heuristic vs BPE**: Internal planning estimates tokens using a lightweight heuristic (`summaryCjkTokensPerChar` defaulting to `0.75` per CJK char, ~`0.25` per ASCII char) without shipping external BPE tables; actual upstream billing and hard limits follow the target model's BPE tokenizer (raise `summaryCjkTokensPerChar` toward `1.0` in Settings if using finer CJK tokenizers).
+> - **Permanent tool schemas**: With archive history tools and proactive compaction enabled, 4 tool definitions accompany requests (`history_list` 392 chars, `history_read` 1,898 chars, `history_search` 542 chars, `context_compact` 886 chars) totaling **3,723 JSON chars** (~**931–1,241 tokens** at 3–4 chars/token; disabling `proactiveEnabled` drops the 886-char `context_compact` tool).
 
 ## Coexisting with `dsh-world` & bridge channel isolation
 

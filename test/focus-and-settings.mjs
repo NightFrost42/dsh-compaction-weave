@@ -62,7 +62,7 @@ await test('config-reinject-defaults-and-v042-exports-preserved', () => {
   assert.equal(DEFAULT_CONFIG.diskLivenessCheck, true);
   assert.deepEqual(DEFAULT_CONFIG.extraReferenceSourceKinds, []);
   assert.deepEqual(REASONING_EFFORT_LADDER, ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none']);
-  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
+  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['auto', 'low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
   assert.deepEqual(normalizeExtraReferenceSourceKinds(['qq-bridge']), ['qq-bridge']);
 
   const { config, unknown } = resolveConfig({});
@@ -594,11 +594,11 @@ for (const language of ['zh', 'en']) {
       const file = join(root, 'summary-config.json');
       const h = await mountSettings({ language, file });
 
-      // All 8 v0.4.2 reasoning effort options remain intact
+      // All 9 v0.5.1+ route-aware reasoning effort options remain intact
       const reasoningField = h.field('weave-summary-reasoning-effort');
       assert.deepEqual(
         reasoningField.children.map(o => o.props.value),
-        ['low', 'none', 'minimal', 'medium', 'high', 'xhigh', 'max', 'inherit'],
+        ['auto', 'low', 'none', 'minimal', 'medium', 'high', 'xhigh', 'max', 'inherit'],
       );
 
       // Post-compact reinject control renders with default 'true' and clear explanation; opt-in Phase C defaults to false

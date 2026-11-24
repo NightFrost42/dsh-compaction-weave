@@ -86,7 +86,7 @@ await test('phase-b-defaults-and-v042-phase-a-exports-preserved', () => {
   }
 
   // Preserve v0.4.2 & Phase A exports and defaults, and verify Phase C defaults are opt-in false
-  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
+  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['auto', 'low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
   assert.deepEqual(REASONING_EFFORT_LADDER, ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none']);
   assert.deepEqual(DEFAULT_CONFIG.extraReferenceSourceKinds, []);
   assert.deepEqual(normalizeExtraReferenceSourceKinds(['wechat']), ['wechat']);

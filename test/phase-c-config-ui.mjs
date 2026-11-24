@@ -90,7 +90,7 @@ await test('phase-c-12-defaults-and-prior-exports-preserved', () => {
 
   // Preserve v0.4.2, Phase A, and Phase B exports/defaults; no shell hooks key
   assert.equal('hooks' in DEFAULT_CONFIG, false);
-  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
+  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['auto', 'low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
   assert.deepEqual(REASONING_EFFORT_LADDER, ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none']);
   assert.deepEqual(normalizeExtraReferenceSourceKinds(['wechat']), ['wechat']);
   assert.equal(DEFAULT_CONFIG.postCompactReinjectEnabled, true);

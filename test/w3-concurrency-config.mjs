@@ -45,14 +45,14 @@ async function test(name, fn) {
 await test('config-defaults-validation-and-model-policy-merging', () => {
   assert.equal(MIN_SUMMARY_CONCURRENCY, 1);
   assert.equal(MAX_SUMMARY_CONCURRENCY, 6);
-  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
+  assert.deepEqual(SUMMARY_REASONING_EFFORTS, ['auto', 'low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']);
   assert.equal(DEFAULT_CONFIG.summaryConcurrency, 2);
-  assert.equal(DEFAULT_CONFIG.summaryReasoningEffort, 'low');
+  assert.equal(DEFAULT_CONFIG.summaryReasoningEffort, 'auto');
 
   const base = resolveConfig({});
   assert.deepEqual(base.unknown, []);
   assert.equal(base.config.summaryConcurrency, 2);
-  assert.equal(base.config.summaryReasoningEffort, 'low');
+  assert.equal(base.config.summaryReasoningEffort, 'auto');
 
   for (const concurrency of [1, 2, 3, 4, 5, 6]) {
     const resolved = resolveConfig({ summaryConcurrency: concurrency });
@@ -64,7 +64,7 @@ await test('config-defaults-validation-and-model-policy-merging', () => {
     assert.throws(() => resolveConfig({ summaryConcurrency: bad }), /summaryConcurrency/);
   }
 
-  for (const effort of ['low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']) {
+  for (const effort of ['auto', 'low', 'none', 'inherit', 'minimal', 'medium', 'high', 'xhigh', 'max']) {
     const resolved = resolveConfig({ summaryReasoningEffort: effort });
     assert.deepEqual(resolved.unknown, []);
     assert.equal(resolved.config.summaryReasoningEffort, effort);

@@ -18,12 +18,13 @@
 | 重试基础间隔 | `summaryRetryDelayMs` | 1000 | 0–30000 毫秒 |
 | 每次等待上限 | `summaryTimeoutMs` | 180000 | 5000–3600000 毫秒 |
 | 摘要并发数 | `summaryConcurrency` | 2 | 1–6 整数（多块并行生成，严格按顺序提交；遇到 HTTP 429 自动降为 1） |
-| 摘要推理力度 | `summaryReasoningEffort` | `low` | `low`（默认低档）/ `none`（关闭）/ `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit`（跟随会话）；不支持时自动逐级向下回退 |
+| 摘要推理力度 | `summaryReasoningEffort` | `auto` | `auto`（默认按路由自适应：仅 Anthropic 同路由继承，非 Anthropic 路由有思考时压到 `low`，主会话未开思考时不强行开启）/ `low` / `none`（关闭）/ `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit`（跟随会话）；不支持时自动逐级向下回退 |
 | CJK 预算保守权重 | `summaryCjkTokensPerChar` | `0.75` | `0.5–1.5`（默认 `0.75`，使 128k 中文会话正常保留前部 KV 缓存；需要兼容较碎分词器时可调到 `1.0`） |
 | 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭 |
 | 启发式审计耗尽兜底策略 | `auditExhaustionPolicy` | `'fallback'` | `'fallback'`（默认：全链与重试耗尽后，对纯覆盖/软溯源争议外挂 `<= 3` 处经核验纯用户原话放行；极性反转永不兜底）/ `'block'`（严格拦截，禁用兜底） |
 | 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，最多重读 5 个本地工作区文件，受 `postCompactReinjectMaxBytes` 默认 24KB 封顶）/ 关闭 |
 | 超大工具结果尾部溢出 | `persistedOutputEnabled` | `true`（开启） | 开启（0 额外摘要模型调用，仅归档未发送尾部 ≥ 32768 字符工具输出并留首尾 1200 字预览）/ 关闭 |
+| 第一级归档存根掩码 | `observationMaskingEnabled` | `true`（开启） | 开启（默认，0 LLM 优先路径；压力或手动压缩时先折叠较早大工具输出为带 `history_read` 指针的存根，达标则免除摘要模型调用）/ 关闭 |
 | 闲置 0-LLM 轻压缩 | `microcompactEnabled` | `true`（开启） | 开启（0 LLM 调用；**需开启 `idleCompactionMinutes > 0` 才会触发**，闲置超期后先保留最新 4 条热点输出，折叠更早大输出与重复读取）/ 关闭 |
 | 最后兜底 0-LLM 急救裁剪（Snip） | `snipEnabled` | `true`（开启） | 开启（默认，0 LLM；仅在逼近 `messageBudgetTokens` 或 413 兜底时归档旧工具循环并保留 `history_read` 指针，绝不丢弃近期用户消息）/ 关闭 |
 | 回合间隙后台预生成摘要 | `sessionMemoryEnabled` | `false`（关闭） | 关闭（默认，0 额外调用）/ 开启（Opt-In；趁回合间隙在后台预生成摘要供下次压缩复用，消耗额外 API 余额与 Token 额度） |
@@ -32,9 +33,9 @@
 
 设置页用秒展示等待时间与间隔，配置字段使用毫秒。重试次数指首次请求之后的额外尝试：设置为 2 时，每个未完成的摘要或页面最多尝试 3 次。连续重试采用指数退避，间隔最高 30 秒。
 
-供应商和模型一起选择或一起清空。点击“清除（跟随会话模型）”会清除模型覆盖及其输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、闲置时间、审计拦截、工作区文件重注入、尾部溢出、闲置轻压缩、最后兜底急救裁剪（Snip）以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
+供应商和模型一起选择或一起清空（输出上限 `maxTokens` 也可在不覆盖供应商/模型时独立保存生效）。点击“清除（跟随会话模型）”会清除模型覆盖及其独立输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、CJK 预算权重、闲置时间、审计拦截、工作区文件重注入、尾部溢出、第一级归档存根掩码、闲置轻压缩、最后兜底急救裁剪（Snip）以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
 
-**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`summaryCjkTokensPerChar`、`auditBlockOnLoss`、`auditExhaustionPolicy`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes` 与 `maxVisibleImages`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
+**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`summaryCjkTokensPerChar`、`auditBlockOnLoss`、`auditExhaustionPolicy`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`observationMaskingEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes` 与 `maxVisibleImages`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
 
 ### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
@@ -181,9 +182,9 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `preserveRecentUserTokens` | `4096` | 近期原话预算 |
 | `summaryInputRatio` | `0.85` | 摘要输入相对模型可用窗口的 Token 预算比例 |
 | `summaryInputMaxBytes` | `2097152` | 完整摘要请求的独立 UTF-8 字节硬上限（2 MiB） |
-| `summaryCjkTokensPerChar` | `0.75` | 摘要请求规划对 CJK/韩文/假名的保守每字 token 估算权重（`0.5–1.5`，支持在设置页热生效；需兼容较碎旧分词器时可调至 `1.0`） |
+| `summaryCjkTokensPerChar` | `0.75` | 摘要与上下文规划对 CJK/韩文/假名的启发式每字 token 估算权重（`0.5–1.5`，支持在设置页热生效；插件采用轻量化启发式估算，ASCII ≈ `0.25` tok/char、不含外部 BPE 运行表，实际计费仍以模型分词器为准；需兼容较碎分词器时可调至 `1.0`） |
 | `summaryConcurrency` | `2` | 多分片/分页摘要的并行生成上限（1–6；首片串行探针后并行生成、严格按顺序提交，429 自动降至 1） |
-| `summaryReasoningEffort` | `'low'` | 摘要请求推理力度策略：`low`（默认低档降耗，主会话未设力度或跨路由摘要时也会下发 `'low'`）、`none`（省略参数）、`minimal` / `medium` / `high` / `xhigh` / `max`（直接指定思考档位；上述直接档位在遇到 `UNSUPPORTED_REASONING_EFFORT` 时均会自动沿阶梯 `max → xhigh → high → medium → low → minimal → none → 省略` 向下回退并按路由缓存）、`inherit`（同路由沿用主会话设置） |
+| `summaryReasoningEffort` | `'auto'` | 摘要请求推理力度策略：`auto`（默认按路由自适应：仅 Anthropic/Claude 同路由沿用主会话设置以复用提示词缓存，非 Anthropic 路由有思考时压到 `low`，主会话未设力度时不强行开启思考）、`low`（显式指定低档；主会话已设更低档位 `minimal` / `none` 时沿用更低档，未设或跨路由时按 `'low'` 下发）、`none`（省略参数）、`minimal` / `medium` / `high` / `xhigh` / `max`（直接指定思考档位；上述直接档位在遇到 `UNSUPPORTED_REASONING_EFFORT` 时均会自动沿阶梯 `max → xhigh → high → medium → low → minimal → none → 省略` 向下回退并按路由缓存）、`inherit`（强制继承主会话设置） |
 | `compactionRetries` | `1` | 宿主架构/规格兼容保留占位字段（运行时摘要重试请配置 `summaryRetryCount` 与 `summaryRetryDelayMs`，本字段不参与运行期重试循环） |
 | `maxSummaryChunks` | `32` | 一次流程允许的成功分块数量 |
 | `continuationEnabled` | `true` | 开启大段历史的分页接续 |
