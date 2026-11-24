@@ -21,6 +21,7 @@
 | 摘要推理力度 | `summaryReasoningEffort` | `auto` | `auto`（默认按路由自适应：仅 Anthropic 同路由继承，非 Anthropic 路由有思考时压到 `low`，主会话未开思考时不强行开启）/ `low` / `none`（关闭）/ `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit`（跟随会话）；不支持时自动逐级向下回退 |
 | CJK 预算保守权重 | `summaryCjkTokensPerChar` | `0.75` | `0.5–1.5`（默认 `0.75`，使 128k 中文会话正常保留前部 KV 缓存；需要兼容较碎分词器时可调到 `1.0`） |
 | 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭 |
+| 覆盖率审计窗口范围 | `auditCoverageScope` | `'recent'` | `'recent'`（默认：覆盖近期原话保留窗口及本跨度新增近期原始用户消息，按至少 `32` 条 / `4096` token 封顶；窗外旧跨度/超大规模迁移原话普通遗漏记软警告不阻塞）/ `'span-new'`（仅对本跨度新增原始用户消息强制覆盖率）/ `'all'`（全跨度严格覆盖）；**所有冲突红线（`polarity`/`value`/`unit`/`condition`/`range`/`relation`/`exception`/`reference`/`provenance`）在三档下始终全局强制执行** |
 | 启发式审计耗尽兜底策略 | `auditExhaustionPolicy` | `'fallback'` | `'fallback'`（默认：全链与重试耗尽后，对纯覆盖/软溯源争议外挂 `<= 3` 处经核验纯用户原话放行；极性反转永不兜底）/ `'block'`（严格拦截，禁用兜底） |
 | 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，最多重读 5 个本地工作区文件，受 `postCompactReinjectMaxBytes` 默认 24KB 封顶）/ 关闭 |
 | 超大工具结果尾部溢出 | `persistedOutputEnabled` | `true`（开启） | 开启（0 额外摘要模型调用，仅归档未发送尾部 ≥ 32768 字符工具输出并留首尾 1200 字预览）/ 关闭 |
@@ -35,7 +36,7 @@
 
 供应商和模型一起选择或一起清空（输出上限 `maxTokens` 也可在不覆盖供应商/模型时独立保存生效）。点击“清除（跟随会话模型）”会清除模型覆盖及其独立输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、CJK 预算权重、闲置时间、审计拦截、工作区文件重注入、尾部溢出、第一级归档存根掩码、闲置轻压缩、最后兜底急救裁剪（Snip）以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
 
-**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`summaryCjkTokensPerChar`、`auditBlockOnLoss`、`auditExhaustionPolicy`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`observationMaskingEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes` 与 `maxVisibleImages`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
+**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`summaryCjkTokensPerChar`、`auditBlockOnLoss`、`auditCoverageScope`、`auditExhaustionPolicy`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`observationMaskingEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes` 与 `maxVisibleImages`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
 
 ### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
@@ -205,6 +206,7 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `maxVisibleImages` | `24` | 可见表面未卸载图片张数高水位阈值（`0` 关闭张数触发，允许 `1–500`；另设长边 `>2000px` 超过 `20` 张护栏；触线时单批卸载至低水位，且严格不改写 `user/message` 原文） |
 | `auditEnabled` | `true` | 检查要求是否保留 |
 | `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交（极性反转在关闭时仍严格拦截） |
+| `auditCoverageScope` | `'recent'` | 控制启发式普通覆盖率（`coverage`）的强制窗口范围（支持设置页热生效）：`'recent'`（默认：同时覆盖 `preserveRecentMessages` / `preserveRecentUserTokens` 近期保留窗口与本跨度新增近期原始用户消息——上限至少取 `32` 条 / `4096` token，即使缩小第 6 节逐字原话预算也不会屏蔽当前跨度新指令的摘要覆盖审计，同时避免多代历史或超大规模迁移死锁；窗外普通覆盖遗漏仅记录告警并计入 `softCoverageCount`，不阻断且不消耗兜底名额）、`'span-new'`（仅对本跨度直接新增、非旧检查点携带的原始 `user/message` 强制覆盖率）或 `'all'`（对全跨度所有保留原话强制覆盖率）。所有全局冲突红线（`polarity`、`value`、`unit`、`condition`、`range`、`relation`、`exception`、`reference`、`provenance`）及最近原话第 6 节逐字保存始终全局强制执行 |
 | `auditProvenanceBlock` | `true` | 授权/指令来源未匹配用户原文（`provenance`）时阻断提交；设为 `false` 时仅对无依据归纳改为告警放行，但对 `untrusted-source`（外部/注入来源）与 `revoked`（已撤回授权）仍保持强拦截 |
 | `auditExhaustionPolicy` | `'fallback'` | 当前摘要目标与至少 1 次纠偏重试全部耗尽且仅剩 `<= 3` 处纯覆盖率/`missing-source` 启发式冲突时的策略（可在设置页热生效）：`'fallback'`（默认：外挂经核验纯用户原话至 `<pinned-source-rules>`、`≤ 2048` 字节并严守缩小与所有强红线后受控放行）或 `'block'`（严格拦截并失败）；`CONSTRAINT_POLARITY_LOST`（极性反转）、`summaryRetryCount === 0` 或任意结构/体积/进度/已撤回/`untrusted-source`/`revoked` 失败永不走兜底 |
 | `extraReferenceSourceKinds` | `[]` | 额外视为非用户参考通道的 `source.kind` 字符串数组（最多 64 项，严禁包含 `'user'` 或 `'compact-checkpoint'`）；内置已自动隔离 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge` 等桥接通道 |

@@ -10,5 +10,31 @@ try{
  await test('missing-identity-does-not-write',async()=>{assert.equal(await dumpAuditRejection({...args,sessionId:''}),null);});
  await test('identifier-sanitization-stays-in-diagnostics',async()=>{const p=await dumpAuditRejection({...args,sessionId:'../../escape',compactionId:'../../escape'});assert.equal(resolve(p).startsWith(resolve(root,'audit-reject')+(process.platform==='win32'?'\\':'/')),true);});
  await test('input-report-not-mutated',async()=>{const before=JSON.stringify(args);await dumpAuditRejection(args);assert.equal(JSON.stringify(args),before);});
+ await test('untruncated-summaryChars-and-audit-scope-metadata',async()=>{
+  const huge='x'.repeat(320*1024);
+  const metaArgs={
+    ...args,
+    compactionId:'compact-huge',
+    modelRawText:'Raw '+huge,
+    auditedText:'Audited '+huge,
+    coverageThreshold:0.65,
+    softCoverageCount:7,
+    auditFallbackSkippedReason:'polarity_or_provenance_redline',
+  };
+  const before=JSON.stringify(metaArgs);
+  const p=await dumpAuditRejection(metaArgs);
+  assert.equal(JSON.stringify(metaArgs),before);
+  const d=JSON.parse(await readFile(p,'utf8'));
+  assert.equal(d.summaryChars,metaArgs.auditedText.length);
+  assert.ok(d.auditedText.length<metaArgs.auditedText.length,'large auditedText should truncate on disk while keeping full summaryChars');
+  assert.equal(d.audit.coverageThreshold,0.65);
+  assert.equal(d.audit.softCoverageCount,7);
+  assert.equal(d.audit.auditFallbackSkippedReason,'polarity_or_provenance_redline');
+  const rawOnly=JSON.parse(await readFile(await dumpAuditRejection({...args,compactionId:'raw-only',auditedText:null,modelRawText:'abcde'}),'utf8'));
+  assert.equal(rawOnly.summaryChars,5);
+  assert.equal(rawOnly.audit.coverageThreshold,null);
+  assert.equal(rawOnly.audit.softCoverageCount,0);
+  assert.equal(rawOnly.audit.auditFallbackSkippedReason,null);
+ });
 }finally{await rm(root,{recursive:true,force:true});}
 const report={passed:results.filter(x=>x.pass).length,failed:results.filter(x=>!x.pass).length,results};console.log(JSON.stringify(report,null,2));if(report.failed)process.exitCode=1;
