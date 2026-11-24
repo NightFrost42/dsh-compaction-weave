@@ -59,4 +59,17 @@ await test('provenance-untrusted-and-revoked-guidance-qualifies-external-bridge-
   assert.match(text,/extraReferencePrefixes/);
  }
 });
+await test('extractPluginStackFrame-captures-lib-subdirectory-frames-and-filters-external-paths',async()=>{
+ const d=new FailureDiagnostics(join(root,'subdir-frames'));
+ const makeStackErr=(frameLine)=>Object.assign(new Error('opaque failure'),{stack:`Error: opaque failure\n    at evalAudit (${frameLine})`});
+ const eHit=await rejected(d.run(session,{trigger:'manual'},()=>{throw makeStackErr('/mirror-checkout/lib/audit/compaction.js:42:7');}));
+ const logHit=JSON.parse(await readFile(diagnosticFor(eHit).path,'utf8'));
+ assert.equal(logHit.errors[0].pluginFrame,'lib/audit/compaction.js:42:7');
+
+ for(const extFrame of ['/mirror/node_modules/other/lib/audit/compaction.js:12:3','/mirror/lib/nonexistent/foo.js:9:1']){
+  const eExt=await rejected(d.run(session,{trigger:'manual'},()=>{throw makeStackErr(extFrame);}));
+  const logExt=JSON.parse(await readFile(diagnosticFor(eExt).path,'utf8'));
+  assert.equal(logExt.errors[0].pluginFrame,undefined,`external/unknown frame must be omitted: ${extFrame}`);
+ }
+});
 console.log(JSON.stringify({passed:results.filter(x=>x.pass).length,failed:results.filter(x=>!x.pass).length,results},null,2));if(results.some(x=>!x.pass))process.exitCode=1;
