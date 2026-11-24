@@ -115,7 +115,8 @@ jobs:
           }
 
           const isPrerelease = version.includes('-');
-          const npmTag = isPrerelease ? 'next' : 'latest';
+          const configuredTag = typeof pkg.publishConfig?.tag === 'string' ? pkg.publishConfig.tag.trim() : '';
+          const npmTag = isPrerelease ? (configuredTag && configuredTag !== 'latest' ? configuredTag : 'next') : 'latest';
           const tarball = `./dist/${name}-${version}.tgz`;
           if (!fs.existsSync(tarball)) {
             console.error(`Missing built tarball: ${tarball}`);

@@ -1,5 +1,16 @@
 # 更新记录
 
+## [0.5.3-hotfix.1] - 2026-11-25
+
+- **DSH Desktop `0.2.3-alpha.2` 设置页与进度轮询 `403 missing origin refused` 紧急热修（Issue #19，基于 `v0.5.2` 单点热修，npm 仅发 `hotfix` dist-tag，`latest` 仍保持 `0.5.2`）**：
+  - **真机根因定位**：在升级后的 DSH Desktop `0.2.3-alpha.2` 上确认主进程 `forwardWebRequest()` 在将 `dsh-app://app/` 请求转发至本机 Host（`127.0.0.1:<port>`）时会主动剥离 `host`、`origin`、`cookie`、`sec-fetch-site` 请求头（同时 `dsh-client-connection` 自 `v0.2.2-rc.2` 起已移除旧 `requestRejection()`，改为 `webserver/authorize` / `admit()`），导致 `0.5.2` 下的设置页 RPC 与进度条轮询全部因空 `Origin` 返回 `403 missing origin refused`。
+  - **三层兼容与安全守卫（[index.js](lib/index.js)、[client.js](lib/client.js)）**：
+    1. 保留第一优先级宿主 `connection.requestRejection`（拒绝码不可被 Token 绕过）；
+    2. 新增第二优先级主通道：通过宿主 `webserver/index-inject` 惰性生成进程级随机 Token（`randomBytes(32).toString('base64url')`）注入 `globalThis.__WEAVE_RPC_TOKEN__`（跨插件重载存活，卸载 `try/finally` 清理防泄漏），`lib/client.js` 的 `rpc()` 与 `status` 轮询统一经 `buildRpcHeaders()` 附带 `x-weave-rpc-token`，服务端先按 UTF-8 字节长度对齐再用 `timingSafeEqual` 校验；
+    3. 新增第三优先级同源头兜底：在无 `connection` 且无有效 Token 时，仅在无跨头矛盾下对单一 `Sec-Fetch-Site: same-origin` 或无 userinfo 且按协议归一化端口匹配 `Host` 的 `http:`/`https:` 同源 `Referer` 放行，并对既无鉴权又无同源头信号的裸空 `Origin` 请求继续拦截（`403 missing origin refused`）；
+    4. 同步加固重复/数组/大小写重复安全头、逗号拼接 `Sec-Fetch-Site`、非 `http(s):`/含 userinfo/含路径 `Origin` 及 `:80` vs `https :443` 端口混淆绕过防护（携带跨站 `Origin`/`Sec-Fetch-Site` 即使附带正确 Token 仍拒为 `403`）。
+  - **验证结果**：通过 [wave3-audit-hardening.mjs](test/wave3-audit-hardening.mjs)（`16/16`）、`npm run check`、`npm test`（`96` 套 / `1,417` 用例）、DSH `0.2.2-rc.3` 宿主集成测试（`104` 套 / `1,548` 用例）与本地 DSH Desktop `0.2.3-alpha.2` Electron 真机 CDP 实测。
+
 ## [0.5.2] - 2026-11-24
 
 - **审计与溯源假阳修复（Issue #11 收口）**：
