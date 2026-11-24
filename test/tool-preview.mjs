@@ -13,11 +13,14 @@ import {
   DEFAULT_PERSISTED_OUTPUT_TAIL_CHARS,
 } from '../lib/persisted-output.js';
 import { projectSummaryMessage } from '../lib/reference-input.js';
+import { CompactBM25FIndex, prepareSpanForSearch } from '../lib/history-search.js';
 import {
   LARGE_PREVIEW_INPUT_BYTES,
   MAX_JSON_PREVIEW_BYTES,
   buildToolPreview,
   codePointLength,
+  computeProseDensity,
+  extractSalientProse,
 } from '../lib/tool-preview.js';
 
 const results = [];
@@ -343,6 +346,219 @@ await test('reference-input-never-double-truncates-archived-stubs-and-audit-clea
   assert.equal(audit.polarityFlips, 0);
   const prov = auditInstructionProvenance({ userMessages, referenceMessages, summaryText });
   assert.equal(prov.length, 0);
+});
+
+await test('diagnostic-stack-traces-ts-js-python-go-rust-and-benign-zero-guard', () => {
+  const pad = Array.from({ length: 28 }, (_, i) => `[log ${i}] background step ok without errors`).join('\n');
+
+  const cases = [
+    {
+      label: 'typescript',
+      block: [
+        'src/app/handler.ts(42,5): error TS2345: Argument of type number is not assignable to string.',
+        '    at checkTypes (node_modules/typescript/lib/tsc.js:120:4)',
+      ].join('\n'),
+      mustInclude: ['src/app/handler.ts(42,5): error TS2345'],
+    },
+    {
+      label: 'javascript',
+      block: [
+        "TypeError: Cannot read properties of null (reading 'session')",
+        '    at verifyToken (src/auth/verify.js:10:2)',
+        '    at runHandler (src/server.js:88:9)',
+      ].join('\n'),
+      mustInclude: ["TypeError: Cannot read properties of null", 'at verifyToken (src/auth/verify.js:10:2)'],
+    },
+    {
+      label: 'python',
+      block: [
+        'Traceback (most recent call last):',
+        '  File "x.py", line 42, in validate_payload',
+        '    assert len(items) > 0',
+        'ValueError: payload items must not be empty',
+      ].join('\n'),
+      mustInclude: ['Traceback (most recent call last):', 'File "x.py", line 42', 'ValueError: payload items'],
+    },
+    {
+      label: 'go-fatal-and-goroutine',
+      block: [
+        'fatal error: concurrent map read and map write',
+        'goroutine 17 [running]:',
+        'main.processQueue(0xc00012a000)',
+        '\t/app/worker.go:88 +0x1b4',
+      ].join('\n'),
+      mustInclude: ['fatal error: concurrent map read', 'goroutine 17 [running]:', '/app/worker.go:88'],
+    },
+    {
+      label: 'go-panic-and-test-fail',
+      block: [
+        'panic: runtime error: index out of range [3] with length 2',
+        '--- FAIL: TestBillingRounding (0.02s)',
+      ].join('\n'),
+      mustInclude: ['panic: runtime error:', '--- FAIL: TestBillingRounding'],
+    },
+    {
+      label: 'rust',
+      block: [
+        "thread 'parser::tests::empty_input' panicked at src/parser.rs:77:9:",
+        'error[E0308]: mismatched types',
+        '  --> src/main.rs:14:5',
+      ].join('\n'),
+      mustInclude: ["thread 'parser::tests::empty_input' panicked at", 'error[E0308]: mismatched types', '--> src/main.rs:14:5'],
+    },
+  ];
+
+  for (const c of cases) {
+    const input = `${pad}\n0 failed, 0 errors in preflight.\n${pad}\n${c.block}\n${pad}`;
+    const preview = buildToolPreview(input, { headChars: 350, tailChars: 350, toolName: 'bash', target: 'test' });
+    assert.ok(preview && preview.kind === 'diagnostic', `${c.label}: expected diagnostic preview`);
+    assert.ok(!preview.middle.includes('0 failed'), `${c.label}: must ignore benign zero line`);
+    for (const expected of c.mustInclude) {
+      assert.ok(preview.middle.includes(expected), `${c.label}: missing "${expected}" in:\n${preview.middle}`);
+    }
+  }
+});
+
+await test('extract-salient-prose-splitting-heading-boost-query-order-and-budget', () => {
+  const doc = [
+    'Sure thing! I understand your request carefully and will check everything step by step.',
+    '',
+    '## Architecture Decisions',
+    '- Must keep `v1.2.3` schema under `0.75` ratio (e.g. `history_read`, `history_search`, etc. via `lib/history.js`).',
+    '- Dr. Smith noted in Fig. 2 and No. 5 that `timeoutMs` must stay `>= 5000` (vs. old 1000ms).',
+    '```js',
+    'const keepDecimals = 0.75;',
+    'const version = "v1.2.3";',
+    '```',
+    '',
+    '## Filler Notes',
+    'Thank you for your patience while everything proceeds smoothly without issues.',
+    'Let me carefully review the remaining details step by step so nothing is missed.',
+  ].join('\n');
+
+  const focused = extractSalientProse(doc, {
+    budgetChars: 420,
+    queryTokens: ['atimeoutms', 'b架构', 'schema'],
+  });
+  assert.ok(codePointLength(focused) <= 420);
+  assert.ok(focused.includes('0.75') && focused.includes('v1.2.3'), 'must keep decimals & versions intact');
+  assert.ok(focused.includes('e.g.') && focused.includes('Dr. Smith') && focused.includes('Fig. 2') && focused.includes('No. 5'));
+  assert.ok(focused.includes('timeoutMs'), 'query match must boost timeout line');
+  assert.ok(!focused.includes('Thank you for your patience'), 'filler must be down-weighted');
+  // Original document order preserved
+  const idxSchema = focused.indexOf('v1.2.3');
+  const idxTimeout = focused.indexOf('timeoutMs');
+  assert.ok(idxSchema >= 0 && idxTimeout > idxSchema, 'selected units must appear in original order');
+
+  // Fenced block kept intact when budget allows
+  const withFence = extractSalientProse(doc, { budgetChars: 900 });
+  assert.ok(withFence.includes('```js\nconst keepDecimals = 0.75;\nconst version = "v1.2.3";\n```'));
+
+  // Tight budget + deadline guard
+  const tight = extractSalientProse(doc, { budgetChars: 90 });
+  assert.ok(tight.length > 0 && codePointLength(tight) <= 90);
+  const expired = extractSalientProse(doc, { budgetChars: 400, deadlineMs: performance.now() - 1 });
+  assert.equal(typeof expired, 'string');
+  assert.ok(codePointLength(expired) <= 400);
+});
+
+await test('tier4-salient-prose-activation-vs-fail-open-null', () => {
+  // Uniform repeated filler -> must fail open to null
+  const flatLog = 'Verbose background heartbeat tick ok without incident or error.\n'.repeat(40);
+  assert.equal(buildToolPreview(flatLog, { headChars: 300, tailChars: 300, toolName: 'bash', target: 'run.log' }), null);
+
+  // Short (< 1200 chars) -> fail open null
+  const shortDoc = '## Decision\n- Must keep `src/a.js` at v1.0.0.\n- Fixed timeout.\n- Verified tests.\n- Ready.\n- Next.\n';
+  assert.equal(buildToolPreview(shortDoc, { headChars: 300, tailChars: 300 }), null);
+
+  // Single-line minified blob -> fail open null
+  const minified = 'alpha_beta_gamma_delta_'.repeat(100);
+  assert.equal(buildToolPreview(minified, { headChars: 300, tailChars: 300 }), null);
+
+  // Rich high-entropy prose report (>= 1200 chars, >= 6 units, clear spread) -> activates Tier 4 salient-prose
+  const fillerPara =
+    'Thank you for waiting while I review the overall workflow step by step so everything proceeds smoothly without any confusion. ';
+  const report = [
+    '## Overview',
+    fillerPara.repeat(4),
+    '',
+    '## Key Architecture Constraints',
+    '- Must preserve `SPAN_VERSION = 3` in `lib/history.js` and verify checksums before returning entries.',
+    '- Never drop `EXPLICIT_CONFIG_KEYS` during `resolveTargetPolicy` on v0.5.2 (latency <= 15ms).',
+    '- Fixed `timeoutMs=5000` handling in `src/billing.ts` with `--strict` validation enabled.',
+    '',
+    '## Wrap-up',
+    fillerPara.repeat(4),
+  ].join('\n');
+  assert.ok(report.length >= 1200);
+  const preview = buildToolPreview(report, { headChars: 300, tailChars: 300, toolName: 'read_file', target: 'REPORT.md' });
+  assert.ok(preview, 'expected Tier 4 salient-prose preview');
+  assert.equal(preview.kind, 'salient-prose');
+  assert.ok(preview.keptChars <= 600);
+  assert.ok(preview.middle.includes('SPAN_VERSION = 3'));
+  assert.ok(preview.middle.includes('EXPLICIT_CONFIG_KEYS'));
+});
+
+await test('compute-prose-density-calibration-and-bounded-scan', () => {
+  const repetitiveEn =
+    'I understand your request carefully. Let me review everything step by step so we can proceed smoothly. Thank you for waiting.\n'.repeat(
+      14,
+    );
+  const variedFillerEn =
+    'I am going to review the general situation carefully and take time to think through the overall approach so everything looks good and proceeds smoothly from beginning to end without unnecessary complications.';
+  const repetitiveCn =
+    '好的，我明白你的需求。接下来我将一步步仔细检查所有内容，确保一切顺利推进，非常感谢你的耐心等待。\n'.repeat(10);
+  const denseEn =
+    'Must preserve integer cents in `src/billing.js` (`CENTS_PER_DOLLAR = 100`) and never float-round. Fixed `TypeError` in `verifyToken` at `src/auth/verify.ts:42:18` under v2.4.1 (`--strict`); `completedCount: 12`, latency 18ms.';
+  const denseCn =
+    '必须保留 `lib/history.js` 中的 `SPAN_VERSION = 3` 与校验和检查，禁止跳过损坏行。修复了 `auth::verifyToken` 在 `src/user-profile.ts:88` 的超时异常（`timeoutMs=5000`, v0.5.2），`passed: 9/9`。';
+
+  assert.ok(computeProseDensity(repetitiveEn) < 0.35, `expected <0.35, got ${computeProseDensity(repetitiveEn)}`);
+  assert.ok(computeProseDensity(variedFillerEn) < 0.35, `expected <0.35, got ${computeProseDensity(variedFillerEn)}`);
+  assert.ok(computeProseDensity(repetitiveCn) < 0.35, `expected <0.35, got ${computeProseDensity(repetitiveCn)}`);
+  assert.ok(computeProseDensity(denseEn) >= 0.55, `expected >=0.55, got ${computeProseDensity(denseEn)}`);
+  assert.ok(computeProseDensity(denseCn) >= 0.55, `expected >=0.55, got ${computeProseDensity(denseCn)}`);
+  assert.equal(computeProseDensity(''), 0);
+
+  // Bounded <= 24 KB scan runs quickly on > 60 KB input
+  const huge = `${denseEn}\n`.repeat(350);
+  assert.ok(huge.length > 60000);
+  const t0 = performance.now();
+  const score = computeProseDensity(huge);
+  assert.ok(score >= 0 && score <= 1);
+  assert.ok(performance.now() - t0 < 100);
+});
+
+await test('bm25f-long-primary-uses-salient-excerpt-while-exact-keeps-window', () => {
+  const longText = [
+    'Thank you for waiting while I review the overall workflow step by step so everything proceeds smoothly. '.repeat(5),
+    '## Billing Decision',
+    '- Must keep integer cents (`CENTS_PER_DOLLAR = 100`) in `src/billing.js` and enforce `EXACT_BILLING_TOKEN_99`.',
+    'Thank you for waiting while I check additional unrelated notes step by step without incident. '.repeat(5),
+  ].join('\n');
+  assert.ok(longText.length > 400);
+
+  const span = prepareSpanForSearch({
+    compactionId: 'cmp-salient-1',
+    entries: [
+      { seq: 1, type: 'user/message', role: 'user', text: longText },
+      { seq: 2, type: 'assistant/message', role: 'assistant', text: 'Acknowledged.' },
+    ],
+  });
+  const index = new CompactBM25FIndex([span]);
+
+  // BM25F-only query (not verbatim substring / not all raw terms present) -> salient excerpt <= 280 chars
+  const bm25Res = index.search('billing integer precision');
+  assert.equal(bm25Res.hits.length, 1);
+  assert.equal(bm25Res.hits[0].matchKind, 'bm25f');
+  assert.ok(bm25Res.hits[0].excerpt.length <= 280);
+  assert.ok(bm25Res.hits[0].excerpt.includes('CENTS_PER_DOLLAR = 100'));
+
+  // Exact substring query -> keeps exact windowing around EXACT_BILLING_TOKEN_99
+  const exactRes = index.search('EXACT_BILLING_TOKEN_99');
+  assert.equal(exactRes.hits.length, 1);
+  assert.equal(exactRes.hits[0].matchKind, 'exact');
+  assert.ok(exactRes.hits[0].excerpt.includes('EXACT_BILLING_TOKEN_99'));
 });
 
 const passed = results.filter((r) => r.pass).length;
