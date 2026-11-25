@@ -8,6 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { threadId } from 'node:worker_threads';
 
 import {
   auditCompaction,
@@ -475,13 +476,22 @@ await test('P0-1-P1-1-P2-8-rpc-admit-electron-fallback-viewer-gate-and-body-limi
   try {
     const ownerTable = [];
     const viewerTable = [];
+    const emptyPeerTable = [];
+    const noKindPeerTable = [];
+    const legacyNoPeerTable = [];
     for (const fn of injectListeners) {
       fn(ownerTable, { principal: { kind: 'owner', id: 'o1' } });
       fn(viewerTable, { principal: { kind: 'viewer', id: 'v1' } });
+      fn(emptyPeerTable, {});
+      fn(noKindPeerTable, { principal: {} });
+      fn(legacyNoPeerTable);
     }
     const token = ownerTable.find((r) => r?.name === '__WEAVE_RPC_TOKEN__')?.value;
     assert.ok(typeof token === 'string' && token.length >= 32, 'owner gets RPC token');
     assert.equal(viewerTable.some((r) => r?.name === '__WEAVE_RPC_TOKEN__'), false, 'P1-1: viewer must not receive RPC token');
+    assert.equal(emptyPeerTable.some((r) => r?.name === '__WEAVE_RPC_TOKEN__'), false, 'A-P1-2: empty peer object must not receive RPC token');
+    assert.equal(noKindPeerTable.some((r) => r?.name === '__WEAVE_RPC_TOKEN__'), false, 'A-P1-2: missing principal.kind must not receive RPC token');
+    assert.equal(legacyNoPeerTable.find((r) => r?.name === '__WEAVE_RPC_TOKEN__')?.value, token, 'legacy undefined peer keeps compatibility');
 
     const sendRaw = (headers, body) =>
       new Promise((resolveRes) => {
@@ -553,6 +563,19 @@ await test('P0-1-P1-1-P2-8-rpc-admit-electron-fallback-viewer-gate-and-body-limi
       '{"method":"get"}',
     );
     assert.equal(trustedHostOk.status, 200);
+
+    // A-P1-1: unrecognized non-null connection service fails closed without token -> 401, passes with token -> 200
+    connectionService = {};
+    const unknownConnNoTok = await sendRaw(
+      { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' },
+      '{"method":"get"}',
+    );
+    assert.equal(unknownConnNoTok.status, 401);
+    const unknownConnWithTok = await sendRaw(
+      { host: '127.0.0.1:3000', 'x-weave-rpc-token': token, 'content-type': 'application/json' },
+      '{"method":"get"}',
+    );
+    assert.equal(unknownConnWithTok.status, 200);
   } finally {
     dispose?.();
     if (prevHome === undefined) delete process.env.DSH_HOME;
@@ -747,6 +770,16 @@ await test('P1-7-to-P1-13-and-P2-audit-redact-preview-date-config-reinject-lock'
     assert.throws(() => stStore.update('s-lock', (d) => ({ ...d, failures: 2 })), { code: 'STATE_LOCKED' });
     writeFileSync(stReclaimGate, JSON.stringify({ pid: 99999999, at: new Date(0).toISOString() }));
     assert.equal(stStore.update('s-lock', (d) => ({ ...d, failures: 2 })).failures, 2);
+    // A-P2-1: released marker and inactive same-thread token are reclaimed;
+    // foreign worker_threads lock (different threadId) and legacy no-token lock stay locked
+    writeFileSync(stLockPath, JSON.stringify({ pid: process.pid, threadId, token: 'orphaned-token', at: new Date().toISOString() }));
+    assert.equal(stStore.update('s-lock', (d) => ({ ...d, failures: 3 })).failures, 3);
+    writeFileSync(stLockPath, JSON.stringify({ pid: process.pid, threadId: threadId + 1, token: 'worker-token', at: new Date().toISOString() }));
+    assert.throws(() => stStore.update('s-lock', (d) => ({ ...d, failures: 4 })), { code: 'STATE_LOCKED' });
+    writeFileSync(stLockPath, JSON.stringify({ released: true, pid: process.pid, threadId, token: 'any', at: new Date().toISOString() }));
+    assert.equal(stStore.update('s-lock', (d) => ({ ...d, failures: 4 })).failures, 4);
+    writeFileSync(stLockPath, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+    assert.throws(() => stStore.update('s-lock', (d) => ({ ...d, failures: 5 })), { code: 'STATE_LOCKED' });
 
     const smStore = new SessionMemoryStore(join(root, 'sm'));
     smStore.recordAttempt('s-mem-lock', { memory: null });
@@ -757,6 +790,12 @@ await test('P1-7-to-P1-13-and-P2-audit-redact-preview-date-config-reinject-lock'
     assert.throws(() => smStore.recordAttempt('s-mem-lock', { memory: null }), { code: 'SESSION_MEMORY_LOCKED' });
     writeFileSync(smReclaimGate, JSON.stringify({ pid: 99999999, at: new Date(0).toISOString() }));
     assert.equal(smStore.recordAttempt('s-mem-lock', { memory: null }).callsUsed, 2);
+    writeFileSync(smLockPath, JSON.stringify({ pid: process.pid, threadId, token: 'orphaned-token', at: new Date().toISOString() }));
+    assert.equal(smStore.recordAttempt('s-mem-lock', { memory: null }).callsUsed, 3);
+    writeFileSync(smLockPath, JSON.stringify({ pid: process.pid, threadId: threadId + 1, token: 'worker-token', at: new Date().toISOString() }));
+    assert.throws(() => smStore.recordAttempt('s-mem-lock', { memory: null }), { code: 'SESSION_MEMORY_LOCKED' });
+    writeFileSync(smLockPath, JSON.stringify({ released: true, pid: process.pid, threadId, token: 'any', at: new Date().toISOString() }));
+    assert.equal(smStore.recordAttempt('s-mem-lock', { memory: null }).callsUsed, 4);
 
     // Review B: handleConcurrentSliceReady reconciles durable commit even if aborted mid-commit,
     // without firing onAfterCommit or running _measure/_trackUpdate.
