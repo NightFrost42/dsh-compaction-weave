@@ -1,8 +1,8 @@
 [简体中文](principles.md) · [English](en/principles.md)
 
-# DSH Compaction Weave 工作原理（0.3.2）
+# DSH Compaction Weave 工作原理（0.6.0）
 
-DSH Compaction Weave 用来解决长对话“越聊越长、旧要求容易忘、工具日志撑爆窗口”的问题。它会把较早的对话整理成结构化**检查点**，保留当前目标、有效要求、已完成进度和下一步动作，并在默认配置下先把被替换的原始消息与附件写入本地归档，方便模型在需要核对细节时按需回查。本文用通俗方式介绍 `0.3.2` 的两级整理思路、预算公式、来源隔离、校验规则与故障恢复边界。
+DSH Compaction Weave 用来解决长对话“越聊越长、旧要求容易忘、工具日志撑爆窗口”的问题。它会把较早的对话整理成结构化**检查点**，保留当前目标、有效要求、已完成进度和下一步动作，并在默认配置下先把被替换的原始消息与附件写入本地 `zstd` 归档，方便模型在需要核对细节时通过 BM25F 多字段检索与分段读取按需回查。本文用通俗方式介绍 `0.6.0` 的两级整理思路、预算公式、来源隔离、校验规则、文件重注入脱敏与故障恢复边界。
 
 ---
 
@@ -11,7 +11,7 @@ DSH Compaction Weave 用来解决长对话“越聊越长、旧要求容易忘�
 在 DeepSeek Harness（DSH）中，主模型每一轮推理由宿主拼装当前的**可见消息表面**，平时不会自动把磁盘上的历史归档全量读进上下文。随着文件读取、终端日志和旧轮次不断累积，可见消息会逐步逼近模型窗口上限。在默认开启本地归档（`archiveEnabled: true`）时，Weave 采用**“先轻折工具输出、不够再总结对话”**的两级策略：
 
 1. **第一级：零模型调用的工具输出归档折叠（`observationMaskingEnabled: true`）**
-   - 对话膨胀很多时候不是聊了多少句，而是几次读文件、跑测试留下了几万字的工具返回。在**没有挂起后台分页接续、且本地归档与 `history_*` 工具均可用**的前提下，引擎会扫描保留近期尾部之外、超过 `observationMaskThresholdChars`（默认 `4000` 字符）的非报错工具结果（`tool/result`），先把完整原文写入本地归档，再把可见列表里的那条工具结果替换为**“开头 300 字 + 结尾 300 字预览”**（`observationMaskHeadChars` / `observationMaskTailChars`）以及一行 `history_read` 回查指引，让模型依然看得见报错摘要和关键轮廓。
+   - 对话膨胀很多时候不是聊了多少句，而是几次读文件、跑测试留下了几万字的工具返回。在**没有挂起后台分页接续、且本地归档与 `history_*` 工具均可用**的前提下，引擎会扫描保留近期尾部之外、超过 `observationMaskThresholdChars`（默认 `4000` 字符）的非报错工具结果（`tool/result`），先把完整原文写入本地归档，再把可见列表里的那条工具结果替换为包含**“开头 300 字 + 结尾 300 字 preview（超出 8 KiB 前部扫描或高熵场景启用 Tier-4 异常聚簇/声明骨架/浅 JSON 预览 `tool-preview.js`）”**（`observationMaskHeadChars` / `observationMaskTailChars`）以及一行 `history_read` 回查指引，让模型依然看得见报错摘要和关键轮廓。
    - **什么时候直接跳过总结模型**：在常规自动压力检查（`pressure`）时，引擎先凭估算节省量判断是否值得启动第一级；提交第一级后会**重新实测可见上下文大小**，只有实测总输入同时低于触发线 $T$ 且达到本次缩减目标（`<= initialReductionTarget`）时，才直接结束本轮并省掉摘要模型调用——避免刚改动前缀紧接着又发起摘要、打断提示词缓存；而在已经触发上下文溢出（`context-overflow`）时，会在宿主自带工具裁剪前优先把完整原件归档并折叠。报错工具结果和非文本内容块默认原样保留；若某条工具结果的历史来源链深度已达 `63` 层或单批依赖引用数超过 `3840` 条，则自动跳过以保护后续归档溯源。
 2. **第二级：结构化检查点摘要**
    - 当第一级无法单独释放足够空间，或进入手动 `/compact`、模型主动申请 `context_compact`、闲置后恢复压缩时，Weave 从可见历史中选出一段工具调用完整配对的区间，调用摘要模型把它折叠为单条结构化**检查点消息**。被折叠的原始事件、长代码片段、工具输出和附件会在替换前完整写入本地磁盘归档，后续可通过 `history_list`、`history_search` 和 `history_read` 按需检索。
@@ -179,11 +179,11 @@ $$D = \min(T - 1,\ \lfloor \text{currentInput} \times 0.8 \rfloor)$$
 
 ### 5.2 要求审计、授权出处核对、结构化进度校验与行重建
 
-- **领域无关的要求审计（Requirement Audit）**：剥离代码块与外部参考引用后，先核对全部有效用户要求在**检查点文本**中的词汇覆盖率（包含确定性填入的第六节近期原话，避免摘要正文缩写后误拒；对无空格连续中文按相邻双字切片，对英文和数字编码按词边界匹配，防止把 `Message 1` 误判为命中 `Message 10`），再单独检查**摘要正文**是否存在语义冲突——包括精确数字与归一化单位（支持毫秒/秒/分钟/小时/天、字节/KB/MB/GB 等同族换算）、否定极性（识别双重否定以及“不要遗漏 ↔ 完整保留”这类正反同义等价表述）、双侧前提条件（包括 `如果/除非`、英文后置条件与 `and`/`or` 子句比对）、上下限范围（`at least` / `at most`）、传输方向（`from X to Y`）、显式例外对象以及环境/批次/文件作用域。默认 `auditCoverageThreshold: 0.6` 是单条约束行的**词汇对齐判定阈值**，默认开启 `auditBlockOnLoss: true`，发现极性翻转 `CONSTRAINT_POLARITY_LOST` 或有效约束缺失 `CONSTRAINT_LOST` 时直接阻断提交。
-- **授权与批准出处核对**：只要**候选摘要正文**中出现“用户已批准/允许/同意执行某操作”的声明，引擎就会按真实用户消息的时间顺序重放真实的授权与撤回记录，逐条比对动作、范围、数值、传输方向与例外对象（先批准后撤回的操作不再算作有效授权，且按操作或特定编号撤回时互不误伤），无法追溯到真实用户授权的伪造批准声明会被 `CONSTRAINT_LOST` 拦截。
-- **显式 `key: value` 结构化进度校验（Progress Validation）**：`0.3.2` 不再依赖硬编码的“报告/图表/扫描/甲乙丙丁”业务名词字典，而是专注检查代码块与引用块之外的显式结构化键值事实（键名后缀为 `Count`、`Completed`、`Generated`、`Passed`、`Failed`、`Path`、`State`、`Status` 以及 `nextAction`，支持引号字符串、数字、布尔值或 `null`，按 `batch` / `批次` 工作作用域分别比对，并对原文计算 SHA-256 防篡改）。若摘要把来源已知数量改成 `null`、对着来源里本就记为 `null` 的字段擅自写出确定值，或在同一作用域上改写最新已知值，都会触发 `PROGRESS_FACT_CONFLICT`（若摘要明确带单一历史序号标注如 `seq=7` 且未使用“当前/最新”等词误导为现状，则允许客观转述历史阶段值；来源里本不存在的新键则不按冲突拦截）。同时，引擎仍提取跨度内最新助手工作报告 `work-report`（正文不超过 `3072` 字节且未被后续同作用域新进度取代时附原文与来源序号，否则改为来源序号坐标提示；元数据同时记录 SHA-256）。
+- **领域无关的要求审计（Requirement Audit）**：剥离代码块与外部参考引用后，基于 `lib/audit/` 6 层无环确定性审计管线检查全部有效用户要求在**检查点文本**中的词汇覆盖率（`auditCoverageScope` 默认 `'recent'` 聚焦近期原话窗口与本跨度新增要求，防止超长旧会话迁移误卡，同时支持 `'span-new'` / `'all'`），并在**全部三档范围下全局严格执行**语义冲突红线——包括精确数字与归一化单位（支持毫秒/秒/分钟/小时/天/周/月/年及 `B/KB/MB/GB` 同族换算，豁免句内编号序数如 `1.` 而保留真实参数）、否定极性（覆盖双重否定、`--flag`/`--no-flag`、布尔开关与 `enable`/`enabled`/`disable`/`disabled` 正反词形对称互翻）、双侧前提条件（包括 `如果/除非`、英文后置条件与 `and`/`or` 子句比对）、上下限范围（`at least` / `at most` / `no more than`）、传输方向（`from X to Y`）、显式例外对象以及环境/批次/文件作用域。默认 `auditCoverageThreshold: 0.6` 与 `auditBlockOnLoss: true`，若全部 retries 耗尽且仅剩 `<= 3` 处覆盖/软溯源争议，`auditExhaustionPolicy: 'fallback'` 会外挂经核验纯用户原话（`<= 2048` B `<pinned-source-rules>`）受控放行（极性反转 `CONSTRAINT_POLARITY_LOST` 与硬溯源违规永不兜底）。
+- **授权与批准出处核对**：只要**候选摘要正文**中出现“用户已批准/允许/同意执行某操作”的声明（含 Markdown 标题或孤立 `[seq N]` 引用句），引擎就会按真实用户消息的时间顺序重放真实的授权与撤回记录，逐条比对动作、范围、数值、传输方向与例外对象（先批准后撤回的操作不再算作有效授权，且按操作或特定编号撤回时互不误伤），无法追溯到真实用户授权的伪造批准声明会被 `CONSTRAINT_LOST` 拦截。
+- **显式 `key: value` 结构化进度校验（Progress Validation）**：`0.6.0` 不再依赖硬编码的“报告/图表/扫描/甲乙丙丁”业务名词字典，而是专注检查代码块与引用块之外的显式结构化键值事实（键名后缀为 `Count`、`Completed`、`Generated`、`Passed`、`Failed`、`Path`、`State`、`Status` 以及 `nextAction`，支持引号字符串、数字、布尔值或 `null`，按 `batch` / `批次` 工作作用域分别比对，并对原文计算 SHA-256 防篡改）。若摘要把来源已知数量改成 `null`、对着来源里本就记为 `null` 的字段擅自写出确定值，或在同一作用域上改写最新已知值，都会触发 `PROGRESS_FACT_CONFLICT`（若摘要明确带单一历史序号标注如 `seq=7` 且未使用“当前/最新”等词误导为现状，则允许客观转述历史阶段值；来源里本不存在的新键则不按冲突拦截）。同时，引擎仍提取跨度内最新助手工作报告 `work-report`（正文不超过 `3072` 字节且未被后续同作用域新进度取代时附原文与来源序号，否则改为来源序号坐标提示；元数据同时记录 SHA-256），并结合 `date-grounding.js` 为“明天/下周”等相对时间补充确定性日历锚点，以及在 `postCompactReinjectEnabled: true` 下重读最近活跃本地文件前完成 `+4 KiB` 预读边界内的未闭合 PEM 私钥体与凭据脱敏。
 - **确定性要求行重建**：当候选摘要仅因普通要求已匹配到的局部条款冲突未通过，且**既非** `PROGRESS_FACT_CONFLICT`、也非单纯整条漏写或授权伪造缺失（`coverage` / `provenance`）时，引擎可基于对应原始用户消息完整句在本地确定性替换有争议的表达，最多迭代 8 轮、被替换或删除的争议行内容哈希去重后不超过 16 条、总字节增长不超过 `8192` B，随后将重建稿作为新候选从头执行完整结构、进度、出处和双重体积缩小校验。
-- **外部读取坐标投影与多词归档检索**：非原样前缀复用路径构造摘要输入时，技能目录 `skill-catalog`、运行时上下文 `runtime-context` 及文件或网页读取结果（`read`、`read_file`、`ops_read_files`、`read_page`、`memory_get`、`skill`）会替换成一行紧凑定位提示（例如 `[External content omitted... Reload with read_file {"path":"..."}]`，只告诉模型路径或参数而不把几万字正文塞进摘要提示），同时完整原件保留在磁盘归档中；后续调用 `history_search` 支持空格分隔的多词同时匹配正文与元数据，并在搜索期间仅快速检查附件存在性与大小，由按需 `readSpan` / `readAttachment` 负责逐字节 SHA-256 校验。
+- **外部读取坐标投影、多字段 BM25F 检索与兼容工具执行**：非原样前缀复用路径构造摘要输入时，技能目录 `skill-catalog`、运行时上下文 `runtime-context` 及文件或网页读取结果（`read`、`read_file`、`ops_read_files`、`read_page`、`memory_get`、`skill`）会替换成一行紧凑定位提示（只告诉模型路径或参数而不把几万字正文塞进摘要提示），同时完整原件保留在 `zstd` 归档中；后续调用 `history_search` 通过纯 JS BM25F（CJK 双字 + 英文词干提取 + 2-hop 工具调用关联 + 子模去冗余 Top-K）检索正文与元数据，由 `readSpan` / `readAttachment` 按需执行逐字节 SHA-256 校验，且 `tools.js` 自动将严格工具模式下传来的 `null` / 空白可选参数规范化为缺省。
 
 ---
 
@@ -211,11 +211,12 @@ $$D = \min(T - 1,\ \lfloor \text{currentInput} \times 0.8 \rfloor)$$
 
 为便于评估插件在具体工作流中的表现，以下集中列出质量、容量、恢复与费用的适用边界：
 
-- **有损摘要与结构识别边界**：检查点本质是受审计约束的有损摘要加按需归档回查。`0.3.2` 将来源隔离建立在宿主事件通道与显式 XML 标签之上，并把进度校验聚焦到明确的 `key: value` 结构声明，消除了针对普通自然语言与特定业务名词表的脆弱启发式误伤。但自然语言表达仍具有多样性：复杂的中文间接否定（如“并非……”“不是……而是已被取代”）或用户消息内未用标签包裹的大段第三方摘录，仍可能引发误拒或漏检；未按 `key: value` 格式书写的自由叙述进度目前也不强制校验，依赖模型摘要与 `work-report` 保留。检查点中的助手 `work-report` 代表带来源序号的历史助手报告，不等同于外部环境的独立复验；回查文件时也需区分归档中的历史读取快照与磁盘上的当前最新文件。
+- **有损摘要与结构识别边界**：检查点本质是受审计约束的有损摘要加按需归档回查。`0.6.0` 将来源隔离建立在宿主事件通道与显式 XML 标签之上，并把进度校验聚焦到明确的 `key: value` 结构声明，同时支持 `auditCoverageScope` 范围窗口与 `extraReferenceSourceKinds` / `extraReferencePrefixes` 自定义注入过滤，消除了针对普通自然语言与特定业务名词表的脆弱启发式误伤。但自然语言表达仍具有多样性：未按常规英文 `enable`/`disable` 规则出现的极罕见双主体同句复合反义改写可能触发一次额外重构校验，而复杂的中文间接否定或用户消息内未用标签包裹的大段第三方摘录，仍可能引发误拒或漏检；未按 `key: value` 格式书写的自由叙述进度目前也不强制校验，依赖模型摘要与 `work-report` 保留。检查点中的助手 `work-report` 代表带来源序号的历史助手报告，不等同于外部环境的独立复验；回查文件时也需区分归档中的历史读取快照与磁盘上的当前最新文件。
+- **RPC 访问与多工作线程锁边界**：设置页 HTTP RPC 接入 DSH `webserver/index-inject` 进程级随机 `x-weave-rpc-token`（`timingSafeEqual`）、同源与绑定地址校验，并对 `conn.admit()` 返回的非 `owner` 会话（如 `share-viewer`）强制返回 `403`；持久化状态与后台记忆文件锁绑定 `threadId`、`(dev, ino)` 文件身份与原子 `.reclaim` 门禁。
 - **容量目标与分词计量边界**：默认的 20% 最小缩减幅度（`minimumReductionRatio: 0.2`）是自动压缩的规划目标。当系统提示词、近期保留尾部 $R$ 或不可拆分的单组超大工具调用占满窗口时，单次压缩可能无法释放 20% 空间，此时会跳过或转入后台接续。主上下文估算与摘要请求的 UTF-8 字节预算均为保守工程计量，并非模型供应商底层的精确分词器。
 - **宿主兼容范围与私有方法指纹边界**：插件声明兼容 `dsh >=0.2.2-rc.1 <1.0.0-0`（覆盖 `0.2.2-rc.1` 起的 `0.2.x` 至 `0.x` 系列版本；按 npm semver 规则不含 `1.0.0`），并已在 `DSH 0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.2-rc.3` 上完成原生 `.rollback` 原子事务验证（见 [benchmarks/rc3-host-compatibility.json](benchmarks/rc3-host-compatibility.json)）。由于默认启用了兼容模式（`strictHostFingerprints: false`），后续不影响核心语义的 `0.x` 小版本若调整宿主私有持久化方法实现，只要磁盘上没有遗留未恢复的 `.rollback`/`.tail` 原子日志，引擎会在保留前置本地归档的前提下发出一次提醒并平顺降级为宿主公开替换 API（`Session.append(replace)` + `sessions.flush()`）；仅当配置开启 `strictHostFingerprints: true` 时，才对未入白名单的方法体改动硬性拒绝压缩。
 - **多块提交与故障恢复边界**：后台分页接续在全部页面完成前不会替换主历史；常规多块压缩若中途失败会停留在已落盘分块的 `partial` 状态；磁盘持久提交后的内存发布失败可通过重新打开会话对齐磁盘状态；若 `.rollback` 原子恢复本身失败，会话写入会被隔离并保留现场恢复文件供排查。
-- **Token 缩减与实际 API 费用边界**：减少单次输入 tokens 与总账单变化受不同因素支配。即使第一级工具折叠免除摘要调用、同路由前缀复用提升了摘要请求自身命中缓存的机会，总费用仍取决于校验重生成、压缩后首答对主对话缓存前缀的影响、空闲时长以及供应商计费规则。多模型配对实验条件、GLM 代理单价情景估算与历史费用表见 [测试记录](testing.md)。
+- **Token 缩减与实际 API 费用边界**：减少单次输入 tokens 与总账单变化受不同因素支配。即使第一级工具折叠免除摘要调用、同路由前缀复用提升了摘要请求自身命中缓存的机会，总费用仍取决于校验重生成、压缩后首答对主对话缓存前缀的影响、空闲时长以及供应商计费规则。`Weave 0.6.0` 与 `dsh-basic`、`billion-context` 的三方实盘对比与真实宿主评测见 [测试记录](testing.md)。
 
 ---
 
@@ -224,13 +225,14 @@ $$D = \min(T - 1,\ \lfloor \text{currentInput} \times 0.8 \rfloor)$$
 深入实现细节可结合 [代码导航](architecture.md)、[配置指南](configuration.md)、[测试记录](testing.md)、[故障排查](troubleshooting.md) 与 [提交问题与日志脱敏](feedback.md) 查阅以下核心模块（每个源文件仅链接一次）：
 
 - 插件入口、命令与工具注册：[../lib/index.js](../lib/index.js)
-- 配置解析、窗口锁定与闲置重入判定：[../lib/config.js](../lib/config.js)、[../lib/window.js](../lib/window.js)、[../lib/idle-compaction.js](../lib/idle-compaction.js)
-- 第一级工具输出归档折叠与压缩主流水线：[../lib/observation-mask.js](../lib/observation-mask.js)、[../lib/engine.js](../lib/engine.js)
-- 缓存前缀保留策略、跨度选区与摘要预算规划：[../lib/cache-policy.js](../lib/cache-policy.js)、[../lib/region.js](../lib/region.js)、[../lib/summary-budget.js](../lib/summary-budget.js)
+- 配置解析、配置元表 SSOT、窗口锁定与闲置重入判定：[../lib/config.js](../lib/config.js)、[../lib/settings-schema.js](../lib/settings-schema.js)、[../lib/window.js](../lib/window.js)、[../lib/idle-compaction.js](../lib/idle-compaction.js)
+- 第一级工具输出归档折叠、Tier-4 预览与压缩主流水线：[../lib/observation-mask.js](../lib/observation-mask.js)、[../lib/tool-preview.js](../lib/tool-preview.js)、[../lib/engine.js](../lib/engine.js)
+- 缓存前缀保留策略、跨度选区、日期锚定与摘要预算规划：[../lib/cache-policy.js](../lib/cache-policy.js)、[../lib/region.js](../lib/region.js)、[../lib/date-grounding.js](../lib/date-grounding.js)、[../lib/summary-budget.js](../lib/summary-budget.js)
 - 宿主通道分类、XML 引用边界与请求投影：[../lib/source-provenance.js](../lib/source-provenance.js)、[../lib/instruction-source.js](../lib/instruction-source.js)、[../lib/reference-input.js](../lib/reference-input.js)
 - 用户要求生命周期、动作状态归一与近期原话选择：[../lib/memory-policy.js](../lib/memory-policy.js)、[../lib/action-state.js](../lib/action-state.js)
-- 要求与出处审计、结构化进度核对与确定性行重建：[../lib/audit.js](../lib/audit.js)、[../lib/progress-facts.js](../lib/progress-facts.js)、[../lib/reconstruct.js](../lib/reconstruct.js)
+- 6 层无环要求与出处审计、结构化进度核对与确定性行重建：[../lib/audit.js](../lib/audit.js)、[../lib/progress-facts.js](../lib/progress-facts.js)、[../lib/reconstruct.js](../lib/reconstruct.js)
+- 凭据/私钥脱敏与压缩后工作区文件安全重注入：[../lib/redact.js](../lib/redact.js)、[../lib/file-reinject.js](../lib/file-reinject.js)
 - 后台容量分页接续与持久化进度账本：[../lib/continuation.js](../lib/continuation.js)、[../lib/continuation-progress.js](../lib/continuation-progress.js)
-- 本地历史归档、附件存储与回查工具注册：[../lib/history.js](../lib/history.js)、[../lib/attachments.js](../lib/attachments.js)、[../lib/tools.js](../lib/tools.js)
+- 本地 `zstd` 归档、BM25F 多字段检索、附件存储与回查工具：[../lib/history.js](../lib/history.js)、[../lib/history-search.js](../lib/history-search.js)、[../lib/attachments.js](../lib/attachments.js)、[../lib/tools.js](../lib/tools.js)
 - 会话持久化事务提交、宿主方法指纹校验与原子替换恢复：[../lib/transaction.js](../lib/transaction.js)、[../lib/transaction-host.js](../lib/transaction-host.js)、[../lib/atomic-replace.js](../lib/atomic-replace.js)
 - 失败诊断元数据白名单与审计拒绝记录：[../lib/failure-diagnostics.js](../lib/failure-diagnostics.js)、[../lib/audit-reject.js](../lib/audit-reject.js)

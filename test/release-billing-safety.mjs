@@ -819,7 +819,7 @@ await test('http-rpc-enforces-same-origin-method-size-and-reactive-never-repeats
       assert.equal(badMethod.status, 405);
 
       const oversized = await invoke('POST', { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' }, 'x'.repeat(MAX_BODY_BYTES + 1));
-      assert.equal(oversized.status, 400);
+      assert.equal(oversized.status, 413);
       assert.equal(oversized.body?.error?.code, 'payload-too-large');
 
       const statusRes = await invoke('POST', { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' }, JSON.stringify({ method: 'status', params: { sessionId: 's1' } }));

@@ -1092,22 +1092,22 @@ await test('5-continuation-mapreduce-no-map-leak-and-secondary-compaction-stripp
     },
     streamHandler: (req) => {
       const promptJoined = (req.messages ?? []).map((m) => blocksToText(m.content)).join('\n');
-      const unconditionalClaim = 'Enforce snapshot checksums.';
+      const softProvClaim = 'The user approved snapshot checksum deployment.';
       if (promptJoined.includes('Independent notes for page') || promptJoined.includes('merging multiple summary pages')) {
         // Reduce call MUST NOT receive <pinned-source-rules> from map pages
         assert.doesNotMatch(promptJoined, /<pinned-source-rules/, 'map fallback must never leak <pinned-source-rules> into reduce');
-        return makeContinuationNotes(unconditionalClaim, 'Safe continuation merge.');
+        return makeContinuationNotes(softProvClaim, 'Safe continuation merge.');
       }
       if (promptJoined.includes('BEGIN ARCHIVED TRANSCRIPT DATA')) {
-        return makeContinuationNotes(unconditionalClaim);
+        return makeContinuationNotes(softProvClaim);
       }
-      return makeContinuationNotes(unconditionalClaim);
+      return makeContinuationNotes(softProvClaim);
     },
   });
   try {
     f.addSystem('System prompt baseline.');
     const uConstraint = f.addUser(
-      'Only enforce snapshot checksums if staging passes.\nOnly enforce snapshot checksums if staging passes and logs flush.',
+      'Always enforce immutable snapshot checksums across staging and production.\nAlways enforce immutable snapshot checksums across staging and production with audit logs.',
     );
     f.addAssistant('Working through phase 1. ' + 'Detailed telemetry record alpha '.repeat(150));
     f.addUser('Continue working through phase two.');
@@ -1139,7 +1139,8 @@ await test('5-continuation-mapreduce-no-map-leak-and-secondary-compaction-stripp
     const finalText = blocksToText(cont.checkpointBlocks);
     const matches = finalText.match(/<pinned-source-rules\b/g) ?? [];
     assert.equal(matches.length, 1, 'final continuation checkpoint mounts <pinned-source-rules> once');
-    assert.match(finalText, new RegExp(`\\[seq ${uConstraint.seq}\\]`));
+    assert.match(finalText, /unverified; re-confirm with the user before acting/);
+    assert.match(finalText, new RegExp(`\\[Source seq=${uConstraint.seq}\\]`));
     assert.ok(progressUpdates.some((p) => (p.auditFallbackCount ?? 0) >= 1));
 
     // Re-projecting that continuation checkpoint strips <pinned-source-rules> cleanly

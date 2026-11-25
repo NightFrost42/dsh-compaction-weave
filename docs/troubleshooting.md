@@ -23,12 +23,14 @@
 | 弹出 `billion-context` 并存/代理残留警告或 `413` `preflight_compress_failed`（`BILI_COEXISTENCE_CONFLICT` / `BILI_PROXY_CONFLICT`） | 请在插件管理页停用或卸载 `billion-context`（含 `billion-context-dsh`），检查模型供应商 `baseUrl` 是否仍指向 bili 的 `127.0.0.1` / `localhost` 本地代理并还原为直连上游地址，然后**彻底重启一次 DSH**（即使刚才已在界面里关闭过 `billion-context` 也必须彻底重启以清理内存钩子与代理端口）；普通上游 HTTP `413` / `model window` 窗口溢出由 Weave 接管重试与合法 Snip 兜底 |
 | 会话恢复或写隔离提示 | 保留存储目录中的事务日志与 `.rollback` 备份，重启宿主后查看恢复结果 |
 | 宿主兼容或私有方法校验提示 | 核对当前 DSH 版本是否处于 `>=0.2.2-rc.1 <1.0.0-0` 范围（正式原子事务实测覆盖 `0.2.2-rc.1`、`0.2.2-rc.2`、`0.2.2-rc.3`）；在默认 `strictHostFingerprints: false` 下，若宿主小更新调整私有持久化方法，插件会在确认无未恢复 `.rollback`/`.tail` 原子日志后发出一次兼容提示并自动改走公开 `Session.append(replace)` + `sessions.flush()`；仅当设为 `strictHostFingerprints: true` 或存在未恢复原子日志时才会阻止压缩并保留恢复材料 |
+| DSH Desktop `0.2.3-alpha.2+` 设置页 RPC `403 missing origin refused` / `403 owner role required` | 请升级至 `0.6.0` 并彻底重启 DSH（进程会随 `webserver/index-inject` 下发随机 `x-weave-rpc-token`，修复桌面端转发剥离 `Origin`/`Sec-Fetch-Site` 导致的 `403`）；若是在共享只读视图（如 `share-viewer`）下访问设置接口，服务端会按最小权限原则拒绝写/读配置并提示 `owner role required` |
+| 设置页顶部显示其它压缩引擎正在接管（`engineActive` 警告横幅） | 表示当前预设或运行环境中存在其它上下文压缩引擎接管了官方压缩槽位（例如 `dsh-world` 或 `billion-context`），请按横幅提示停用冲突配置并重启 DSH |
 
 ## 审计误拒与自然语言边界
 
-`PROGRESS_FACT_CONFLICT` 表示候选摘要中的显式 `key: value` 结构化进度字段（如 `*Count`、`*Completed`、`*Generated`、`*Passed`、`*Failed`、`*Path`、`*State`、`*Status` 与 `nextAction`）与来源消息里同一工作作用域的最新记录相矛盾（例如把已知数量写成 `null`，或把历史 `seq` 数值误写为当前进度）。常规诊断文件仅记录错误码、阶段、尝试状态、有效设置、估算值与 `auditReports` 索引，不保存来源事件序号、用户原话或候选摘要正文；排查时需通过诊断文件中的 `auditReports` 打开对应的 `audit-reject/` 文件，对照其中的来源事件序号、源消息片段与候选摘要表述，确认是模型漏写最新状态、混用不同作用域还是审计规则误判。
+`PROGRESS_FACT_CONFLICT` 表示候选摘要中的显式 `key: value` 结构化进度字段（如 `*Count`、`*Completed`、`*Generated`、`*Passed`、`*Failed`、`*Path`、`*State`、`*Status` 与 `nextAction`）与来源消息里同一工作作用域的最新记录相矛盾（例如把已知数量写成 `null`，或把历史 `seq` 数值误写为当前进度）。常规诊断文件仅记录错误码、阶段、尝试状态、有效设置、估算值与 `auditReports` 索引，不保存来源事件序号、用户原话或候选摘要正文；`0.6.0` 的 `audit-reject/` 文件已直接记录 `summaryChars`、`requirementLines`、`coverageThreshold`、`blockingLost`、`softCoverageCount`、`auditCoverageScope` 与 `auditFallback`，对照其中的来源事件序号、源消息片段与候选摘要表述即可快速定位。
 
-`0.3.2` 将来源隔离改为直接识别宿主事件通道与显式标签边界（工具结果及系统上下文参照不再被当成用户命令；若你在自己的用户消息里粘贴了包含要求句式的大段第三方材料，建议用 `<quoted_text>...</quoted_text>` 或代码块包起来以明确区分），并将要求核对升级为双字切片与词边界、双侧条件、正反同义极性及按用户历史重放授权出处，大幅减少对日常自然语言的误拒；不过复杂的中文间接否定（如“并非……”“不是……而是已被取代”）仍属于已知识别边界。若确认候选摘要与最新来源一致却仍被拒绝，欢迎附带最小复现片段、错误码与模型信息提交 Issue。当某条已对应上的用户要求仅存在局部表述冲突（且未触发进度冲突、整条漏写或假授权拦截）时，引擎也会优先尝试用用户原话确定性替换该争议句。
+来源隔离直接基于宿主事件通道与显式标签边界（工具结果及系统上下文参照不再被当成用户命令；若你在自己的用户消息里粘贴了包含要求句式的大段第三方材料，建议用 `<quoted_text>...</quoted_text>` 或代码块包起来以明确区分）；默认 `auditCoverageScope: 'recent'` 将覆盖率硬审计收敛在近期原话与本跨度新增要求内（超长历史/旧窗口迁移不再因早期条数过多而卡死），同时所有硬冲突红线（极性、数值、单位、条件、范围、关系、例外、引用、来源溯源）依然全局强制执行。若确认候选摘要与最新来源一致却仍被拒绝，欢迎附带最小复现片段、错误码与模型信息提交 Issue。当某条已对应上的用户要求仅存在局部表述冲突（且未触发进度冲突、整条漏写或假授权拦截）时，引擎也会优先尝试用用户原话确定性替换该争议句。
 
 ## 诊断文件位置与内容
 
@@ -60,7 +62,7 @@
 
 ```bash
 dsh plugin --profile web add dsh-compaction-weave
-dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.5.2.tgz
+dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.6.0.tgz
 dsh plugin --profile web remove dsh-compaction-weave
 ```
 

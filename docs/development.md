@@ -18,7 +18,7 @@ npm run pack:release
 
 `npm test` 自动发现 `test/` 的测试套件，用独立进程和临时 `DSH_HOME` 执行。单个套件有时间上限，失败日志和汇总保存在 `.local/test-results/`。
 
-`npm run check` 检查 JavaScript 语法、JSON、包入口、文档链接、发布版本和发布文件中的敏感信息模式。
+`npm run check` 检查 JavaScript 语法、JSON、包入口、文档链接、发布版本、发布文件中的敏感信息模式，以及非客户端 `lib/` ESM 模块拓扑的 **`0` 环 DAG 门禁**（当前覆盖 `91` 个非客户端模块）。
 
 ### 宿主集成测试
 
@@ -77,10 +77,10 @@ GitHub Actions 在 Windows 与 Linux 上使用 Node.js 24 运行离线测试、�
 5. 如需本机手动发布到 npm，发布已验证的 tarball（npm 11+ 对本地相对路径要求保留 `./` 前缀，否则会被误解析为 GitHub `owner/repo` 简写）：
 
 ```bash
-npm publish ./dist/dsh-compaction-weave-0.5.2.tgz --tag latest --access public
+npm publish ./dist/dsh-compaction-weave-0.6.0.tgz --tag latest --access public
 ```
 
-正式版默认发布标签为 `latest`（如需发布预览候选版，则改用预发布版本号并将 `publishConfig.tag` 设为 `next`）。
+正式版默认发布标签为 `latest`（如需发布预览候选版，则改用预发布版本号并将 `publishConfig.tag` 设为 `next` 或 `hotfix` 等自定义通道）。
 
 ### 自动发版（GitHub Actions + npm Trusted Publishing）
 

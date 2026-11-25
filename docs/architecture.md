@@ -32,9 +32,9 @@ Weave 在 DSH 的会话维护阶段整理上下文。一次压缩按以下顺序
 
 ## 要求与来源
 
-`memory-policy.js` 处理要求的生效、修订、取消与去重。近期原话遵循条数和 token 预算，仍有效的要求独立保留。
+`memory-policy.js` 处理要求的生效、修订、取消与去重（包含明确变更引导与右置取消从句退场，同时保护条件作用域）。近期原话遵循条数和 token 预算，仍有效的要求独立保留。
 
-`audit.js` 检查要求的覆盖、数值、否定、条件和适用对象。测试环境与生产环境、不同文件及不同批次分别判断。
+`lib/audit/` 采用 6 层无环子模块组织（`normalize.js` → `numeric.js` → `clauses.js` → `polarity.js` / `provenance.js` → `compaction.js`，由 `audit.js` 聚合重导出），统一覆盖规范化、单位等价换算、句内编号与条件子句切分、CLI/布尔开关与正反词形极性校验、来源溯源，以及 `auditCoverageScope` 范围化的覆盖率检查。
 
 原始事件号、文本片段和哈希共同标识来源。历史检查点中的生成文字不会成为新的原始要求；下一代压缩仍从经过核验的原始事件恢复依据。
 
@@ -56,29 +56,34 @@ Weave 在 DSH 的会话维护阶段整理上下文。一次压缩按以下顺序
 
 ## 归档与提交
 
-归档以消息区间组织，保存原始事件、消息块和工具关系。附件按 SHA-256 保存和按需校验（`history_search` 文本检索仅核验存在性与字节大小，显式 `readSpan`/`readAttachment` 执行逐字节校验），历史工具提供多词联合检索与分段读取。
+归档以消息区间组织，保存原始事件、消息块和工具关系，默认通过 Node.js 24 原生 `zstd` 无损压缩存储。`history-search.js` 提供纯 JS BM25F 多字段检索（CJK 双字 + 英文词干 + 子模去冗余 Top-K + 2-hop 关联 + 按 span 失效的有界 LRU 缓存）；附件按 SHA-256 保存并支持元数据优先/按需逐字节读取（`tools.js` 同时兼容严格工具模式下的 `null`/空白可选参数）。
 
-事务适配器对经审查的 DSH `0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.2-rc.3` 宿主方法（含单条与批量 `Session.append` 实现及去除注释/空白后的归一化方法签名）做指纹核验，按“单趟拷贝兼哈希备份、持久化替换、持久化成功决定、发布”的顺序提交；若遇到未知宿主方法体则在摘要请求与历史修改前直接拒绝并保留已有恢复材料。成功决定前失败可恢复已核验的备份；决定后发布异常会隔离写入并要求冷重开会话，保留已持久成功的历史。
+事务适配器对经审查的 DSH `0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.2-rc.3` 宿主方法（含单条与批量 `Session.append` 实现及去除注释/空白后的归一化方法签名）做指纹核验，按“单趟拷贝兼哈希备份、持久化替换、持久化成功决定、发布”的顺序提交；若遇到未知宿主方法体则在摘要请求与历史修改前直接拒绝并保留已有恢复材料。成功决定前失败可恢复已核验的备份；决定后发布异常会隔离写入并要求冷重开会话，保留已持久成功的历史。`state.js` 与 `session-memory.js` 的跨进程/工作线程状态锁绑定 `threadId`、文件 `(dev, ino)` 身份与原子 `.reclaim` 门禁。
 
 ## 插件入口
 
 `cordis.patch.yml` 注册配置入口，并让四种 preset 在入口就绪后加载。入口将 preset 中的基础压缩引擎替换为 Weave，合并原有配置与插件设置。
 
-`client.js` 注册“摘要模型”设置页；`summary-config.js` 负责读取、校验和保存设置；`command-compact.js` 接入手动命令。
+`client.js`（单文件无外部 ESM 导入、无 `setInterval`）基于 `settings-schema.js` 的元数据驱动声明式渲染设置页与实时进度卡片（含 `engineActive` 接管冲突提示及 `ReactDOM.createPortal` 弹窗）；`index.js` 通过 `webserver/index-inject` 注入进程级 `x-weave-rpc-token`（`timingSafeEqual` + 非 `owner` 角色 `403` 拦截 + 同源头校验）；`summary-config.js` 负责读取、校验和保存设置；`command-compact.js` 接入手动命令。
 
 ## 代码导航
 
+Run-time 共 `92` 个 `lib/**/*.js` 模块（除独立打包的单文件 `client.js` 外，其余 `91` 个非客户端 ESM 模块由 `scripts/check.mjs` 强制执行 **`0` 环 DAG** 拓扑校验）：
+
 | 目录或模块 | 职责 |
 | --- | --- |
-| `lib/index.js`、`engine-entry.js` | DSH 加载与配置入口 |
-| `lib/engine.js`、`idle-compaction.js` | 选区、分级压缩、闲置判定、生成、检查和提交流程 |
-| `lib/observation-mask.js` | 第一级工具输出归档折叠与 `history_read` 预览 |
-| `lib/cache-policy.js`、`region.js` | 前缀复用、工具配对、区间选择与归档指针 |
+| `lib/index.js`、`engine-entry.js`、`hooks.js` | DSH 加载、RPC 安全守卫、`hookBus` 事件桥接与配置入口 |
+| `lib/engine.js`、`lib/engine/*.js`（8 模块）、`idle-compaction.js` | 选区、路由预算、可恢复断点、并发折叠、迁移与事务提交 |
+| `lib/observation-mask.js`、`tool-preview.js` | 第一级工具输出归档折叠、Tier-4 散文/骨架预览 |
+| `lib/cache-policy.js`、`region.js`、`date-grounding.js` | 前缀复用、工具配对、相对日期确定性锚定与归档指针 |
 | `lib/source-provenance.js`、`instruction-source.js`、`reference-input.js` | 宿主通道分类、`<untrusted_reference>` / `<channel-provenance>` XML 隔离 |
-| `lib/memory-policy.js`、`audit.js` | 要求生命周期与通用确定性审计 |
+| `lib/memory-policy.js`、`lib/audit.js`、`lib/audit/*.js`（6 层模块） | 要求生命周期、6 层无环确定性审计与来源校验 |
+| `lib/redact.js`、`lib/file-reinject.js` | 统一凭据/线性 PEM 私钥脱敏与压缩后安全文件重注入 |
 | `lib/progress-facts.js`、`work-report.js` | 结构化 `key: value` 进度与报告来源 |
 | `lib/summary-*.js`、`continuation*.js` | 摘要请求、分页、重试与恢复 |
-| `lib/history.js`、`attachments.js`、`tools.js` | 归档与历史回查 |
-| `lib/transaction*.js`、`journal.js`、`state.js` | 事务与持久化状态 |
-| `lib/failure-diagnostics.js`、`audit-reject.js` | 失败诊断与拒绝样本 |
-| `test/` | 离线回归与宿主集成测试 |
+| `lib/history.js`、`history-search.js`、`attachments.js`、`tools.js` | `zstd` 归档、BM25F 多字段检索与 `history_*` 工具 |
+| `lib/persisted-output.js`、`microcompact.js`、`snip.js`、`context-collapse.js` | 分级溢出拦截、闲置 0-LLM 轻压缩、Snip 急救与上下文折叠 |
+| `lib/transaction*.js`、`journal.js`、`state.js`、`session-backup.js`、`bili-conflict.js` | 事务提交、并发锁、会话完整备份与 `billion-context` 兼容迁移 |
+| `lib/failure-diagnostics.js`、`audit-reject.js`、`audit-fallback.js` | 脱敏失败诊断、拒稿证据落盘与受控耗尽兜底 |
+| `lib/settings-schema.js`、`summary-config.js`、`client.js` | 设置元表 SSOT、热配置存储与单文件 WebUI |
+| `test/` | 离线回归（103 套）与 DSH 宿主集成测试（8 套） |

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
 import { threadId } from 'node:worker_threads';
 
@@ -14,27 +14,34 @@ import {
   auditCompaction,
   auditInstructionProvenance,
 } from '../lib/audit.js';
+import { classifyBlockingAuditLost, diagnoseHeuristicFallbackVerdict } from '../lib/audit-fallback.js';
 import { numericFacts } from '../lib/audit/numeric.js';
+import { clauseMatchesSingle, extractBooleanSwitches, extractCliFlags } from '../lib/audit/polarity.js';
 import { dumpAuditRejection } from '../lib/audit-reject.js';
 import { runConcurrentPool } from '../lib/concurrency.js';
 import { DEFAULT_CONFIG, resolveCompactSpec, resolveConfig } from '../lib/config.js';
 import { continuationCallBudget } from '../lib/continuation-budget.js';
+import { ContinuationProgressStore } from '../lib/continuation-progress.js';
 import { extractDateGroundings, renderDateGrounding } from '../lib/date-grounding.js';
 import { WeaveCompactionEngine } from '../lib/engine.js';
 import { handleConcurrentSliceReady } from '../lib/engine/parallel-fold.js';
+import { clearInMemoryBreaker } from '../lib/engine/recovery.js';
 import { retryCompactionFor } from '../lib/engine/resumable.js';
-import { resolveTargetRoute } from '../lib/engine/routing-budget.js';
+import { resolveSpec, resolveTargetRoute } from '../lib/engine/routing-budget.js';
 import { failureExplanation } from '../lib/failure-diagnostics.js';
 import { collectActiveWorkspaceFiles } from '../lib/file-reinject.js';
-import { CompactionArchive } from '../lib/history.js';
+import { CompactionArchive, extractSpanIndexMetadata } from '../lib/history.js';
 import { apply as mountGate } from '../lib/index.js';
+import { instructionText, referenceTexts } from '../lib/instruction-source.js';
 import { CompactionJournal } from '../lib/journal.js';
 import { selectMemoryMessages } from '../lib/memory-policy.js';
 import { CompactionProgressTracker } from '../lib/progress-tracker.js';
+import { reconstructDisputedLines } from '../lib/reconstruct.js';
 import { redactCredentials, redactPemPrivateKeys } from '../lib/redact.js';
 import { SessionBackupStore } from '../lib/session-backup.js';
 import { SessionMemoryStore } from '../lib/session-memory.js';
 import { clearBreakerState, SessionStateStore } from '../lib/state.js';
+import { summarizeWithTarget } from '../lib/summary.js';
 import { handleSummaryConfigRpc, mergeSummaryConfig, readSummaryConfig } from '../lib/summary-config.js';
 import { retryableSummaryError } from '../lib/summary-retry.js';
 import { buildToolPreview, extractSalientProse } from '../lib/tool-preview.js';
@@ -526,12 +533,12 @@ await test('P0-1-P1-1-P2-8-rpc-admit-electron-fallback-viewer-gate-and-body-limi
     );
     assert.equal(badTokOrigin.status, 403);
 
-    // Oversized body >64KiB writes 400 JSON without premature req.destroy()
+    // Oversized body >64KiB writes 413 JSON without premature req.destroy()
     const oversized = await sendRaw(
       { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' },
       JSON.stringify({ method: 'get', pad: 'x'.repeat(70 * 1024) }),
     );
-    assert.equal(oversized.status, 400);
+    assert.equal(oversized.status, 413);
     assert.equal(oversized.json.error?.code, 'payload-too-large');
     assert.equal(oversized.destroyed, false);
 
@@ -1024,6 +1031,560 @@ await test('P1-7-to-P1-13-and-P2-audit-redact-preview-date-config-reinject-lock'
   const logBody = `${'step ok\n'.repeat(60)}FAILED (0 errors, 2 failures)\n${'tail ok\n'.repeat(60)}`;
   const prev = buildToolPreview(logBody, { headChars: 200, tailChars: 200 });
   assert.ok(prev && prev.middle.includes('FAILED (0 errors, 2 failures)'));
+});
+
+await test('v060-release-gate-p0-1-and-p1-4-5-6-7-real-section6-audit-regressions', async () => {
+  const wrapWithSection6 = (proseLine, rawUserText) => ({
+    userMessages: [{ seq: 1, sourceKind: 'user', text: rawUserText }],
+    summaryText: [
+      '## 1. Primary Request and Intent',
+      `- ${proseLine}`,
+      '## 2. Key Technical Concepts',
+      `- ${proseLine}`,
+      '## 3. Files and Code Sections',
+      '- none',
+      '## 4. Errors and Fixes',
+      '- none',
+      '## 5. Problem Solving',
+      '- none',
+      '## 6. All User Messages',
+      '[filled by engine]',
+      '## 7. Pending Tasks',
+      '- none',
+      '## 8. Work Completed',
+      '- none',
+      '## 9. Context for Continuing Work',
+      `- ${proseLine}`,
+    ].join('\n'),
+    checkpointText: [
+      '## 1. Primary Request and Intent',
+      `- ${proseLine}`,
+      '## 2. Key Technical Concepts',
+      `- ${proseLine}`,
+      '## 3. Files and Code Sections',
+      '- none',
+      '## 4. Errors and Fixes',
+      '- none',
+      '## 5. Problem Solving',
+      '- none',
+      '## 6. All User Messages',
+      `- ${rawUserText}`,
+      '## 7. Pending Tasks',
+      '- none',
+      '## 8. Work Completed',
+      '- none',
+      '## 9. Context for Continuing Work',
+      `- ${proseLine}`,
+    ].join('\n'),
+  });
+
+  // P0-1: [seq N] compound grant escalation rejected (ZH + EN + numeric), Issue #11 short attribution preserved
+  const zhEscalation = auditInstructionProvenance({
+    userMessages: [{ seq: 1, sourceKind: 'user', text: '可以删除 temp.log' }],
+    summaryText: '用户已批准删除 temp.log 并删除 users_v2.db 和全部客户数据 [seq 1]。',
+  });
+  assert.ok(zhEscalation.length >= 1, 'P0-1 ZH compound [seq 1] escalation must be blocked');
+
+  const enEscalation = auditInstructionProvenance({
+    userMessages: [{ seq: 1, sourceKind: 'user', text: 'Go ahead and push to feature-branch.' }],
+    summaryText: 'The user approved pushing to feature-branch and pushing to main and publishing package_v2 [seq 1].',
+  });
+  assert.ok(enEscalation.length >= 1, 'P0-1 EN compound [seq 1] escalation must be blocked');
+
+  const numEscalation = auditInstructionProvenance({
+    userMessages: [{ seq: 1, sourceKind: 'user', text: '可以删除 10s 缓存。' }],
+    summaryText: '用户已批准删除 30s 缓存 [seq 1]。',
+  });
+  assert.ok(numEscalation.length >= 1, 'P0-1 numeric mismatch under [seq 1] must be blocked');
+
+  const issue11Short = auditInstructionProvenance({
+    userMessages: [{ seq: 35367, sourceKind: 'user', text: '现在提前开始任务吧，务必认真' }],
+    summaryText: '**Round4（用户 seq 35367 批准）**：提前开跑。',
+  });
+  assert.equal(issue11Short.length, 0, 'P0-1 Issue #11 short attribution must stay allowed');
+
+  // P1-4: real Section 6 disable/enable negation inversion caught with reason=polarity
+  assert.equal(clauseMatchesSingle('禁止停用 TLS', '不要启用 TLS。', 0.6), true);
+  const disableEnableFlip = auditCompaction(wrapWithSection6('不要启用 TLS。', '禁止停用 TLS。'));
+  assert.ok(disableEnableFlip.polarityFlips >= 1);
+  assert.ok(disableEnableFlip.lost.some((x) => x.reason === 'polarity'));
+
+  // P1-5: arrow boolean transitions, English negative contractions, conservative English `and` split
+  const arrowSwitches = extractBooleanSwitches('Must set debug: false -> true.');
+  assert.deepEqual([...(arrowSwitches.get('debug') ?? [])], [true]);
+  const arrowFaithful = auditCompaction(wrapWithSection6('Must set debug: true.', 'Must set debug: false -> true.'));
+  assert.equal(arrowFaithful.lost.length, 0);
+  const arrowInverted = auditCompaction(wrapWithSection6('Must set debug: false.', 'Must set debug: false -> true.'));
+  assert.ok(arrowInverted.polarityFlips >= 1 && arrowInverted.lost.some((x) => x.reason === 'polarity'));
+
+  for (const negVerb of ['cannot', "can't", "shouldn't", "mustn't", "won't", "wouldn't"]) {
+    const posVerb = negVerb === 'cannot' || negVerb === "can't" ? 'can'
+      : negVerb === "shouldn't" ? 'should'
+        : negVerb === "mustn't" ? 'must'
+          : negVerb === "won't" ? 'will' : 'would';
+    const flipRes = auditCompaction(
+      wrapWithSection6(`Please remember you ${posVerb} delete production data.`, `Please remember you ${negVerb} delete production data.`),
+    );
+    assert.ok(flipRes.polarityFlips >= 1 && flipRes.lost.length >= 1, `P1-5 contraction ${negVerb} flip must be caught`);
+  }
+
+  const andCliFlags = extractCliFlags('Always pass --dry-run and do not pass --force.');
+  assert.deepEqual([...(andCliFlags.get('dry-run') ?? [])], [true]);
+  assert.deepEqual([...(andCliFlags.get('force') ?? [])], [false]);
+  const nonSplitPhrase = auditCompaction(wrapWithSection6('Allow read and write operations.', 'Allow read and write operations.'));
+  assert.equal(nonSplitPhrase.lost.length, 0);
+
+  // P1-6: backtick & fenced <untrusted_reference> must not swallow constraints; NEGATED_OR_PENDING_APPROVAL_RE narrowed
+  const codeSpanMsg = { seq: 1, sourceKind: 'user', text: 'Handle `<untrusted_reference>` in parser.\nNever expose API keys.' };
+  assert.equal(referenceTexts(codeSpanMsg).length, 0);
+  assert.ok(instructionText(codeSpanMsg).includes('Never expose API keys.'));
+  const fencedMsg = { seq: 1, sourceKind: 'user', text: 'Example:\n```xml\n<untrusted_reference>\n```\nNever expose API keys.' };
+  assert.equal(referenceTexts(fencedMsg).length, 0);
+  assert.ok(instructionText(fencedMsg).includes('Never expose API keys.'));
+
+  assert.ok(
+    auditInstructionProvenance({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: '先查看状态，别删数据库。' }],
+      summaryText: '不用担心并已获用户批准删除生产库。',
+    }).length >= 1,
+    'P1-6 unrelated reassurance phrase must not bypass provenance',
+  );
+  assert.ok(
+    auditInstructionProvenance({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: '先查看状态，别删数据库。' }],
+      summaryText: 'With no further delay the user approved deleting production database.',
+    }).length >= 1,
+    'P1-6 "no further delay" must not bypass provenance',
+  );
+  assert.equal(
+    auditInstructionProvenance({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: '先查看状态。' }],
+      summaryText: '未经安全团队评审批准前不得发布到生产环境。',
+    }).length,
+    0,
+    'P1-6 conditional pending gate must remain allowed',
+  );
+
+  // P1-7: strict open vs closed inequality bounds (no XML tag false positives)
+  const strictZhFlip = auditCompaction(wrapWithSection6('延迟必须大于 200ms。', '延迟必须小于 200ms。'));
+  assert.ok(strictZhFlip.lost.some((x) => x.reason === 'range'));
+  const strictWeakened = auditCompaction(wrapWithSection6('Timeout must be at most 30s.', 'Timeout must be less than 30s.'));
+  assert.ok(strictWeakened.lost.some((x) => x.reason === 'range'));
+  const xmlTagOk = auditCompaction(wrapWithSection6('Keep <tag> formatting valid.', 'Keep <tag> formatting valid.'));
+  assert.equal(xmlTagOk.lost.length, 0);
+
+  // Native DSH V4 Session Section-6 E2E verification when host runtime is mounted
+  if (process.env.DSH_TEST_NODE_MODULES) {
+    const { Session } = await import(pathToFileURL(join(process.env.DSH_TEST_NODE_MODULES, '@deepseek-ai', 'dsh-session', 'lib', 'index.js')).href);
+    const v4Sid = `v4-sec6-${randomUUID()}`;
+    const sess = Session.create(v4Sid, undefined, { version: 4, id: v4Sid, createdAt: Date.now(), isSeeded: false });
+    sess.append('user/message', { id: randomUUID(), role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '禁止停用 TLS。' }] }, { surfaceOp: 'append' });
+    const derived = sess.surface.nodes.map((seq) => {
+      const m = sess.deriveEventMessage(sess.eventAt(seq));
+      return { seq, sourceKind: m?.source?.kind ?? 'user', text: '禁止停用 TLS。' };
+    });
+    const badSec6 = wrapWithSection6('不要启用 TLS。', '禁止停用 TLS。');
+    const res = auditCompaction({ userMessages: derived, summaryText: badSec6.summaryText, checkpointText: badSec6.checkpointText });
+    assert.ok(res.polarityFlips >= 1 && res.lost.some((x) => x.reason === 'polarity'));
+  }
+});
+
+await test('v060-release-gate-p1-1-2-3-and-p2-1-8-security-locks-and-client-regressions', async () => {
+  const root = await mkdtemp(join(TEST_BASE, 'weave-v060-gate-'));
+  const prevHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = root;
+  try {
+    // P1-1: gate-receipts strips plugin tree/secrets, enforces 0o600 on POSIX & rolling size cap
+    let configHook = null;
+    const siblingSecret = 'sk-' + 'sibling-plugin-secret-9876543210';
+    const receiptPath = join(root, 'storages', 'dsh-compaction-weave', 'gate-receipts.jsonl');
+    const disposeReceipt = mountGate(
+      {
+        on(ev, fn) {
+          if (ev === 'internal/config') configHook = fn;
+          return () => {};
+        },
+        provide() {},
+        inject() { return () => {}; },
+      },
+      { mode: 'replace', receiptPath },
+    );
+    try {
+      await writeFile(
+        receiptPath.replace(/gate-receipts\.jsonl$/, ''),
+        '',
+      ).catch(() => {});
+      mkdirSync(join(root, 'storages', 'dsh-compaction-weave'), { recursive: true });
+      await writeFile(receiptPath, 'x'.repeat(260 * 1024) + '\n', 'utf8');
+      configHook?.call(
+        { entry: { options: { name: 'preset-standard' } } },
+        null,
+        () => ({
+          plugins: [
+            { id: 'basic', name: '@deepseek-ai/dsh-compaction-basic', config: {} },
+            { id: 'sibling', name: 'some-llm-plugin', config: { apiKey: siblingSecret } },
+          ],
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 80));
+      const receiptTxt = await readFile(receiptPath, 'utf8');
+      assert.equal(receiptTxt.includes(siblingSecret), false, 'P1-1 must not leak sibling secret');
+      assert.equal(receiptTxt.includes('some-llm-plugin'), false, 'P1-1 must not dump plugins tree');
+      const lastLine = JSON.parse(receiptTxt.trim().split('\n').pop());
+      assert.deepEqual(Object.keys(lastLine.rewritten).sort(), ['inheritedAutoFalse', 'rewritten', 'strippedDisabled']);
+      assert.ok(Buffer.byteLength(receiptTxt, 'utf8') <= 256 * 1024, 'P1-1 must keep receipt bounded <= 256 KiB');
+      if (process.platform !== 'win32') {
+        assert.equal(statSync(receiptPath).mode & 0o777, 0o600);
+      }
+    } finally {
+      disposeReceipt?.();
+    }
+
+    // P1-2: PEM/PGP/unclosed/mismatched/indented, PAT/JWT/URL/explicit AWS Secret vs preserved 40-hex Git SHA-1
+    const beginPem = ['-----BEG', 'IN RSA PRIVATE KEY-----'].join('');
+    const mismatchedEnd = ['-----E', 'ND PRIVATE KEY-----'].join('');
+    const beginPgp = ['-----BEG', 'IN PGP PRIVATE KEY BLOCK-----'].join('');
+    const endPgp = ['-----E', 'ND PGP PRIVATE KEY BLOCK-----'].join('');
+    assert.equal(redactCredentials(`a\n${beginPem}\nMIIEpAIBAAKCAQEA1234567890abcdef\nnot-pem-line`).includes('MIIEpAIBAAKCAQEA'), false);
+    assert.equal(redactCredentials(`${beginPem}\nMIIEpAIBAAKCAQEA1234567890abcdef\n${mismatchedEnd}`).includes('MIIEpAIBAAKCAQEA'), false);
+    assert.equal(redactCredentials(`${beginPgp}\nlQOYBGZTestBody1234567890\n${endPgp}`).includes('lQOYBGZTestBody1234567890'), false);
+    const awsSecretVal = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
+    const ghPatVal = ['github_pat_', '11ABCDEFG0123456789_xyz9876543210abcdef'].join('');
+    const jwtVal = ['eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9', 'eyJzdWIiOiIxMjM0NTY3ODkwIn0', 'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'].join('.');
+    const gitSha1 = '0123456789abcdef0123456789abcdef01234567';
+    const secretSample = [
+      `AWS_SECRET_ACCESS_KEY=${awsSecretVal}`,
+      `GH_PAT=${ghPatVal}`,
+      `JWT=${jwtVal}`,
+      'DB_URL=postgres://admin:SuperSecretPass123@db.prod.internal:5432/prod',
+      `commit ${gitSha1}`,
+    ].join('\n');
+    const redDefault = redactCredentials(secretSample, { redactBase64Blobs: true });
+    assert.equal(redDefault.includes(awsSecretVal), false);
+    assert.equal(redDefault.includes('github_pat_11ABCDEFG'), false);
+    assert.equal(redDefault.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'), false);
+    assert.equal(redDefault.includes('SuperSecretPass123'), false);
+    assert.equal(redDefault.includes(gitSha1), true, 'P1-2 must not false-positive on 40-hex Git SHA-1');
+
+    const ws = join(root, 'ws-sensitive');
+    mkdirSync(join(ws, '.aws'), { recursive: true });
+    writeFileSync(join(ws, '.envrc'), 'export SECRET=1\n');
+    writeFileSync(join(ws, 'prod.tfvars'), 'pw = "1"\n');
+    writeFileSync(join(ws, 'auth.json'), '{"tok":"1"}\n');
+    writeFileSync(join(ws, 'service-account-prod.json'), '{"private_key":"1"}\n');
+    writeFileSync(join(ws, '.aws', 'config'), '[default]\n');
+    writeFileSync(join(ws, 'apple.p8'), 'secret\n');
+    writeFileSync(join(ws, 'ssh.ppk'), 'secret\n');
+    writeFileSync(join(ws, 'ok.js'), 'export const ok = 1;\n');
+    const reinj = collectActiveWorkspaceFiles({
+      workspaceRoots: [ws],
+      archivedFiles: ['.envrc', 'prod.tfvars', 'auth.json', 'service-account-prod.json', '.aws/config', 'apple.p8', 'ssh.ppk', 'ok.js'],
+      maxFiles: 10,
+    });
+    assert.deepEqual(reinj.files.map((f) => f.path), ['ok.js']);
+
+    // P1-3: ContinuationProgressStore reclaims aged stub & dead PID lock, blocks fresh live lock
+    const contDir = join(root, 'cont-lock');
+    const cStore = new ContinuationProgressStore(contDir, 'sess-p1-3', 'b'.repeat(64));
+    mkdirSync(join(contDir, createHash('sha256').update('sess-p1-3').digest('hex')), { recursive: true });
+    writeFileSync(cStore.file + '.lock', '', 'utf8');
+    assert.throws(() => cStore.write({ ok: 1 }, 0), (e) => e?.code === 'CONTINUATION_PROGRESS_LOCKED');
+    const oldTime = new Date(Date.now() - 15000);
+    utimesSync(cStore.file + '.lock', oldTime, oldTime);
+    assert.equal(cStore.write({ ok: 1 }, 0).revision, 1);
+
+    const { spawnSync } = await import('node:child_process');
+    const deadChild = spawnSync(process.execPath, ['-e', 'process.exit(0)'], { encoding: 'utf8' });
+    assert.ok(Number.isSafeInteger(deadChild.pid) && deadChild.pid > 0);
+    writeFileSync(cStore.file + '.lock', JSON.stringify({ pid: deadChild.pid, threadId: 0, token: 'dead', at: new Date().toISOString() }), 'utf8');
+    assert.equal(cStore.write({ ok: 2 }, 1).revision, 2);
+
+    // P2-1: resolveCompactSpec monotonically non-decreasing across headroomTokens
+    const sweepHeadrooms = [0, 4096, 8192, 16384, 33000, 65536, 98304];
+    for (const [cw, om] of [[65536, 8192], [128000, 8192], [128000, 16384], [200000, 8192], [1048576, 8192]]) {
+      let prevEff = -1;
+      for (const h of sweepHeadrooms) {
+        const sp = resolveCompactSpec({ thresholdRatio: 0.8, headroomTokens: h, retainRatio: 0.16, retainTokens: null }, cw, om);
+        const eff = sp.messageBudgetTokens - sp.pressureBudgetTokens;
+        assert.ok(eff >= prevEff, `P2-1 inversion at W=${cw}, O=${om}, h=${h}: ${eff} < ${prevEff}`);
+        prevEff = eff;
+      }
+    }
+    const def128BigOut = resolveCompactSpec(DEFAULT_CONFIG, 128000, 16384);
+    assert.equal(def128BigOut.messageBudgetTokens - def128BigOut.pressureBudgetTokens, 33000);
+
+    // P2-2: resolveModelInfo hanging honors signal/timeout in both summary & routing-budget
+    const hungAc = new AbortController();
+    setTimeout(() => hungAc.abort(new Error('abort hung resolveModelInfo')), 30);
+    await assert.rejects(
+      () =>
+        summarizeWithTarget({
+          ctx: { llm: { async resolveModelInfo() { return new Promise(() => {}); } } },
+          agent: { session: { id: 's-p2-2' } },
+          input: { messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }] },
+          target: { provider: 'openai', model: 'gpt-6.1-sol' },
+          options: {
+            maxTokens: 512,
+            timeoutMs: 5000,
+            language: 'en',
+            summaryReasoningEffort: 'low',
+          },
+          signal: hungAc.signal,
+        }),
+      /abort hung resolveModelInfo|ABORTED|summarization aborted/i,
+    );
+    const rbAc = new AbortController();
+    setTimeout(() => rbAc.abort(new Error('rb abort')), 30);
+    await assert.rejects(
+      () =>
+        resolveSpec(
+          {
+            config: DEFAULT_CONFIG,
+            ctx: { llm: { async resolveModelInfo() { return new Promise(() => {}); } }, tokenMeter: { measure: () => ({ totalTokens: 1000 }) } },
+            _resolveTargetRoute: () => ({ provider: 'openai', model: 'gpt-6.1-sol' }),
+          },
+          { session: { id: 's-rb', surface: { nodes: [] }, requestHeader: () => ({}) } },
+          { totalTokens: 1000 },
+          rbAc.signal,
+        ),
+      /rb abort/i,
+    );
+
+    // P2-3: auto fallback & softenCoverageForFocus reject value/range/condition conflicts while auditBlockOnLoss=false escape works
+    const hardValVerdict = diagnoseHeuristicFallbackVerdict({
+      ok: false,
+      code: 'CONSTRAINT_LOST',
+      audit: { lost: [{ seq: 1, reason: 'value', line: 'port is 8080', candidate: 'port is 9090' }] },
+    });
+    assert.equal(hardValVerdict.eligible, false);
+    assert.equal(hardValVerdict.skippedReason, 'hard_conflict');
+    const focusSplit = classifyBlockingAuditLost(
+      [
+        { seq: 1, reason: 'coverage', line: 'keep style' },
+        { seq: 2, reason: 'range', line: '< 30s' },
+      ],
+      { auditBlockOnLoss: true, softenCoverageForFocus: true },
+    );
+    assert.equal(focusSplit.blockingLost.length, 1);
+    assert.equal(focusSplit.blockingLost[0].reason, 'range');
+    const escapeSplit = classifyBlockingAuditLost(
+      [{ seq: 1, reason: 'value', line: 'a' }, { seq: 2, reason: 'polarity', line: 'b' }],
+      { auditBlockOnLoss: false },
+    );
+    assert.deepEqual(escapeSplit.blockingLost.map((x) => x.reason), ['polarity']);
+
+    // P2-4: runConcurrentPool waits for started onItemReadyInOrder commit before rejecting
+    let commitDone = false;
+    await assert.rejects(
+      () =>
+        runConcurrentPool([0, 1], {
+          concurrency: 2,
+          abortDrainTimeoutMs: 25,
+          worker: async (item) => {
+            if (item === 0) return 'ok';
+            await new Promise((r) => setTimeout(r, 15));
+            throw Object.assign(new Error('fail-1'), { status: 401 });
+          },
+          onItemReadyInOrder: async () => {
+            await new Promise((r) => setTimeout(r, 120));
+            commitDone = true;
+          },
+        }),
+      /fail-1/,
+    );
+    assert.equal(commitDone, true, 'P2-4 started commit must settle before pool rejects');
+
+    // P2-5(a)(b): stale token ignored for host-authenticated owner; 401 fallback blocks non-loopback host/socket
+    let rpcHandler = null;
+    let rpcConn = null;
+    const rpcInject = [];
+    const disposeRpc2 = mountGate(
+      {
+        on() {},
+        provide() {},
+        get: () => rpcConn,
+        inject(deps, cb) {
+          if (Array.isArray(deps) && deps.includes('webServer')) {
+            return cb({
+              on(ev, fn) { if (ev === 'webserver/index-inject') rpcInject.push(fn); return () => {}; },
+              effect: (fn) => fn(),
+              webServer: {
+                host: '192.168.1.50',
+                register(r) { rpcHandler = r.handler; return () => {}; },
+              },
+            });
+          }
+          return () => {};
+        },
+      },
+      { receiptPath },
+    );
+    try {
+      const tbl = [];
+      rpcInject.forEach((fn) => fn(tbl, { principal: { kind: 'owner', id: 'o' } }));
+      const validTok = tbl.find((x) => x.name === '__WEAVE_RPC_TOKEN__')?.value;
+      const sendRpc2 = (headers, remoteAddress = '127.0.0.1') =>
+        new Promise((resolveRes) => {
+          const req = Object.assign(new EventEmitter(), { method: 'POST', headers, socket: { remoteAddress }, destroy() {} });
+          const out = { statusCode: 200, body: '' };
+          const res = {
+            set statusCode(c) { out.statusCode = c; },
+            get statusCode() { return out.statusCode; },
+            setHeader() {},
+            end(chunk = '') { resolveRes({ status: out.statusCode, json: JSON.parse(String(chunk)) }); },
+          };
+          const p = rpcHandler(req, res);
+          req.emit('data', Buffer.from('{"method":"get"}'));
+          req.emit('end');
+          Promise.resolve(p).catch(() => {});
+        });
+
+      rpcConn = { admit: () => ({ peer: { principal: { kind: 'owner' } } }) };
+      assert.equal(
+        (await sendRpc2({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'x-weave-rpc-token': 'stale-old-tok', 'content-type': 'application/json' })).status,
+        200,
+        'P2-5(a) authenticated owner ignores stale RPC token',
+      );
+
+      rpcConn = { admit: () => ({ rejection: 401 }) };
+      assert.equal(
+        (await sendRpc2({ host: '192.168.1.50:3000', origin: 'http://192.168.1.50:3000', 'x-weave-rpc-token': validTok, 'content-type': 'application/json' })).status,
+        403,
+        'P2-5(b) 401 boot-token fallback rejects non-loopback host',
+      );
+      assert.equal(
+        (await sendRpc2({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'x-weave-rpc-token': validTok, 'content-type': 'application/json' }, '192.168.1.99')).status,
+        403,
+        'P2-5(b) 401 boot-token fallback rejects non-loopback socket remoteAddress',
+      );
+      rpcConn = { admit: () => ({ rejection: undefined }) };
+      assert.equal(
+        (await sendRpc2({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' })).status,
+        403,
+        'P2-5(b) malformed undefined rejection fails closed cleanly',
+      );
+    } finally {
+      disposeRpc2?.();
+    }
+
+    // P2-6/P2-7/P2-8: _overflowRetries agent key, cache byte cap, label tag attributes, fenced reconstruct, date-grounding, audit.lost trim, client UI fixes
+    const engineP26 = new WeaveCompactionEngine({ on() {}, provide() {}, inject() { return () => {}; }, logger: {} }, DEFAULT_CONFIG);
+    const fakeAgent = { session: { id: 's-ov' } };
+    engineP26._agentBySession.set(fakeAgent.session, fakeAgent);
+    engineP26._overflowRetries.set(fakeAgent, 2);
+    clearInMemoryBreaker(engineP26, 's-ov', fakeAgent.session);
+    assert.equal(engineP26._overflowRetries.has(fakeAgent), false);
+
+    const arch = new CompactionArchive({ root: join(root, 'arch-cap'), maxSearchCacheSessionBytes: 4000 });
+    await arch.writeSpan({
+      sessionId: 's-cap',
+      compactionId: 'cmp-cap-1',
+      entries: [{ seq: 1, role: 'user', text: 'needle1 ' + 'a'.repeat(500) }],
+    });
+    await arch.writeSpan({
+      sessionId: 's-cap',
+      compactionId: 'cmp-cap-2',
+      entries: [{ seq: 2, role: 'user', text: 'needle2 ' + 'b'.repeat(500) }],
+    });
+    await arch.search('s-cap', 'needle1');
+    assert.ok((arch._searchCache.get('s-cap')?.totalBytes ?? 0) <= 4000);
+
+    const metaAttr = extractSpanIndexMetadata([
+      { seq: 1, role: 'user', text: '<pinned-source-rules priority="verbatim">LEAK</pinned-source-rules>\nClean label' },
+    ]);
+    assert.equal(metaAttr.label, 'Clean label');
+
+    const fencedRec = reconstructDisputedLines({
+      text: '## 1. Primary Request and Intent\n- keep ok.\n## 2. Key Technical Concepts\n```txt\nTimeout must be 60s.\n```\n## 3. Files and Code Sections\n- a\n## 4. Errors and Fixes\n- none\n## 5. Problem Solving\n- none\n## 6. All User Messages\n[filled by engine]\n## 7. Pending Tasks\n- none\n## 8. Work Completed\n- none\n## 9. Context for Continuing Work\n- ok',
+      userMessages: [{ seq: 1, sourceKind: 'user', text: 'Timeout must be 30s.' }],
+      audit: { lost: [{ seq: 1, line: 'Timeout must be 30s.', reason: 'value', candidate: 'Timeout must be 60s.' }] },
+      language: 'en',
+    });
+    assert.equal(fencedRec, null, 'P2-7c reconstruct must ignore fenced code blocks');
+
+    const dgOut = renderDateGrounding(
+      {
+        eventAt: (seq) =>
+          seq === 1
+            ? { seq: 1, type: 'user/message', time: Date.parse('2026-11-25T10:00:00Z'), data: { source: { kind: 'runtime-context' }, content: [{ type: 'text', text: 'Yesterday failed.' }] } }
+            : seq === 2
+              ? { seq: 2, type: 'user/message', time: Date.parse('2026-11-25T10:00:00Z'), data: { source: { kind: 'user' }, content: [{ type: 'text', text: '<system-reminder>\nYesterday reminder.\n</system-reminder>\nReal user note.' }] } }
+              : null,
+      },
+      [1, 2],
+    );
+    assert.equal(dgOut, '', 'P2-7d must skip runtime-context and <system-reminder> relative dates');
+
+    const bigLostPath = await dumpAuditRejection({
+      storageRoot: join(root, 'reject-root'),
+      sessionId: 's-rej',
+      compactionId: 'cmp-rej-1',
+      code: 'CONSTRAINT_LOST',
+      message: 'lost',
+      maxFileBytes: 2048,
+      report: {
+        checked: 10,
+        polarityFlips: 0,
+        worstCoverage: 0,
+        lost: Array.from({ length: 20 }, (_, i) => ({ seq: i + 1, reason: 'coverage', line: `L${i}-` + 'z'.repeat(400), candidate: 'c'.repeat(200) })),
+      },
+    });
+    assert.ok(bigLostPath && statSync(bigLostPath).size <= 2048, 'P2-7e dumpAuditRejection must bound oversized audit.lost');
+
+    // P2-8: client.js summaryTimeout 8.001 rounding, loadError key & sessionMemory retention
+    const uiClient = mountClient({
+      language: 'en',
+      handler: async ({ method }) => {
+        if (method === 'get') {
+          return {
+            config: {
+              summaryTimeoutMs: 8001,
+              summaryRetryDelayMs: 1000,
+              thresholdRatio: 0.8,
+              minimumReductionRatio: 0.2,
+              idleCompactionMinutes: 0,
+            },
+          };
+        }
+        if (method === 'catalog') return { providers: [] };
+        if (method === 'set') return { config: { summaryTimeoutMs: 8001 } };
+        return {};
+      },
+    });
+    const settledTree = await uiClient.settleSettings();
+    const timeoutInput = uiClient.field(settledTree, 'weave-summary-timeout');
+    assert.equal(String(timeoutInput?.props?.value ?? ''), '8.001');
+    const saveBtn = uiClient.button(settledTree, 'Save');
+    assert.ok(saveBtn);
+    saveBtn.props.onClick();
+    await uiClient.settleSettings();
+    const setReq = uiClient.requests.find((r) => r.method === 'set');
+    assert.equal(setReq?.params?.summaryTimeoutMs, 8001, 'P2-8 summaryTimeout 8.001 must round cleanly to integer 8001ms');
+    uiClient.unmount();
+
+    const uiErrClient = mountClient({
+      language: 'en',
+      handler: async ({ method }) => {
+        if (method === 'get') throw new Error('disk offline');
+        if (method === 'catalog') return { providers: [] };
+        return {};
+      },
+    });
+    const errTree = await uiErrClient.settleSettings();
+    assert.match(textOf(errTree), /Failed to load settings: disk offline/);
+    uiErrClient.unmount();
+
+    const clientSrc = readFileSync(join(REPO_ROOT, 'lib', 'client.js'), 'utf8');
+    assert.ok(clientSrc.includes("t('loadError')"));
+    assert.ok(clientSrc.includes('function normalizeSessionMemory(raw)'));
+    assert.ok(clientSrc.includes('function sessionMemoryChanged(a, b)'));
+    assert.ok(clientSrc.includes('Math.round(Number(timeoutText) * 1000)'));
+    assert.ok(clientSrc.includes('Math.round(Number(String(form.summaryTimeout).trim()) * 1000)'));
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 console.log(JSON.stringify({

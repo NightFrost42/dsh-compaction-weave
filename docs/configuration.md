@@ -25,7 +25,7 @@
 | 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭 |
 | 覆盖率审计窗口范围 | `auditCoverageScope` | `'recent'` | `'recent'`（默认：覆盖近期原话保留窗口及本跨度新增近期原始用户消息，按至少 `32` 条 / `4096` token 封顶；窗外旧跨度/超大规模迁移原话普通遗漏记软警告不阻塞）/ `'span-new'`（仅对本跨度新增原始用户消息强制覆盖率）/ `'all'`（全跨度严格覆盖）；**所有冲突红线（`polarity`/`value`/`unit`/`condition`/`range`/`relation`/`exception`/`reference`/`provenance`）在三档下始终全局强制执行** |
 | 启发式审计耗尽兜底策略 | `auditExhaustionPolicy` | `'fallback'` | `'fallback'`（默认：全链与重试耗尽后，对纯覆盖/软溯源争议外挂 `<= 3` 处经核验纯用户原话放行；极性反转永不兜底）/ `'block'`（严格拦截，禁用兜底） |
-| 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，最多重读 5 个本地工作区文件，受 `postCompactReinjectMaxBytes` 默认 24KB 封顶）/ 关闭 |
+| 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，**对正文执行凭据、未闭合/跨截断边界 PEM 私钥体与尾部前缀脱敏**，最多重读 5 个本地工作区文件，受 `postCompactReinjectMaxBytes` 默认 24KB 封顶）/ 关闭 |
 | 超大工具结果尾部溢出 | `persistedOutputEnabled` | `true`（开启） | 开启（0 额外摘要模型调用，仅归档未发送尾部 ≥ 32768 字符工具输出并留首尾 1200 字预览）/ 关闭 |
 | 第一级归档存根掩码 | `observationMaskingEnabled` | `true`（开启） | 开启（默认，0 LLM 优先路径；压力或手动压缩时先折叠较早大工具输出为带 `history_read` 指针的存根，达标则免除摘要模型调用）/ 关闭 |
 | 闲置 0-LLM 轻压缩 | `microcompactEnabled` | `true`（开启） | 开启（0 LLM 调用；**需开启 `idleCompactionMinutes > 0` 才会触发**，闲置超期后先保留最新 4 条热点输出，折叠更早大输出与重复读取）/ 关闭 |
@@ -207,10 +207,10 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `maxVisibleAttachmentBytes` | `16777216`（16 MiB） | 可见表面未卸载图片字节高水位阈值（`0` 关闭字节触发；超过阈值时采用高低双水位迟滞策略，单批原生 `image/offload` 卸载较早图片并保留最新 6 张热点图片以维持 KV 缓存稳定，不重置周期会话记忆计数） |
 | `maxVisibleImages` | `24` | 可见表面未卸载图片张数高水位阈值（`0` 关闭张数触发，允许 `1–500`；另设长边 `>2000px` 超过 `20` 张护栏；触线时单批卸载至低水位，且严格不改写 `user/message` 原文） |
 | `auditEnabled` | `true` | 检查要求是否保留 |
-| `auditBlockOnLoss` | `true` | 要求丢失时重试并阻止不合格摘要提交（极性反转在关闭时仍严格拦截） |
-| `auditCoverageScope` | `'recent'` | 控制启发式普通覆盖率（`coverage`）的强制窗口范围（支持设置页热生效）：`'recent'`（默认：同时覆盖 `preserveRecentMessages` / `preserveRecentUserTokens` 近期保留窗口与本跨度新增近期原始用户消息——上限至少取 `32` 条 / `4096` token，即使缩小第 6 节逐字原话预算也不会屏蔽当前跨度新指令的摘要覆盖审计，同时避免多代历史或超大规模迁移死锁；窗外普通覆盖遗漏仅记录告警并计入 `softCoverageCount`，不阻断且不消耗兜底名额）、`'span-new'`（仅对本跨度直接新增、非旧检查点携带的原始 `user/message` 强制覆盖率）或 `'all'`（对全跨度所有保留原话强制覆盖率）。所有全局冲突红线（`polarity`、`value`、`unit`、`condition`、`range`、`relation`、`exception`、`reference`、`provenance`）及最近原话第 6 节逐字保存始终全局强制执行 |
+| `auditBlockOnLoss` | `true` | 要求丢失或矛盾时重试并阻止不合格摘要提交；显式设为 `false` 作为用户紧急逃生阀时，可放行普通覆盖缺失及非极性冲突，但**极性反转（`polarity`）与硬来源冲突（`untrusted-source`/`revoked`）在关闭时仍严格拦截** |
+| `auditCoverageScope` | `'recent'` | 控制启发式普通覆盖率（`coverage`）的强制窗口范围（支持设置页热生效）：`'recent'`（默认：同时覆盖 `preserveRecentMessages` / `preserveRecentUserTokens` 近期保留窗口与本跨度新增近期原始用户消息——上限至少取 `32` 条 / `4096` token，即使缩小第 6 节逐字原话预算也不会屏蔽当前跨度新指令的摘要覆盖审计，同时避免多代历史或超大规模迁移死锁；窗外普通覆盖遗漏仅记录告警并计入 `softCoverageCount`，不阻断且不消耗兜底名额；`/compact <focus>` 显式聚焦模式下仅柔化纯 `coverage` 缺口、不放行数值/区间/条件矛盾）、`'span-new'`（仅对本跨度直接新增、非旧检查点携带的原始 `user/message` 强制覆盖率）或 `'all'`（对全跨度所有保留原话强制覆盖率）。所有全局冲突红线（`polarity`、`value`、`unit`、`condition`、`range`、`relation`、`exception`、`reference`、`provenance`）及最近原话第 6 节逐字保存始终全局强制执行 |
 | `auditProvenanceBlock` | `true` | 授权/指令来源未匹配用户原文（`provenance`）时阻断提交；设为 `false` 时仅对无依据归纳改为告警放行，但对 `untrusted-source`（外部/注入来源）与 `revoked`（已撤回授权）仍保持强拦截 |
-| `auditExhaustionPolicy` | `'fallback'` | 当前摘要目标与至少 1 次纠偏重试全部耗尽且仅剩 `<= 3` 处纯覆盖率/`missing-source` 启发式冲突时的策略（可在设置页热生效）：`'fallback'`（默认：外挂经核验纯用户原话至 `<pinned-source-rules>`、`≤ 2048` 字节并严守缩小与所有强红线后受控放行）或 `'block'`（严格拦截并失败）；`CONSTRAINT_POLARITY_LOST`（极性反转）、`summaryRetryCount === 0` 或任意结构/体积/进度/已撤回/`untrusted-source`/`revoked` 失败永不走兜底 |
+| `auditExhaustionPolicy` | `'fallback'` | 当前摘要目标与至少 1 次纠偏重试全部耗尽且仅剩 `<= 3` 处纯覆盖率（`coverage`）或软 `missing-source` 缺口时的自动兜底策略（可在设置页热生效）：`'fallback'`（默认：外挂经核验纯用户原话至 `<pinned-source-rules>`、`≤ 2048` 字节并严守缩小与所有强红线后受控放行）或 `'block'`（严格拦截并失败）；`CONSTRAINT_POLARITY_LOST`（极性反转）、任意数值/单位/条件/区间/关系/例外/引用硬冲突（`value`/`unit`/`condition`/`range`/`relation`/`exception`/`reference`）、`summaryRetryCount === 0` 或结构/体积/进度/已撤回/`untrusted-source`/`revoked` 失败**永不走自动兜底** |
 | `extraReferenceSourceKinds` | `[]` | 额外视为非用户参考通道的 `source.kind` 字符串数组（最多 64 项，严禁包含 `'user'` 或 `'compact-checkpoint'`）；内置已自动隔离 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge` 等桥接通道 |
 | `extraReferencePrefixes` | `[]` | 额外视为非用户注入块的裸文本前缀数组（修剪后 2–200 字符、最多 64 项）；内置已自动隔离多行记忆注入头（如 `===== 长期记忆 =====`、`【记忆导引】` 后带正文），不污染 Section 6 原话或要求审计 |
 | `diskLivenessCheck` | `true` | 压缩时在工作区目录内只读检查历史提及文件路径是否缺失或于近期改动（不调模型，非本地路径自动跳过） |
@@ -223,7 +223,7 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `postCompactReinjectEnabled` | `true` | 压缩后确定性地从本地工作区磁盘重读最近活跃文件（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，受 `postCompactReinjectMaxBytes` 封顶；自动跳过 `AGENTS.md` / `CLAUDE.md`、`.env` / 密钥等敏感文件、二进制文件、逃逸软链接与远程/合成会话） |
+| `postCompactReinjectEnabled` | `true` | 压缩后确定性地从本地工作区磁盘重读最近活跃文件（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，受 `postCompactReinjectMaxBytes` 封顶；内置 `+4 KiB` 预读窗口对凭据、未闭合/跨截断边界 PEM 私钥体与残片前缀自动脱敏，并自动跳过 `AGENTS.md` / `CLAUDE.md`、`.env` / 密钥等敏感文件、二进制文件、逃逸软链接与远程/合成会话） |
 | `postCompactReinjectMaxFiles` | `5` | 压缩后重注入的本地工作区文件数量上限（`1–20` 正整数） |
 | `postCompactReinjectMaxBytes` | `24576` | 压缩后重注入文件总字节上限（`1024–262144` 整数，UTF-8 字节） |
 | `postCompactReinjectMaxFileBytes` | `6144` | 单个重注入文件的最大 UTF-8 读取字节数（`512–65536` 整数） |

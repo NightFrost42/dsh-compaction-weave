@@ -216,6 +216,83 @@ await test('image-attachment-defaults-to-verified-metadata-without-base64-or-hos
   }
 });
 
+await test('history-read-treats-null-and-blank-optional-args-as-omitted', async () => {
+  const root = await mkdtemp(join(baseRoot, 'weave-strict-tool-args-'));
+  try {
+    const archive = new CompactionArchive({ root: join(root, 'archive') });
+    const sid = 'session-strict-args';
+    await archive.writeSpan({
+      sessionId: sid,
+      compactionId: 'cmp-1',
+      entries: [
+        { seq: 1, type: 'user/message', role: 'user', text: 'strict schema keeps null and empty optional args' },
+        { seq: 2, type: 'tool/result', role: 'tool', text: 'busyTimeoutMs: 4750, lockCode: SQLITE_BUSY_SNAPSHOT_517' },
+      ],
+    });
+
+    const spanRead = await runTool(
+      'history_read',
+      archive,
+      { compactionId: 'cmp-1', seq: null, attachmentId: '' },
+      { session: { id: sid } },
+    );
+    assert.match(spanRead, /# cmp-1 \(entries 1-2 of 2\)/);
+    assert.match(spanRead, /SQLITE_BUSY_SNAPSHOT_517/);
+
+    const seqFormatted = await runTool(
+      'history_read',
+      archive,
+      {
+        compactionId: ' cmp-1 ',
+        seq: 1,
+        attachmentId: null,
+        charOffset: null,
+        charLimit: null,
+        offset: null,
+        limit: null,
+        raw: null,
+        full: null,
+        rawBase64: null,
+      },
+      { session: { id: sid } },
+    );
+    assert.match(seqFormatted, /^[\s\S]*# cmp-1 seq 1 \(1 of 2 entries\)/);
+    assert.ok(!seqFormatted.startsWith('{"compactionId":'));
+
+    const locateBySeq = await runTool(
+      'history_read',
+      archive,
+      { compactionId: '   ', seq: 2, attachmentId: '   ' },
+      { session: { id: sid } },
+    );
+    assert.match(locateBySeq, /# cmp-1 seq 2 \(1 of 2 entries\)/);
+    assert.match(locateBySeq, /busyTimeoutMs: 4750/);
+
+    const missingTarget = await runTool(
+      'history_read',
+      archive,
+      { compactionId: null, seq: '', attachmentId: '' },
+      { session: { id: sid } },
+    );
+    assert.equal(missingTarget, 'history_read requires a compactionId (or a seq to locate its archived span; see history_list).');
+
+    assert.equal(
+      await runTool('history_read', archive, { compactionId: 'cmp-1', seq: -1 }, { session: { id: sid } }),
+      'history_read seq must be a non-negative safe integer.',
+    );
+    assert.equal(
+      await runTool('history_read', archive, { compactionId: 'cmp-1', seq: 'abc' }, { session: { id: sid } }),
+      'history_read seq must be a non-negative safe integer.',
+    );
+    assert.match(
+      await runTool('history_read', archive, { compactionId: 'cmp-1', attachmentId: 123 }, { session: { id: sid } }),
+      /attachmentId must be a string/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 const passed = results.filter((r) => r.pass).length;
 const failed = results.filter((r) => !r.pass).length;
 console.log(JSON.stringify({ passed, failed, results }, null, 2));

@@ -27,9 +27,9 @@ Actual cache reuse is measured from service usage reports. [Testing](testing.md)
 
 ## Requirements and source identity
 
-`memory-policy.js` tracks active requirements, revisions, cancellations, and duplication. Recent quotes have a separate message and token budget.
+`memory-policy.js` tracks active requirements, revisions (including narrow explicit revision prefixes and right-hand cancellation clauses while preserving conditional scopes), cancellations, and duplication. Recent quotes have a separate message and token budget.
 
-`audit.js` checks coverage, values, negation, conditions, and scope. Production and test environments, files, and batches are treated separately.
+`lib/audit/` splits the deterministic auditor into a 6-layer acyclic module stack (`normalize.js` → `numeric.js` → `clauses.js` → `polarity.js` / `provenance.js` → `compaction.js`, re-exported via `audit.js`), covering normalization, exact unit conversions, inline ordinal/clause splitting, CLI-flag/boolean/enable-disable polarity symmetry, approval provenance, and `auditCoverageScope`-aware coverage checks.
 
 Original event sequence numbers, text fragments, and hashes identify sources. Generated checkpoint prose does not become a new original instruction. Later compactions continue restoring requirements from verified original events.
 
@@ -51,25 +51,31 @@ Accepted pages persist their source identity and progress. Later attempts reuse 
 
 ## Archives and transactions
 
-Archives preserve original events, message blocks, tool relationships, and SHA-256-checked attachments (`history_search` uses multi-term matching with attachment stat checks, while `readSpan`/`readAttachment` verify byte-for-byte SHA-256 digests on demand). History tools read these records in pages.
+Archives preserve original events, message blocks, tool relationships, and SHA-256-checked attachments, stored with native Node.js 24 lossless `zstd` compression by default. `history-search.js` provides zero-dependency BM25F multi-field search (CJK bigrams + English stemming, submodular Top-K diversification, 2-hop tool-call linking, and per-span LRU caching), while `tools.js` handles strict tool-calling schemas (normalizing `null`/blank optional arguments cleanly) and SHA-256 attachment inspection.
 
-The transaction adapter checks both raw and comment/whitespace-normalized fingerprints of the reviewed DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3` host methods (including single-event and batch `Session.append` implementations). Unrecognized host method bodies are refused before any summary request or transactional history mutation while retaining existing recovery materials. It backs up the original state via single-pass hashed `copySynced`, durably writes the replacement, persists a success decision, then publishes. A failure before that decision can restore a verified backup. A publication failure after durable success quarantines the writer and requires a cold reopen, preserving the successfully committed history.
+The transaction adapter checks both raw and comment/whitespace-normalized fingerprints of the reviewed DSH `0.2.2-rc.1`, `0.2.2-rc.2`, and `0.2.2-rc.3` host methods (including single-event and batch `Session.append` implementations). Unrecognized host method bodies are refused before any summary request or transactional history mutation while retaining existing recovery materials. It backs up the original state via single-pass hashed `copySynced`, durably writes the replacement, persists a success decision, then publishes. A failure before that decision can restore a verified backup. A publication failure after durable success quarantines the writer and requires a cold reopen, preserving the successfully committed history. `state.js` and `session-memory.js` bind file locks to `threadId`, `(dev, ino)` file identity, and serialized `.reclaim` gates.
 
 ## Entry points
 
 `cordis.patch.yml` registers the configuration gate and orders four agent presets after it. The gate replaces the preset's basic compaction engine with Weave and merges existing configuration with saved settings.
 
+`index.js` bridges the host RPC endpoint (with `webserver/index-inject` process-level `x-weave-rpc-token`, `timingSafeEqual`, same-origin validation, and non-owner `403` enforcement) and `hookBus`; `client.js` (single-file browser bundle with zero imports and zero `setInterval`) renders the declarative Settings page (`settings-schema.js` SSOT) and live progress card (`engineActive` banner + `ReactDOM.createPortal` conflict modal).
+
+The `lib/` runtime comprises `92` modules (`91` non-client ESM modules enforced at **0 cycles** by `scripts/check.mjs`):
+
 | Module | Responsibility |
 | --- | --- |
-| `index.js`, `engine-entry.js` | Host loading and configuration |
-| `engine.js`, `idle-compaction.js` | Selection, staged compaction, idle detection, generation, validation, and commit |
-| `observation-mask.js` | Stage-1 tool-output archive folding and preview stubs |
-| `cache-policy.js`, `region.js` | Prefix reuse, balanced ranges, and archive pointers |
+| `index.js`, `engine-entry.js`, `hooks.js` | Host loading, RPC auth/origin guard, `hookBus`, and configuration |
+| `engine.js`, `lib/engine/*.js` (8 modules), `idle-compaction.js` | Selection, routing budgets, resumable recovery, parallel fold, migration, and commit |
+| `observation-mask.js`, `tool-preview.js` | Stage-1 tool-output archive folding and Tier-4 salient prose / skeleton previews |
+| `cache-policy.js`, `region.js`, `date-grounding.js` | Prefix reuse, balanced ranges, deterministic date grounding, and archive pointers |
 | `source-provenance.js`, `instruction-source.js`, `reference-input.js` | Channel provenance and `<untrusted_reference>` / `<channel-provenance>` XML boundaries |
-| `memory-policy.js`, `audit.js` | Requirement lifecycle and generic deterministic guards |
+| `memory-policy.js`, `audit.js`, `lib/audit/*.js` (6 layered modules) | Requirement lifecycle, acyclic deterministic auditor, and provenance checks |
+| `redact.js`, `file-reinject.js` | Linear PEM/credential redaction and bounded redacted workspace file re-injection |
 | `progress-facts.js`, `work-report.js` | Structured `key: value` progress and reports |
 | `summary-*.js`, `continuation*.js` | Requests, budgets, paging, retries, and recovery |
-| `history.js`, `attachments.js`, `tools.js` | Archives and retrieval |
-| `transaction*.js`, `journal.js`, `state.js` | Transactions and persisted state |
-| `failure-diagnostics.js`, `audit-reject.js` | Failure reports and rejected-summary evidence |
-| `client.js`, `summary-config.js` | Localized settings and configuration storage |
+| `history.js`, `history-search.js`, `attachments.js`, `tools.js` | Lossless `zstd` archives, BM25F search, and `history_*` tool execution |
+| `persisted-output.js`, `microcompact.js`, `snip.js`, `context-collapse.js` | Tail persistence, 0-LLM microcompact, Snip emergency rescue, and collapse |
+| `transaction*.js`, `journal.js`, `state.js`, `session-backup.js`, `bili-conflict.js` | Transactions, worker-safe locks, full backups, and `billion-context` migration |
+| `failure-diagnostics.js`, `audit-reject.js`, `audit-fallback.js` | Redacted diagnostics, rejection snapshots, and controlled fallback |
+| `settings-schema.js`, `summary-config.js`, `client.js` | Settings SSOT, hot storage, and localized UI |

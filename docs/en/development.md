@@ -14,7 +14,7 @@ npm run pack:release
 
 `npm test` discovers suites in `test/` and runs them in separate processes with temporary `DSH_HOME` directories. Each suite has a timeout. Logs and summaries are saved under `.local/test-results/`.
 
-`npm run check` validates syntax, JSON, package exports, documentation links, versioned installation examples, and sensitive-content patterns in release sources.
+`npm run check` validates syntax, JSON, package exports, documentation links, versioned installation examples, sensitive-content patterns in release sources, and the **0-cycle ESM DAG** across all non-client `lib/` modules (`91` modules).
 
 ## Host integration
 
@@ -74,10 +74,10 @@ The runtime package follows `package.json.files`; the source archive uses an exp
 5. If publishing to npm manually from a local machine, publish the verified tarball (keep the leading `./` on npm 11+ so relative tarball paths are not parsed as GitHub `owner/repo` shorthand):
 
 ```bash
-npm publish ./dist/dsh-compaction-weave-0.5.2.tgz --tag latest --access public
+npm publish ./dist/dsh-compaction-weave-0.6.0.tgz --tag latest --access public
 ```
 
-Stable releases publish under the `latest` npm tag (prereleases use `next` in `publishConfig.tag`).
+Stable releases publish under the `latest` npm tag (prereleases honor `publishConfig.tag` such as `next` or `hotfix`).
 
 ### Automated releases (GitHub Actions + npm Trusted Publishing)
 
