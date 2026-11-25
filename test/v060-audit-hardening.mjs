@@ -29,6 +29,7 @@ import { collectActiveWorkspaceFiles } from '../lib/file-reinject.js';
 import { CompactionArchive } from '../lib/history.js';
 import { apply as mountGate } from '../lib/index.js';
 import { CompactionJournal } from '../lib/journal.js';
+import { selectMemoryMessages } from '../lib/memory-policy.js';
 import { CompactionProgressTracker } from '../lib/progress-tracker.js';
 import { redactCredentials, redactPemPrivateKeys } from '../lib/redact.js';
 import { SessionBackupStore } from '../lib/session-backup.js';
@@ -556,13 +557,25 @@ await test('P0-1-P1-1-P2-8-rpc-admit-electron-fallback-viewer-gate-and-body-limi
     );
     assert.equal(refused403.status, 403);
 
-    // Authenticated trustedHosts remote peer -> 200
+    // Authenticated trustedHosts remote peer -> 200 (owner), 403 (non-owner / share-viewer)
     connectionService = { admit: () => ({ peer: { id: 'p-1', principal: { kind: 'owner' } } }) };
     const trustedHostOk = await sendRaw(
       { host: 'dsh.example.internal', origin: 'https://dsh.example.internal', 'content-type': 'application/json' },
       '{"method":"get"}',
     );
     assert.equal(trustedHostOk.status, 200);
+
+    connectionService = { admit: () => ({ peer: { id: 'p-viewer', principal: { kind: 'share-viewer' } } }) };
+    const viewerRemoteBlocked = await sendRaw(
+      { host: 'dsh.example.internal', origin: 'https://dsh.example.internal', 'content-type': 'application/json' },
+      '{"method":"get"}',
+    );
+    assert.equal(viewerRemoteBlocked.status, 403);
+    const viewerLoopbackBlocked = await sendRaw(
+      { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' },
+      '{"method":"get"}',
+    );
+    assert.equal(viewerLoopbackBlocked.status, 403);
 
     // A-P1-1: unrecognized non-null connection service fails closed without token -> 401, passes with token -> 200
     connectionService = {};
@@ -887,9 +900,86 @@ await test('P1-7-to-P1-13-and-P2-audit-redact-preview-date-config-reinject-lock'
       workspaceRoots: [ws],
     });
     assert.deepEqual(reinj.files.map((f) => f.path), ['safe.js']);
+
+    // 6Astra P1-01: ordinary workspace filenames redact sk- and PEM straddling truncation boundary
+    const testSecretSk = 'sk-' + 'SecretKeyValue998877';
+    const testPrefixSk = 'sk-' + 'ABCDEF12345678';
+    writeFileSync(join(ws, 'settings.js'), `export const mode = "prod";\nconst k = "${testSecretSk}";\n`);
+    const beginPem = '-'.repeat(5) + 'BEGIN RSA PRIVATE KEY' + '-'.repeat(5);
+    const endPem = '-'.repeat(5) + 'END RSA PRIVATE KEY' + '-'.repeat(5);
+    writeFileSync(
+      join(ws, 'large-pem.js'),
+      `${'// header line\n'.repeat(280)}${beginPem}\n${'MIIEOWIBAAKCAQEAv3J8FakeSecretBodyLine1234567890ABCD\n'.repeat(90)}${endPem}\nexport const tail = 1;\n`,
+    );
+    writeFileSync(join(ws, 'cut-prefix.js'), `${'// pad\n'.repeat(876)}const tok = "${testPrefixSk}";\n`);
+    const reinjRedacted = collectActiveWorkspaceFiles({
+      session: {
+        seq: 1,
+        eventAt: () => ({ type: 'tool/result', data: { name: 'read_file', message: { content: [] } } }),
+      },
+      shadowedSeqs: [],
+      archivedFiles: ['settings.js', 'large-pem.js', 'cut-prefix.js'],
+      workspaceRoots: [ws],
+      maxFileBytes: 6144,
+    });
+    const settingsOut = reinjRedacted.files.find((f) => f.path === 'settings.js');
+    const largePemOut = reinjRedacted.files.find((f) => f.path === 'large-pem.js');
+    const cutOut = reinjRedacted.files.find((f) => f.path === 'cut-prefix.js');
+    assert.ok(settingsOut && settingsOut.content.includes('mode = "prod"') && !settingsOut.content.includes(testSecretSk));
+    assert.ok(largePemOut && !largePemOut.content.includes('MIIEOWIBAAKCAQEAv3J8') && largePemOut.bytes === Buffer.byteLength(largePemOut.content, 'utf8') && largePemOut.bytes <= 6144);
+    assert.ok(cutOut && !cutOut.content.includes('ABCDEF'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+
+  // Self P1-2: inline numbered list ordinals do not split false numeric constraints
+  const inlineListMsg = '请重构持久化模块：1. 必须使用 PostgreSQL 16；2. Timeout must be 10s；3. 禁止删除生产库。';
+  assert.deepEqual([...numericFacts('请重构持久化模块：1.')], []);
+  assert.deepEqual([...numericFacts('port is 8080. Next.')], ['8080']);
+  assert.deepEqual([...numericFacts('retries: 5.')], ['5']);
+  const inlineAudit = auditCompaction({
+    userMessages: [{ seq: 1, text: inlineListMsg }],
+    summaryText: '请重构持久化模块：必须使用 PostgreSQL 16；Timeout must be 10s；禁止删除生产库。',
+  });
+  assert.equal(inlineAudit.lost.length, 0);
+
+  // Self P2-1 (narrow safe scope): mixed revision retires obsolete 10s scalar while preserving peers & scopes
+  const memRev = selectMemoryMessages(
+    [
+      { seq: 1, text: inlineListMsg },
+      { seq: 2, text: '需求变更：改为 Timeout must be 30s，取消 10s 限制。' },
+    ],
+    { maxBytes: 4096 },
+  );
+  assert.ok(memRev.active.some((item) => item.seq === 2 && item.text.includes('30s')));
+  const seq1Active = memRev.active.find((item) => item.seq === 1);
+  assert.ok(seq1Active && !seq1Active.text.includes('10s') && seq1Active.text.includes('PostgreSQL 16'));
+  assert.ok(memRev.decisions.some((d) => d.seq === 1 && d.reason === 'superseded' && d.text.includes('10s')));
+  const scopedNoRetire = selectMemoryMessages(
+    [
+      { seq: 1, text: '在阶段 1：Timeout must be 10s。' },
+      { seq: 2, text: '在阶段 2：Timeout must be 30s。' },
+    ],
+    { maxBytes: 4096 },
+  );
+  assert.ok(scopedNoRetire.active.some((item) => item.text.includes('10s')) && scopedNoRetire.active.some((item) => item.text.includes('30s')));
+
+  // 6Astra P2-01: enabled/disabled morphology both in equivalent negatives and true inversions
+  const eqEnOk = auditCompaction({
+    userMessages: [{ seq: 1, text: 'Audit logging must remain enabled.' }],
+    summaryText: 'Audit logging must not be disabled.',
+  });
+  assert.equal(eqEnOk.lost.length, 0);
+  const flipEnBad = auditCompaction({
+    userMessages: [{ seq: 1, text: 'Audit logging must remain enabled.' }],
+    summaryText: 'Audit logging must be disabled.',
+  });
+  assert.ok(flipEnBad.lost.some((x) => x.reason === 'polarity'));
+  const crossSubjOk = auditCompaction({
+    userMessages: [{ seq: 1, text: 'Audit logging must remain enabled.' }],
+    summaryText: 'Audit logging must remain enabled. Metric logging must be disabled.',
+  });
+  assert.equal(crossSubjOk.lost.filter((x) => x.reason === 'polarity').length, 0);
 
   // P1-13(a): smooth resolveCompactSpec across 74191 -> 74192
   const s91 = resolveCompactSpec(DEFAULT_CONFIG, 74191, 8192);
