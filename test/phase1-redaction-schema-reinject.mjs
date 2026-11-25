@@ -635,8 +635,8 @@ await test('client-js-sandbox-redacts-pem-asia-renders-telemetry-pills-and-docum
         const reinjectHint = ui.dictionaries[lang].postCompactReinjectHint;
         assert.match(cjkHint, /chars\/4/);
         assert.match(cjkHint, /0\.75/);
-        assert.match(cjkHint, /2\.4\s*KB/i);
-        assert.match(cjkHint, /660.*750/);
+        assert.match(cjkHint, /2\.5\s*KB/i);
+        assert.match(cjkHint, /645.*697/);
         assert.match(reinjectHint, /64k/i);
         assert.match(reinjectHint, lang === 'zh' ? /0 次额外摘要模型调用/ : /0 extra summary LLM calls/);
         assert.match(reinjectHint, /24KB/);

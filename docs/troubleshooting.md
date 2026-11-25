@@ -16,7 +16,7 @@
 | 摘要结构不完整或输出截断 | 调高摘要输出上限（`maxTokens`），或更换更适合长文本归纳的摘要模型 |
 | 要求、极性或指令来源审计未通过（`CONSTRAINT_POLARITY_LOST` / `reason=provenance`） | 查看提示中的触发类型（`untrusted-source` / `revoked` / `missing-source`）、触发摘要句与诊断文件中的 `auditReports` / `audit-reject/` 记录。仅设 `auditBlockOnLoss: false` 不会放行极性反转（`CONSTRAINT_POLARITY_LOST`）或来源审计（`provenance`）；若触发来自第三方消息桥接或记忆插件注入，可将 `source.kind` 加入 `extraReferenceSourceKinds` 或将裸前缀加入 `extraReferencePrefixes`（已内置常见 IM 桥接与多行记忆注入头），无依据归纳可按需设 `auditProvenanceBlock: false`（`untrusted-source` 与 `revoked` 仍始终强拦截） |
 | 自动压缩连续失败触发熔断（`COMPACTION_STOPPED`） | 失败后输入框上方卡片会显示最近根因错误码、诊断 ID 与高成本大上下文计费提示：排查设置或切换模型后点击「手动重试压缩」（成功率清除所有熔断计数与放行标记）；如需在预算安全线内先继续对话，可通过设置页「自动压缩熔断后策略」（`confirm` / `degrade` / `block`，默认 `confirm`）或在卡片中二次确认放行，也可随时「恢复拦截」或复制脱敏诊断摘要反馈问题；注意 `RECOVERY_REQUIRED`、待续传与超出 `messageBudgetTokens` 红线永远不会放行 |
-| 同时安装 `dsh-world` 后 Weave 静默未挂载 | 若 `dsh-world` 开启了压缩接管（`compactionSwapped` / `dsh-world/compaction`），会覆盖官方 `@deepseek-ai/dsh-compaction-basic` 行导致 Weave 无法挂载。预设模式请在 World Console 点击 **概览 → 会话预设 → 还原 DSH 预设**；非预设模式设置 `replaceCompaction: false`（`dsh-world` 的日记、`memory_find` 与记忆注入均完整保留），详见 [README 共存说明](../README.md#与-dsh-world-共存及第三方桥接隔离) |
+| 同时安装 `dsh-world` 后 Weave 静默未挂载 | 若 `dsh-world` 开启了压缩接管（`compactionSwapped` / `dsh-world/compaction`），会覆盖官方 `@deepseek-ai/dsh-compaction-basic` 行导致 Weave 无法挂载。预设模式请在 World Console 点击 **概览 → 会话预设 → 还原 DSH 预设**；非预设模式设置 `replaceCompaction: false`（`dsh-world` 的日记、`memory_find` 与记忆注入均完整保留），也可搭配 `extraReferenceSourceKinds` / `extraReferencePrefixes` 隔离自定义注入，详见 [配置指南](configuration.md) |
 | 输入或单组工具消息过大 | 插件会在超长会话上自动执行第一级分批工具输出掩码、按主摘要目标独立计算窗口容量、按波次分层折叠检查点并限制每块/每波工具引用上限；若单条消息或单组工具仍超限，请根据诊断中的估算值调高摘要模型窗口或输入预算配置 |
 | 后台分页调用额度耗尽 | 排查提示原因后，输入 `/compact` 为剩余未完成页面续批一轮调用额度 |
 | 从 `billion-context` 切到 Weave 后无法自动压缩或遇到旧折叠块 | Weave 接管官方压缩行时会自动清除残留的 `disabled: true`；若日志提示继承了 `auto: false`，请从 profile patch 中移除 `auto: false` 或显式配置 `engine.auto: true`。旧会话中的 `billion-context` / `billion-context-dsh` 折叠块或工具记录可通过进度卡片中的“兼容转换为 Weave”按钮或 `/compact migrate` 一键转换，转换前会自动创建并经 SHA-256 校验完整原始会话备份；如需回退，可点击卡片中的“还原备份”或执行 `/compact backups`、`/compact restore [backupId]`（已打开的会话会先锁定写入，在关闭重开或重载 DSH 后自动完成原子还原） |
@@ -28,7 +28,7 @@
 
 ## 审计误拒与自然语言边界
 
-`PROGRESS_FACT_CONFLICT` 表示候选摘要中的显式 `key: value` 结构化进度字段（如 `*Count`、`*Completed`、`*Generated`、`*Passed`、`*Failed`、`*Path`、`*State`、`*Status` 与 `nextAction`）与来源消息里同一工作作用域的最新记录相矛盾（例如把已知数量写成 `null`，或把历史 `seq` 数值误写为当前进度）。常规诊断文件仅记录错误码、阶段、尝试状态、有效设置、估算值与 `auditReports` 索引，不保存来源事件序号、用户原话或候选摘要正文；`0.6.0` 的 `audit-reject/` 文件已直接记录 `summaryChars`、`requirementLines`、`coverageThreshold`、`blockingLost`、`softCoverageCount`、`auditCoverageScope` 与 `auditFallback`，对照其中的来源事件序号、源消息片段与候选摘要表述即可快速定位。
+`PROGRESS_FACT_CONFLICT` 表示候选摘要中的显式 `key: value` 结构化进度字段（如 `*Count`、`*Completed`、`*Generated`、`*Passed`、`*Failed`、`*Path`、`*State`、`*Status` 与 `nextAction`）与来源消息里同一工作作用域的最新记录相矛盾（例如把已知数量写成 `null`，或把历史 `seq` 数值误写为当前进度）。常规诊断文件仅记录错误码、阶段、尝试状态、有效设置、估算值与 `auditReports` 索引，不保存来源事件序号、用户原话或候选摘要正文；`audit-reject/` 快照则直接记录 `summaryChars`、`trigger`、`audit.coverageThreshold`、`audit.softCoverageCount`、`audit.auditFallbackSkippedReason`、`audit.lostCount` 与 `audit.lost`，对照其中的来源事件序号、源消息片段与候选摘要表述即可快速定位。
 
 来源隔离直接基于宿主事件通道与显式标签边界（工具结果及系统上下文参照不再被当成用户命令；若你在自己的用户消息里粘贴了包含要求句式的大段第三方材料，建议用 `<quoted_text>...</quoted_text>` 或代码块包起来以明确区分）；默认 `auditCoverageScope: 'recent'` 将覆盖率硬审计收敛在近期原话与本跨度新增要求内（超长历史/旧窗口迁移不再因早期条数过多而卡死），同时所有硬冲突红线（极性、数值、单位、条件、范围、关系、例外、引用、来源溯源）依然全局强制执行。若确认候选摘要与最新来源一致却仍被拒绝，欢迎附带最小复现片段、错误码与模型信息提交 Issue。当某条已对应上的用户要求仅存在局部表述冲突（且未触发进度冲突、整条漏写或假授权拦截）时，引擎也会优先尝试用用户原话确定性替换该争议句。
 
@@ -41,10 +41,15 @@
 ```
 
 - `diagnostics/`：采用白名单字段记录失败阶段、错误码、每次尝试状态、耗时、返回用量、有效配置、输入估算、分页进度及关联的 `auditReports` 索引，不包含来源事件序号、会话原话或候选摘要正文。其中 `context` 下的模型路由反映会话与摘要配置路由，不代表供应商最终实际响应的模型名；`actualDshVersion` 记为 `null` 表示未可靠采集到实际运行的宿主版本（排查或反馈时可手动补充实际版本），`supportedDshVersion` 则记录插件声明的宿主兼容范围字符串（`">=0.2.2-rc.1 <1.0.0-0"`）。
-- `audit-reject/`：保存未通过要求或进度校验的候选摘要、实际审计文本、来源事件序号及对应源片段，可由诊断文件中的 `auditReports` 字段定位。
+- `audit-reject/`：保存未通过要求或进度校验的候选摘要、实际审计文本、`summaryChars` / `trigger`、`audit` 字段（`coverageThreshold`、`softCoverageCount`、`auditFallbackSkippedReason`、`lostCount`、`lost`）、来源事件序号及对应源片段，可由诊断文件中的 `auditReports` 字段定位。
 - `sessions/`：按会话保存已归档的原始历史事件与附件。
 - `backups/`：按会话保存兼容转换前的原始字节完整会话备份（保留 `.v4.jsonl.zstd` / `.v4.jsonl` 原编码与 SHA-256 校验清单）、`pending-restore.json` 待还原标记与还原前安全副本，不向 DSH 原始会话目录写入额外文件。
-- `summary-config.json`：保存摘要模型路由、重试、闲置与 `auditBlockOnLoss` 设置。
+- `state/`：按会话持久化熔断计数、安全窗口观测值与可恢复状态（带 SHA-256 校验和及工作线程锁保护）。
+- `journal/`：保存替换提交期间的事务进度账本、并发锁与恢复状态记录。
+- `continuation-progress/`：保存后台容量分页接续及分块中断的已接受页面、源哈希与调用账本，支持暂停或崩退后恢复。
+- `session-memory/`：仅在开启 Opt-In `sessionMemoryEnabled` 后创建，保存回合间隙后台预热的滚动记忆及周期调用熔断计数。
+- `gate-receipts.jsonl`：有界滚动（最大 256 KiB）记录压缩入口接管与禁用清理回执，仅保存计数摘要 `{ rewritten, strippedDisabled, inheritedAutoFalse }`，不落盘同宿兄弟插件配置树。
+- `summary-config.json`：保存设置页全部热生效配置（摘要供应商与模型、输出上限、触发/缩减比例、重试与并发、推理力度、CJK 权重、闲置阈值、审计范围与拦截/兜底/熔断策略、分层压缩开关、重注入、图片/归档阈值及自定义参考前缀）。
 
 对话提示中给出的诊断路径对应当次操作，排查时优先查看该文件。若公开分享排查资料，请注意 `audit-reject/` 与会话片段包含用户原话与候选摘要正文，上传前请先检查并脱敏。`sessions/`、`audit-reject/`、`journal/` 等持久化目录与文件默认以 `0700` / `0600` 权限创建；该权限保护适用于 POSIX（macOS/Linux），Windows 下受 Node.js 文件权限语义限制（不引入外部 ACL 工具修改）。
 

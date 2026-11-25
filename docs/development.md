@@ -84,7 +84,7 @@ npm publish ./dist/dsh-compaction-weave-0.6.0.tgz --tag latest --access public
 
 ### 自动发版（GitHub Actions + npm Trusted Publishing）
 
-仓库已配置 [`.github/workflows/release.yml`](../.github/workflows/release.yml)：推送与 `package.json` 一致的 `v<version>` 标签时，会在 Windows 与 Linux 上完成全量校验、打包与 DSH 宿主兼容测试，并通过 OIDC Trusted Publishing（无需 `NPM_TOKEN` Secret，自动附带 Provenance 溯源证明）将 `./dist/dsh-compaction-weave-<version>.tgz` 发布到 npm（正式版绑定 `latest`，含 `-` 的预发布版绑定 `next`），同时自动创建/更新对应的 GitHub Release（正式版标记 `--latest`，附带无版本号 `dsh-compaction-weave.tgz` 等全部 5 个产物）。
+仓库已配置 [`.github/workflows/release.yml`](../.github/workflows/release.yml)：推送与 `package.json` 一致的 `v<version>` 标签时，会在 Windows 与 Linux 上完成全量校验、打包与 DSH 宿主兼容测试，并通过 OIDC Trusted Publishing（无需 `NPM_TOKEN` Secret，自动附带 Provenance 溯源证明）将 `./dist/dsh-compaction-weave-<version>.tgz` 发布到 npm（正式版绑定 `latest`；含 `-` 的预发布版优先使用非 `latest` 的 `publishConfig.tag`，如 `hotfix`，未指定时才回退 `next`），同时自动创建/更新对应的 GitHub Release（正式版标记 `--latest`，附带无版本号 `dsh-compaction-weave.tgz` 等全部 5 个产物）。
 
 一次性启用步骤：首次手动发包上线后，在 npmjs.com 包页面的 **Settings → Trusted Publisher** 中添加 GitHub Actions（Organization/user 填 `NightFrost42`，Repository 填 `dsh-compaction-weave`，Workflow filename 填 `release.yml`，Environment 留空）。日常改动前也可用 GitHub Actions 的 `workflow_dispatch`（默认 `dry_run=true`）空跑预演发布流程。
 
@@ -92,4 +92,4 @@ npm publish ./dist/dsh-compaction-weave-0.6.0.tgz --tag latest --access public
 
 进度判断目前以显式 `key: value` 结构化事实为准，样本应同时包含正确摘要和真实矛盾。例如保留 `chartGenerated: false` 与正确 `seq=` 历史引述应通过；把同作用域最新值改写为 `chartGenerated: true` 或 `null` 时，应能触发 `PROGRESS_FACT_CONFLICT`。
 
-修改候选解析、通道隔离或审计逻辑时，请运行全部活动测试（重点检查 `phase1-optimizations.mjs`、`phase2-optimizations.mjs`、`phase3-route-b.mjs`、`astra-review-fixes.mjs`、`release-billing-safety.mjs` 与 `constraint-scope.mjs`），确保版本 1 / 版本 2 结构化进度来源、计费边界及归档兼容契约不受影响。
+修改候选解析、通道隔离或审计逻辑时，请运行全部活动测试（重点检查 `phase1-optimizations.mjs`、`phase2-optimizations.mjs`、`phase3-route-b.mjs`、`astra-review-fixes.mjs`、`release-billing-safety.mjs`、`constraint-scope.mjs`、`wave3-audit-hardening.mjs`、`wave4-audit-hardening.mjs` 与 `v060-audit-hardening.mjs`），确保版本 1 / 版本 2 结构化进度来源、计费边界及归档兼容契约不受影响。

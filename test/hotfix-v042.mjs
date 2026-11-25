@@ -827,19 +827,23 @@ await test('issue4-and-v042-metadata-docs-and-changelog', () => {
 
   const readmeZh = readFileSync(new URL('README.md', rootDir), 'utf8');
   const readmeEn = readFileSync(new URL('README.en.md', rootDir), 'utf8');
+  const cfgZh = readFileSync(new URL('docs/configuration.md', rootDir), 'utf8');
+  const cfgEn = readFileSync(new URL('docs/en/configuration.md', rootDir), 'utf8');
   assert.match(readmeZh, /dsh-world/);
-  assert.match(readmeZh, /replaceCompaction:\s*false/);
-  assert.match(readmeZh, /还原 DSH 预设/);
-  assert.match(readmeZh, /extraReferenceSourceKinds/);
   assert.match(readmeEn, /dsh-world/);
-  assert.match(readmeEn, /replaceCompaction:\s*false/);
-  assert.match(readmeEn, /extraReferenceSourceKinds/);
+  assert.match(cfgZh, /extraReferenceSourceKinds/);
+  assert.match(cfgEn, /extraReferenceSourceKinds/);
 
   const tsZh = readFileSync(new URL('docs/troubleshooting.md', rootDir), 'utf8');
   const tsEn = readFileSync(new URL('docs/en/troubleshooting.md', rootDir), 'utf8');
   assert.match(tsZh, /dsh-world/);
+  assert.match(tsZh, /replaceCompaction:\s*false/);
+  assert.match(tsZh, /还原 DSH 预设/);
+  assert.match(tsZh, /extraReferenceSourceKinds/);
   assert.match(tsZh, /CONSTRAINT_POLARITY_LOST/);
   assert.match(tsEn, /dsh-world/);
+  assert.match(tsEn, /replaceCompaction:\s*false/);
+  assert.match(tsEn, /extraReferenceSourceKinds/);
   assert.match(tsEn, /CONSTRAINT_POLARITY_LOST/);
 });
 

@@ -9,9 +9,9 @@
 | 验证维度 | 范围与条件 | 结果 | 数据记录 |
 | --- | --- | --- | --- |
 | **静态与拓扑校验 (`npm run check`)** | `288` 个发布源文件、包清单 `0.6.0`、文档链接、安装示例与敏感内容规则 | **91 个非客户端 ESM 模块 `0` 环 DAG 通过** | [../scripts/check.mjs](../scripts/check.mjs) |
-| **全量离线单元测试 (`npm test`)** | 独立进程 + 隔离临时 `DSH_HOME` | **103 套、1,479 项用例全部通过，0 失败** | [../test/v060-audit-hardening.mjs](../test/v060-audit-hardening.mjs) |
-| **DSH `0.2.2-rc.1` 宿主集成回归** | 真实 DSH `Session`、容量、多代缓存与原生 `.rollback` 事务 | **111 套、1,610 项用例全部通过，0 失败** | — |
-| **DSH `0.2.2-rc.3` 宿主集成回归** | 真实 DSH `Session`、容量、多代缓存与原生 `.rollback` 事务 | **111 套、1,610 项用例全部通过，0 失败** | — |
+| **全量离线单元测试 (`npm test`)** | 独立进程 + 隔离临时 `DSH_HOME` | **103 套、1,480 项用例全部通过，0 失败** | [../test/v060-audit-hardening.mjs](../test/v060-audit-hardening.mjs) |
+| **DSH `0.2.2-rc.1` 宿主集成回归** | 真实 DSH `Session`、容量、多代缓存与原生 `.rollback` 事务 | **111 套、1,611 项用例全部通过，0 失败** | — |
+| **DSH `0.2.2-rc.3` 宿主集成回归** | 真实 DSH `Session`、容量、多代缓存与原生 `.rollback` 事务 | **111 套、1,611 项用例全部通过，0 失败** | — |
 | **独立发布打包与解包验收** | `npm run pack:release`（`dist/dsh-compaction-weave-0.6.0.tgz`、`dsh-compaction-weave.tgz`、源码归档与 `SHA256SUMS.txt`） | 白名单校验一致、干净退出 | [../scripts/release.mjs](../scripts/release.mjs) |
 
 ---

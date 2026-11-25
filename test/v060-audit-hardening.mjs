@@ -1572,7 +1572,41 @@ await test('v060-release-gate-p1-1-2-3-and-p2-1-8-security-locks-and-client-regr
     });
     const errTree = await uiErrClient.settleSettings();
     assert.match(textOf(errTree), /Failed to load settings: disk offline/);
+    const disabledSave = uiErrClient.button(errTree, 'Save');
+    const disabledClear = uiErrClient.button(errTree, 'Clear (follow session model)');
+    const reloadSettingsBtn = uiErrClient.button(errTree, 'Reload settings');
+    assert.equal(disabledSave?.props?.disabled, true, 'P2-3 Save must be disabled when initial rpc(get) fails');
+    assert.equal(disabledClear?.props?.disabled, true, 'P2-3 Clear must be disabled when initial rpc(get) fails');
+    assert.ok(reloadSettingsBtn, 'P2-3 Reload settings button must render when rpc(get) fails');
     uiErrClient.unmount();
+
+    const smCardClient = mountClient({
+      language: 'en',
+      handler: async ({ method }) => {
+        if (method === 'status') {
+          return {
+            active: false,
+            phase: 'idle',
+            effectiveReinjectMaxBytes: 12345,
+            sessionMemory: {
+              enabled: true,
+              ready: true,
+              updating: false,
+              coveredNodes: 42,
+              coveredThroughSeq: 9,
+              callsUsed: 3,
+              totalCallsUsed: 7,
+              maxCalls: 8,
+            },
+          };
+        }
+        return {};
+      },
+    });
+    const smTree = await smCardClient.settleProgress({ sessionId: 's-sm-ui' });
+    assert.ok(smTree, 'P2-3 ProgressCard must render when only sessionMemory is active');
+    assert.match(textOf(smTree), /42 nodes.*3\/8 this cycle/);
+    smCardClient.unmount();
 
     const clientSrc = readFileSync(join(REPO_ROOT, 'lib', 'client.js'), 'utf8');
     assert.ok(clientSrc.includes("t('loadError')"));
@@ -1580,9 +1614,202 @@ await test('v060-release-gate-p1-1-2-3-and-p2-1-8-security-locks-and-client-regr
     assert.ok(clientSrc.includes('function sessionMemoryChanged(a, b)'));
     assert.ok(clientSrc.includes('Math.round(Number(timeoutText) * 1000)'));
     assert.ok(clientSrc.includes('Math.round(Number(String(form.summaryTimeout).trim()) * 1000)'));
+    assert.ok(clientSrc.includes('effectiveReinjectMaxBytes'));
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+await test('4da2472-audit-remediation-p1-1-p1-2-p2-1-p2-2-and-conflict', async () => {
+  const root = await mkdtemp(join(TEST_BASE, 'weave-4da-fix-'));
+  try {
+    // 1. P1-1: Real search cache UTF-16 + TF byte metering & combined index eviction
+    const arch = new CompactionArchive({ root: join(root, 'arch-big'), maxSearchCacheSessionBytes: 4000 });
+    await arch.writeSpan({
+      sessionId: 's-big',
+      compactionId: 'cmp-big-1',
+      entries: [{ seq: 1, role: 'user', text: 'needleAlpha ' + 'x'.repeat(10000) }],
+    });
+    await arch.writeSpan({
+      sessionId: 's-big',
+      compactionId: 'cmp-big-2',
+      entries: [{ seq: 2, role: 'user', text: 'needleBeta ' + 'y'.repeat(10000) }],
+    });
+    const resBig = await arch.search('s-big', 'needleAlpha');
+    assert.equal(resBig.hits.length, 1);
+    const cacheEntry = arch._searchCache.get('s-big');
+    assert.equal(cacheEntry?.spans?.size ?? 0, 0, 'P1-1 oversized prepared span (>4000 B) must not be cached');
+    assert.equal(cacheEntry?.totalBytes ?? 0, 0);
+    assert.equal(cacheEntry?.index ?? null, null, 'P1-1 oversized combined BM25F index must not stay pinned');
+
+    // Also test FIFO eviction when medium spans fit individually (3000 B each) but together exceed 4000 B
+    const archMed = new CompactionArchive({ root: join(root, 'arch-med'), maxSearchCacheSessionBytes: 5000 });
+    await archMed.writeSpan({
+      sessionId: 's-med',
+      compactionId: 'cmp-med-1',
+      entries: [{ seq: 1, role: 'user', text: 'alphaTerm ' + 'a'.repeat(400) }],
+    });
+    await archMed.writeSpan({
+      sessionId: 's-med',
+      compactionId: 'cmp-med-2',
+      entries: [{ seq: 2, role: 'user', text: 'betaTerm ' + 'b'.repeat(400) }],
+    });
+    await archMed.search('s-med', 'alphaTerm');
+    const medEntry = archMed._searchCache.get('s-med');
+    assert.ok((medEntry?.totalBytes ?? 0) <= 5000, 'P1-1 totalBytes must enforce maxSearchCacheSessionBytes');
+    assert.equal(medEntry?.spans?.size ?? 0, 1, 'P1-1 older medium span must be evicted when combined exceeds budget');
+    assert.equal(medEntry?.index ?? null, null, 'P1-1 evicted combined index must not persist');
+
+    // 2. P1-2: Real dual-method HostConnectionService (admit + requestRejection), malformed admit, and remote conn === null
+    let rpcHandler = null;
+    let rpcConn = null;
+    const rpcInject = [];
+    const disposeRpc = mountGate(
+      {
+        on() {},
+        provide() {},
+        get: () => rpcConn,
+        inject(deps, cb) {
+          if (Array.isArray(deps) && deps.includes('webServer')) {
+            return cb({
+              on(ev, fn) { if (ev === 'webserver/index-inject') rpcInject.push(fn); return () => {}; },
+              effect: (fn) => fn(),
+              webServer: {
+                host: '127.0.0.1',
+                register(r) { rpcHandler = r.handler; return () => {}; },
+              },
+            });
+          }
+          return () => {};
+        },
+      },
+      { receiptPath: join(root, 'gate-receipts.jsonl') },
+    );
+    try {
+      const tbl = [];
+      rpcInject.forEach((fn) => fn(tbl, { principal: { kind: 'owner', id: 'o' } }));
+      const validTok = tbl.find((x) => x.name === '__WEAVE_RPC_TOKEN__')?.value;
+      const sendRpc = (headers, remoteAddress = '127.0.0.1') =>
+        new Promise((resolveRes) => {
+          const req = Object.assign(new EventEmitter(), { method: 'POST', headers, socket: { remoteAddress }, destroy() {} });
+          const out = { statusCode: 200, body: '' };
+          const res = {
+            set statusCode(c) { out.statusCode = c; },
+            get statusCode() { return out.statusCode; },
+            setHeader() {},
+            end(chunk = '') { resolveRes({ status: out.statusCode, json: JSON.parse(String(chunk)) }); },
+          };
+          const p = rpcHandler(req, res);
+          req.emit('data', Buffer.from('{"method":"get"}'));
+          req.emit('end');
+          Promise.resolve(p).catch(() => {});
+        });
+
+      // Dual-method HostConnectionService: admit() MUST take precedence over requestRejection()
+      let dualPeerKind = 'owner';
+      let dualAuthed = false;
+      rpcConn = {
+        requestRejection(req) {
+          const a = this.admit(req);
+          return 'rejection' in a ? a.rejection : undefined;
+        },
+        admit() {
+          if (!dualAuthed) return { rejection: 401 };
+          return { peer: { principal: { kind: dualPeerKind } } };
+        },
+      };
+      const electronLoopbackTok = await sendRpc({
+        host: '127.0.0.1:3000',
+        'x-weave-rpc-token': validTok,
+        'content-type': 'application/json',
+      });
+      assert.equal(electronLoopbackTok.status, 200, 'P1-2 dual-method host must allow Electron loopback boot-token on 401');
+
+      dualAuthed = true;
+      dualPeerKind = 'share-viewer';
+      const dualViewerDenied = await sendRpc({
+        host: '127.0.0.1:3000',
+        origin: 'http://127.0.0.1:3000',
+        'content-type': 'application/json',
+      });
+      assert.equal(dualViewerDenied.status, 403, 'P1-2 dual-method host must reject share-viewer with 403');
+
+      for (const badRet of [null, undefined, {}, { peer: null }, []]) {
+        rpcConn = { admit: () => badRet };
+        const badRes = await sendRpc({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' });
+        assert.equal(badRes.status, 403, 'P1-2 malformed admit return must fail closed with 403');
+      }
+      rpcConn = { admit: () => { throw new Error('boom'); } };
+      const throwRes = await sendRpc({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' });
+      assert.equal(throwRes.status, 403, 'P1-2 throwing admit() must fail closed cleanly with 403');
+
+      rpcConn = null;
+      const remoteNoConn = await sendRpc(
+        { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' },
+        '192.168.1.99',
+      );
+      assert.equal(remoteNoConn.status, 403, 'P1-2 conn===null must reject non-loopback remoteAddress');
+    } finally {
+      disposeRpc?.();
+    }
+
+    // 3. P2-1: Cross-turn conversational & parenthetical scalar revision retirement
+    const rev1 = selectMemoryMessages(
+      [
+        { seq: 1, sourceKind: 'user', text: 'Timeout must be 30s.' },
+        { seq: 2, sourceKind: 'user', text: 'Wait no, Timeout must be 60s.' },
+      ],
+      { preserveRecentMessages: 4, preserveRecentUserTokens: 1000 },
+    );
+    assert.equal(rev1.decisions.length, 1);
+    assert.deepEqual(rev1.active.map((m) => m.seq), [2]);
+
+    const rev2 = selectMemoryMessages(
+      [
+        {
+          seq: 4,
+          sourceKind: 'user',
+          text: '项目约束：\n1. 必须使用 PostgreSQL 16；\n2. Timeout must be 10s，内存限制 1024MB；\n3. 启用 auditBlockOnLoss: true，禁止删除生产库。',
+        },
+        { seq: 5, sourceKind: 'user', text: '需求变更：Timeout must be 30s（取消 10s），内存限制改为 2GB。' },
+      ],
+      { preserveRecentMessages: 4, preserveRecentUserTokens: 1000 },
+    );
+    assert.equal(rev2.decisions.length, 2);
+    assert.ok(!rev2.active.some((m) => m.text.includes('10s') && m.seq === 4));
+    assert.ok(!rev2.active.some((m) => m.text.includes('1024MB')));
+    assert.ok(rev2.active.some((m) => m.text.includes('PostgreSQL 16')));
+    assert.ok(rev2.active.some((m) => m.text.includes('禁止删除生产库')));
+
+    // 4. 6Astra and_conflict: Do not X and do not Y vs Do not X and Y (with non-verb noun-conjunction negative guard)
+    const andAudit = auditCompaction({
+      userMessages: [{ seq: 4, sourceKind: 'user', text: 'Do not delete production databases and do not deploy production.' }],
+      summaryText: 'Do not delete production databases and deploy production.',
+      threshold: 0.6,
+    });
+    assert.equal(andAudit.polarityFlips, 1, 'Do not X and Y after Do not X and do not Y must catch polarity flip');
+    const nounAndAudit = auditCompaction({
+      userMessages: [{ seq: 4, sourceKind: 'user', text: 'Do not delete staging and production databases.' }],
+      summaryText: 'Do not delete staging and production databases.',
+      threshold: 0.6,
+    });
+    assert.equal(nounAndAudit.lost.length, 0, 'Noun conjunction under negation must not trigger false polarity flip');
+
+    // 5. P2-2: SessionStateStore.withStepReadCache deduplicates reads within one step & invalidates on write
+    const stateStore = new SessionStateStore(join(root, 'state'));
+    stateStore.update('s-step', (prev) => ({ ...prev, failures: 1 }));
+    await stateStore.withStepReadCache(async () => {
+      const a = stateStore.read('s-step');
+      const b = stateStore.read('s-step');
+      assert.equal(a.failures, 1);
+      assert.equal(b.failures, 1);
+      stateStore.update('s-step', (prev) => ({ ...prev, failures: 2 }));
+      const c = stateStore.read('s-step');
+      assert.equal(c.failures, 2);
+    });
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

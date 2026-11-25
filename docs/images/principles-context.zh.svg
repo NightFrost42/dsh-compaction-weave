@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
-  <title>上下文结构对照：两级整理、前后保留与按需归档回查</title>
-  <desc>展示 DSH Compaction Weave 两级上下文整理与压缩前后可见上下文的三段结构（保留前缀、第一级工具输出折叠或第二级平衡跨度检查点、保留近期尾部），以及通道隔离、有效要求审计与磁盘归档按需工具回查机制。</desc>
+  <title>上下文结构对照：四层整理、前后保留与 BM25F 按需回查</title>
+  <desc>展示 DSH Compaction Weave 四层上下文整理（热缓存 Persisted-Output、闲置 Microcompact/Collapse、压力 Observation Masking 与结构化检查点+可选 Session Memory、极限 Snip 与双水位 image/offload）以及可见上下文三段结构、37 项来源隔离与 zstd 归档按需 BM25F 回查。</desc>
   <defs>
     <marker id="arrow-dark" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
       <path d="M 0 1 L 8 5 L 0 9 z" fill="#334155" />
@@ -10,7 +10,7 @@
     </marker>
   </defs>
   <rect x="0" y="0" width="1400" height="760" fill="#F8FAFC" />
-  <text x="700" y="50" text-anchor="middle" font-size="30" font-weight="bold" fill="#0F172A">上下文结构对照：两级整理、前后保留与按需归档回查</text>
+  <text x="700" y="50" text-anchor="middle" font-size="30" font-weight="bold" fill="#0F172A">上下文结构对照：四层整理、前后保留与 BM25F 按需回查</text>
   <text x="60" y="92" font-size="22" font-weight="bold" fill="#334155">压缩前：当前可见消息表面（Visible Context Surface）</text>
   <rect x="60" y="108" width="380" height="155" rx="12" fill="#FFFFFF" stroke="#64748B" stroke-width="2.5" />
   <text x="84" y="145" font-size="21" font-weight="bold" fill="#0F172A">1. 保留前缀（Prefix）</text>
@@ -20,18 +20,18 @@
     <tspan x="84" dy="30">优先在最新检查点后增量选区</tspan>
   </text>
   <rect x="470" y="108" width="460" height="155" rx="12" fill="#FFFBEB" stroke="#D97706" stroke-width="2.5" stroke-dasharray="8 5" />
-  <text x="494" y="145" font-size="21" font-weight="bold" fill="#92400E">2. 选定整理区间（两级处理）</text>
-  <text x="494" y="182" font-size="18" fill="#78350F">
-    <tspan x="494" dy="0">完整配对的 tool/call 与 result</tspan>
-    <tspan x="494" dy="30">第一级：超4k非错工具输出先折首尾</tspan>
-    <tspan x="494" dy="30">不够再压跨度；闲置/上限/修订合并</tspan>
+  <text x="494" y="145" font-size="21" font-weight="bold" fill="#92400E">2. 分层整理区间（4 层 + 图片卸载）</text>
+  <text x="494" y="182" font-size="17" fill="#78350F">
+    <tspan x="494" dy="0">热尾 Persisted-Output / 闲置 Microcompact</tspan>
+    <tspan x="494" dy="29">压力 Observation Masking (Tier-4) → 摘要</tspan>
+    <tspan x="494" dy="29">红线 Snip 急救；超水位 image/offload 保留6张</tspan>
   </text>
   <rect x="960" y="108" width="380" height="155" rx="12" fill="#FFFFFF" stroke="#64748B" stroke-width="2.5" />
   <text x="984" y="145" font-size="21" font-weight="bold" fill="#0F172A">3. 近期尾部（Recent Tail）</text>
   <text x="984" y="182" font-size="18" fill="#334155">
     <tspan x="984" dy="0">自动路径默认保留预算的 16%</tspan>
     <tspan x="984" dy="30">（例：M=191808 时为 30689t）</tspan>
-    <tspan x="984" dy="30">原样保留以维持当前步骤连贯</tspan>
+    <tspan x="984" dy="30">未发尾部大输出 0-LLM 溢出归档</tspan>
   </text>
   <line x1="250" y1="320" x2="250" y2="332" stroke="#334155" stroke-width="2.5" marker-end="url(#arrow-dark)" />
   <line x1="700" y1="320" x2="700" y2="332" stroke="#0369A1" stroke-width="3" marker-end="url(#arrow-blue)" />
@@ -42,36 +42,36 @@
   <text x="84" y="412" font-size="18" fill="#334155">
     <tspan x="84" dy="0">未触发合并时原样保留</tspan>
     <tspan x="84" dy="30">同路由摘要亦尽量复用 KV 前缀</tspan>
-    <tspan x="84" dy="30">（缓存命中不等于总费用必降）</tspan>
+    <tspan x="84" dy="30">（过期 Collapse 仅限闲置窗口）</tspan>
   </text>
   <rect x="470" y="338" width="460" height="172" rx="12" fill="#E0F2FE" stroke="#0284C7" stroke-width="3" />
-  <text x="494" y="375" font-size="21" font-weight="bold" fill="#0C4A6E">2. 检查点或工具输出折叠预览</text>
-  <text x="494" y="412" font-size="18" fill="#0369A1">
-    <tspan x="494" dy="0">九节摘要 + 近期原话 + k:v进度与报告</tspan>
-    <tspan x="494" dy="30">附 History archive 指针与涉及文件</tspan>
-    <tspan x="494" dy="30">Tokens与UTF-8字节均严格小于源跨度</tspan>
+  <text x="494" y="375" font-size="21" font-weight="bold" fill="#0C4A6E">2. 检查点或零调用存根预览</text>
+  <text x="494" y="412" font-size="17" fill="#0369A1">
+    <tspan x="494" dy="0">九节摘要(可复用 Session Memory)+原话+k:v</tspan>
+    <tspan x="494" dy="29">附 History archive 指针与涉及文件 + 日期锚点</tspan>
+    <tspan x="494" dy="29">Tokens 与规范化 UTF-8 字节均严格小于源跨度</tspan>
   </text>
   <rect x="960" y="338" width="380" height="172" rx="12" fill="#F1F5F9" stroke="#475569" stroke-width="2.5" />
-  <text x="984" y="375" font-size="21" font-weight="bold" fill="#0F172A">3. 近期尾部 + 后续新消息</text>
+  <text x="984" y="375" font-size="21" font-weight="bold" fill="#0F172A">3. 近期尾部 + 重注入工作文件</text>
   <text x="984" y="412" font-size="18" fill="#334155">
     <tspan x="984" dy="0">模型仅读取当前可见消息列表</tspan>
-    <tspan x="984" dy="30">不会每轮自动重读磁盘全部归档</tspan>
-    <tspan x="984" dy="30">有损摘要/预览 + 按需工具回查</tspan>
+    <tspan x="984" dy="30">近期工作区文件脱敏重注入(≤24KB)</tspan>
+    <tspan x="984" dy="30">其余原文通过 BM25F 按需工具回查</tspan>
   </text>
   <line x1="1120" y1="568" x2="1120" y2="515" stroke="#0369A1" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#arrow-blue)" />
   <rect x="60" y="572" width="460" height="155" rx="12" fill="#FFFFFF" stroke="#475569" stroke-width="2.5" />
-  <text x="84" y="609" font-size="21" font-weight="bold" fill="#0F172A">原话预算、通道隔离与要求审计</text>
-  <text x="84" y="646" font-size="18" fill="#334155">
-    <tspan x="84" dy="0">第6节仅填近期原话(≤32条 / 4096t)</tspan>
-    <tspan x="84" dy="30">宿主通道与 XML 标签隔离外部参考</tspan>
-    <tspan x="84" dy="30">更早要求、否定极性与授权出处独立审计</tspan>
+  <text x="84" y="609" font-size="21" font-weight="bold" fill="#0F172A">原话预算、37 项通道隔离与 6 层审计</text>
+  <text x="84" y="646" font-size="17" fill="#334155">
+    <tspan x="84" dy="0">第6节填近期原话(≤32条 / 4096t) + 近期覆盖率</tspan>
+    <tspan x="84" dy="29">V4 一方注入 + IM 桥接与 XML 标签隔离外部参考</tspan>
+    <tspan x="84" dy="29">全局红线: 极性/数值/条件/作用域/授权[seq N]</tspan>
   </text>
   <path d="M 918 250 L 946 250 L 946 553 L 946 568" fill="none" stroke="#0369A1" stroke-width="2.5" marker-end="url(#arrow-blue)" />
   <rect x="550" y="572" width="790" height="155" rx="12" fill="#F0FDF4" stroke="#15803D" stroke-width="2.5" />
-  <text x="574" y="609" font-size="21" font-weight="bold" fill="#14532D">磁盘原文归档（第一级折叠前 / 第二级替换前写入）</text>
-  <text x="574" y="646" font-size="18" fill="#166534">
-    <tspan x="574" dy="0">完整保存原始事件、代码、工具日志与附件（含 SHA-256 校验）</tspan>
-    <tspan x="574" dy="30">通过 history_list / 多词 history_search / history_read 按需精准回查</tspan>
-    <tspan x="574" dy="30">外部文件后续可能改变，需区分归档历史快照与当前磁盘文件</tspan>
+  <text x="574" y="609" font-size="21" font-weight="bold" fill="#14532D">本地无损 zstd 归档（任何折叠、裁剪或替换前写入）</text>
+  <text x="574" y="646" font-size="17" fill="#166534">
+    <tspan x="574" dy="0">0o700/0o600 写入事件与图片附件（含 SHA-256 校验，绝不自动删原件）</tspan>
+    <tspan x="574" dy="29">history_list / 纯 JS BM25F history_search (2-hop) / history_read 按需回查</tspan>
+    <tspan x="574" dy="29">外部文件后续可能改变，需区分归档历史快照与当前磁盘文件</tspan>
   </text>
 </svg>

@@ -22,10 +22,14 @@
 | 摘要并发数 | `summaryConcurrency` | 2 | 1–6 整数（多块并行生成，严格按顺序提交；遇到 HTTP 429 自动降为 1） |
 | 摘要推理力度 | `summaryReasoningEffort` | `auto` | `auto`（默认按路由自适应：仅 Anthropic 同路由继承，非 Anthropic 路由有思考时压到 `low`，主会话未开思考时不强行开启）/ `low` / `none`（关闭）/ `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit`（跟随会话）；不支持时自动逐级向下回退 |
 | CJK 预算保守权重 | `summaryCjkTokensPerChar` | `0.75` | `0.5–1.5`（默认 `0.75`，使 128k 中文会话正常保留前部 KV 缓存；需要兼容较碎分词器时可调到 `1.0`） |
-| 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭 |
-| 覆盖率审计窗口范围 | `auditCoverageScope` | `'recent'` | `'recent'`（默认：覆盖近期原话保留窗口及本跨度新增近期原始用户消息，按至少 `32` 条 / `4096` token 封顶；窗外旧跨度/超大规模迁移原话普通遗漏记软警告不阻塞）/ `'span-new'`（仅对本跨度新增原始用户消息强制覆盖率）/ `'all'`（全跨度严格覆盖）；**所有冲突红线（`polarity`/`value`/`unit`/`condition`/`range`/`relation`/`exception`/`reference`/`provenance`）在三档下始终全局强制执行** |
-| 启发式审计耗尽兜底策略 | `auditExhaustionPolicy` | `'fallback'` | `'fallback'`（默认：全链与重试耗尽后，对纯覆盖/软溯源争议外挂 `<= 3` 处经核验纯用户原话放行；极性反转永不兜底）/ `'block'`（严格拦截，禁用兜底） |
-| 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，**对正文执行凭据、未闭合/跨截断边界 PEM 私钥体与尾部前缀脱敏**，最多重读 5 个本地工作区文件，受 `postCompactReinjectMaxBytes` 默认 24KB 封顶）/ 关闭 |
+| 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭（用户紧急逃生阀：关闭后仅放行普通覆盖缺失及非极性冲突，**极性反转与硬来源冲突 `untrusted-source`/`revoked` 仍严格拦截**） |
+| 覆盖率审计窗口范围 | `auditCoverageScope` | `'recent'` | `'recent'`（默认：覆盖近期原话保留窗口及本跨度新增近期原始用户消息，按至少 `32` 条 / `4096` token 封顶；窗外旧跨度/超大规模迁移原话普通遗漏记软警告不阻塞；`/compact <focus>` 仅柔化纯 `coverage` 缺口）/ `'span-new'`（仅对本跨度新增原始用户消息强制覆盖率）/ `'all'`（全跨度严格覆盖）；**所有冲突红线（`polarity`/`value`/`unit`/`condition`/`range`/`relation`/`exception`/`reference`/`provenance`）在三档下始终全局强制执行** |
+| 启发式审计耗尽兜底策略 | `auditExhaustionPolicy` | `'fallback'` | `'fallback'`（默认：当前摘要目标与至少 1 次纠偏重试耗尽后，**严格仅对 `<= 3` 处纯 `coverage` 或软 `missing-source` 缺口**外挂经核验纯用户原话放行；极性反转、数值/单位/条件/区间/关系/例外/引用硬冲突、`summaryRetryCount === 0` 及 `untrusted-source`/`revoked` 永不兜底）/ `'block'`（严格拦截，禁用兜底） |
+| 自动压缩熔断后策略 | `pressureBreakerAction` | `'confirm'` | `'confirm'`（默认：暂停自动发送并在输入框卡片提供重试与两步确认放行）/ `'degrade'`（未超硬预算时告警并暂跳过自动压缩）/ `'block'`（严格阻断） |
+| 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；最多重读 5 个本地工作区文件，总预算 24KB；对含缩进/引号/未闭合/错标签 PEM 与 `PGP PRIVATE KEY BLOCK`、`github_pat_`、裸 JWT、`scheme://user:pass@` URL 及显式键名右侧 40 位 AWS Secret 脱敏且保留 40 位 SHA-1；自动跳过 `.env`/`.envrc`、`*.tfvars`/`*.tfvars.json`、`auth.json`、`service-account*.json`、`.aws/config`、`*.p8`、`*.ppk` 等敏感文件与 `AGENTS.md`/`CLAUDE.md`）/ 关闭 |
+| 本地归档占用警告阈值 | `archiveWarnBytes` | `536870912`（512 MiB） | `0`（关闭提醒）– `107374182400`（100 GiB / 102400 MiB）整数，超出阈值仅温和提示并附设置页无损压缩与孤儿清理入口 |
+| 可见图片字节高水位 | `maxVisibleAttachmentBytes` | `16777216`（16 MiB） | `0`（关闭）– `1073741824`（1 GiB）整数；超水位单批卸载较早图片并保留最新 6 张热点图片 |
+| 可见图片张数高水位 | `maxVisibleImages` | `24` | `0`（关闭）或 `1–500` 整数（另含长边 `>2000px` 超 `20` 张护栏） |
 | 超大工具结果尾部溢出 | `persistedOutputEnabled` | `true`（开启） | 开启（0 额外摘要模型调用，仅归档未发送尾部 ≥ 32768 字符工具输出并留首尾 1200 字预览）/ 关闭 |
 | 第一级归档存根掩码 | `observationMaskingEnabled` | `true`（开启） | 开启（默认，0 LLM 优先路径；压力或手动压缩时先折叠较早大工具输出为带 `history_read` 指针的存根，达标则免除摘要模型调用）/ 关闭 |
 | 闲置 0-LLM 轻压缩 | `microcompactEnabled` | `true`（开启） | 开启（0 LLM 调用；**需开启 `idleCompactionMinutes > 0` 才会触发**，闲置超期后先保留最新 4 条热点输出，折叠更早大输出与重复读取）/ 关闭 |
@@ -36,9 +40,9 @@
 
 设置页用秒展示等待时间与间隔，配置字段使用毫秒。重试次数指首次请求之后的额外尝试：设置为 2 时，每个未完成的摘要或页面最多尝试 3 次。连续重试采用指数退避，间隔最高 30 秒。
 
-供应商和模型一起选择或一起清空（输出上限 `maxTokens` 也可在不覆盖供应商/模型时独立保存生效）。点击“清除（跟随会话模型）”会清除模型覆盖及其独立输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、CJK 预算权重、闲置时间、审计拦截、工作区文件重注入、尾部溢出、第一级归档存根掩码、闲置轻压缩、最后兜底急救裁剪（Snip）以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
+供应商和模型一起选择或一起清空（输出上限 `maxTokens` 也可在不覆盖供应商/模型时独立保存生效）。点击“清除（跟随会话模型）”会清除模型覆盖及其独立输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、CJK 预算权重、闲置时间、审计拦截与覆盖率范围/耗尽兜底策略、熔断后策略、工作区文件重注入、归档/图片阈值、尾部溢出、第一级归档存根掩码、闲置轻压缩、最后兜底急救裁剪（Snip）、自定义参考前缀以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
 
-**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`summaryCjkTokensPerChar`、`auditBlockOnLoss`、`auditCoverageScope`、`auditExhaustionPolicy`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`observationMaskingEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes` 与 `maxVisibleImages`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
+**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`summaryCjkTokensPerChar`、`auditBlockOnLoss`、`auditCoverageScope`、`auditExhaustionPolicy`、`pressureBreakerAction`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`observationMaskingEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes`、`maxVisibleImages` 与 `extraReferencePrefixes`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
 
 ### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
@@ -109,8 +113,11 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `idleCompactionMinTokens` | `0` | 触发闲置压缩所需的最小上下文 token 数（0 表示不设额外下限） |
 | `idleRetainTokens` | `0` | 闲置压缩时保留在末尾的近期上下文 token 预算 |
 | `thresholdRatio` | `0.8` | 自动触发比例 |
-| `headroomTokens` | `33000` | 为后续回复和工具结果预留空间；预算不超过 2 倍该值时上限取 `25%`，超出后平滑过渡至配置值，按比例保留近期尾部时另留至少 1 token 的净压缩裕量 |
+| `headroomTokens` | `33000` | 为后续回复和工具结果预留的提前量；内部取随 `messageBudgetTokens`（$M$）单调不减的分段上限（$M \le 66000$ 取 $25\%$，超出后按 $\min(\lfloor M \times 0.5 \rfloor,\ 16500 + \lfloor (M - 66000) \times 0.5 \rfloor)$ 平滑过渡至 $50\%$ 上限），确保随 `headroomTokens` 单调不减；按比例保留近期尾部时另留至少 1 token 净压缩裕量 |
 | `minimumReductionRatio` | `0.2` | 自动压缩的最小输入缩减目标 |
+| `retainRatio` | `0.16` | 自动压缩未显式指定 `retainTokens` 时，保留在对话末尾的近期上下文占比（$\lfloor M \times \text{retainRatio} \rfloor$） |
+| `retainTokens` | `null` | 显式固定保留在末尾的近期上下文 token 数（非 `null` 时优先覆盖 `retainRatio`，且需严格小于 `thresholdTokens`） |
+| `minGrowthTokens` | `0` | 自上次压缩或重置后再次触发自动压缩所需的新增上下文 token 下限（`0` 表示每次达线即触发） |
 | `observationMaskingEnabled` | `true` | 第一级归档存根掩码（优先掩码旧大体积工具输出，达标时免除摘要调用） |
 | `observationMaskThresholdChars` | `4000` | 触发第一级存根掩码的工具结果最小字符数 |
 | `observationMaskHeadChars` | `300` | 第一级存根掩码在首部保留的原始字符数 |
@@ -207,6 +214,7 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `maxVisibleAttachmentBytes` | `16777216`（16 MiB） | 可见表面未卸载图片字节高水位阈值（`0` 关闭字节触发；超过阈值时采用高低双水位迟滞策略，单批原生 `image/offload` 卸载较早图片并保留最新 6 张热点图片以维持 KV 缓存稳定，不重置周期会话记忆计数） |
 | `maxVisibleImages` | `24` | 可见表面未卸载图片张数高水位阈值（`0` 关闭张数触发，允许 `1–500`；另设长边 `>2000px` 超过 `20` 张护栏；触线时单批卸载至低水位，且严格不改写 `user/message` 原文） |
 | `auditEnabled` | `true` | 检查要求是否保留 |
+| `auditCoverageThreshold` | `0.6` | 启发式要求覆盖率审计通过门槛（`0–1`）；仅控制词面覆盖率判定，语义冲突与授权溯源红线不受此阈值放行 |
 | `auditBlockOnLoss` | `true` | 要求丢失或矛盾时重试并阻止不合格摘要提交；显式设为 `false` 作为用户紧急逃生阀时，可放行普通覆盖缺失及非极性冲突，但**极性反转（`polarity`）与硬来源冲突（`untrusted-source`/`revoked`）在关闭时仍严格拦截** |
 | `auditCoverageScope` | `'recent'` | 控制启发式普通覆盖率（`coverage`）的强制窗口范围（支持设置页热生效）：`'recent'`（默认：同时覆盖 `preserveRecentMessages` / `preserveRecentUserTokens` 近期保留窗口与本跨度新增近期原始用户消息——上限至少取 `32` 条 / `4096` token，即使缩小第 6 节逐字原话预算也不会屏蔽当前跨度新指令的摘要覆盖审计，同时避免多代历史或超大规模迁移死锁；窗外普通覆盖遗漏仅记录告警并计入 `softCoverageCount`，不阻断且不消耗兜底名额；`/compact <focus>` 显式聚焦模式下仅柔化纯 `coverage` 缺口、不放行数值/区间/条件矛盾）、`'span-new'`（仅对本跨度直接新增、非旧检查点携带的原始 `user/message` 强制覆盖率）或 `'all'`（对全跨度所有保留原话强制覆盖率）。所有全局冲突红线（`polarity`、`value`、`unit`、`condition`、`range`、`relation`、`exception`、`reference`、`provenance`）及最近原话第 6 节逐字保存始终全局强制执行 |
 | `auditProvenanceBlock` | `true` | 授权/指令来源未匹配用户原文（`provenance`）时阻断提交；设为 `false` 时仅对无依据归纳改为告警放行，但对 `untrusted-source`（外部/注入来源）与 `revoked`（已撤回授权）仍保持强拦截 |
@@ -219,11 +227,24 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 | `strictHostFingerprints` | `false` | 宿主持久化私有方法随 DSH 小版本改动时，确认无未恢复 `.rollback`/`.tail` 日志后发出一次提示并降级使用公开 `Session.append(replace)` + `sessions.flush`；设为 `true` 时严格拦截未审核指纹 |
 | `language` | `auto` | 摘要语言：`auto`、`zh` 或 `en` |
 
+### 底层窗口与调试参数
+
+以下字段仅在需要微调宿主窗口识别、溢出重试步进或排查日志时通过 profile patch 调整，日常保留默认值即可：
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `windowFallback` | `200000` | 无法从 `windowProviderMap` 或宿主适配器获取模型窗口时的回退窗口大小（tokens） |
+| `windowClampMin` | `65536` | 回退窗口的最小钳制下限（仅在命中显式可信小窗口时豁免） |
+| `windowProviderMap` | `{}` | 按 `"provider/model"` 精确覆写主会话或摘要模型上下文窗口（例如 `{ "anthropic/claude": 200000 }`） |
+| `maxOverflowRetries` | `1` | 单轮对话命中宿主/上游上下文溢出后的最大自动接续重试次数 |
+| `reactiveStep` | `1` | 响应式上下文缩减的步进系数（用于宿主兼容接口契约对齐） |
+| `debug` | `false` | 开启调试模式，输出更细粒度的压缩与窗口决策日志 |
+
 ### 工作区文件重注入与插件生命周期事件（Hooks）
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `postCompactReinjectEnabled` | `true` | 压缩后确定性地从本地工作区磁盘重读最近活跃文件（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，受 `postCompactReinjectMaxBytes` 封顶；内置 `+4 KiB` 预读窗口对凭据、未闭合/跨截断边界 PEM 私钥体与残片前缀自动脱敏，并自动跳过 `AGENTS.md` / `CLAUDE.md`、`.env` / 密钥等敏感文件、二进制文件、逃逸软链接与远程/合成会话） |
+| `postCompactReinjectEnabled` | `true` | 压缩后确定性地从本地工作区磁盘重读最近活跃文件（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，受 `postCompactReinjectMaxBytes` 封顶；内置 `+4 KiB` 预读窗口对含缩进/引号/未闭合/错标签 PEM 与 `PGP PRIVATE KEY BLOCK`、`github_pat_`、裸 JWT、`scheme://user:pass@` URL 及显式键名右侧 40 位 AWS Secret 脱敏且保留 40 位 Git SHA-1；自动跳过 `.env`/`.env.*`/`.envrc`、`.npmrc`/`.netrc`/`.pypirc`/`auth.json`、`*.pem`/`*.key`/`*.p12`/`*.pfx`/`*.p8`/`*.ppk`/`*.tfvars`/`*.tfvars.json`、`token*.json`/`service-account*.json`、`.aws/credentials`/`.aws/config`/`.kube/config`/`.docker/config.json`/`.git/config`、`*secret*`/`*credential*`、`AGENTS.md`/`CLAUDE.md`、二进制文件、逃逸软链接与远程/合成会话） |
 | `postCompactReinjectMaxFiles` | `5` | 压缩后重注入的本地工作区文件数量上限（`1–20` 正整数） |
 | `postCompactReinjectMaxBytes` | `24576` | 压缩后重注入文件总字节上限（`1024–262144` 整数，UTF-8 字节） |
 | `postCompactReinjectMaxFileBytes` | `6144` | 单个重注入文件的最大 UTF-8 读取字节数（`512–65536` 整数） |

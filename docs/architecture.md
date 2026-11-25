@@ -58,13 +58,13 @@ Weave 在 DSH 的会话维护阶段整理上下文。一次压缩按以下顺序
 
 归档以消息区间组织，保存原始事件、消息块和工具关系，默认通过 Node.js 24 原生 `zstd` 无损压缩存储。`history-search.js` 提供纯 JS BM25F 多字段检索（CJK 双字 + 英文词干 + 子模去冗余 Top-K + 2-hop 关联 + 按 span 失效的有界 LRU 缓存）；附件按 SHA-256 保存并支持元数据优先/按需逐字节读取（`tools.js` 同时兼容严格工具模式下的 `null`/空白可选参数）。
 
-事务适配器对经审查的 DSH `0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.2-rc.3` 宿主方法（含单条与批量 `Session.append` 实现及去除注释/空白后的归一化方法签名）做指纹核验，按“单趟拷贝兼哈希备份、持久化替换、持久化成功决定、发布”的顺序提交；若遇到未知宿主方法体则在摘要请求与历史修改前直接拒绝并保留已有恢复材料。成功决定前失败可恢复已核验的备份；决定后发布异常会隔离写入并要求冷重开会话，保留已持久成功的历史。`state.js` 与 `session-memory.js` 的跨进程/工作线程状态锁绑定 `threadId`、文件 `(dev, ino)` 身份与原子 `.reclaim` 门禁。
+事务适配器对经审查的 DSH `0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.2-rc.3` 宿主方法（含单条与批量 `Session.append` 实现及去除注释/空白后的归一化方法签名）做指纹核验，按“单趟拷贝兼哈希备份、持久化替换、持久化成功决定、发布”的顺序提交。默认 `strictHostFingerprints: false` 时，若确认磁盘无未恢复 `.rollback`/`.tail` 原子日志且仅宿主私有持久化方法随小版本更新变动，会发出一次兼容提示并平顺降级至公开 `Session.append(..., { surfaceOp: { op: 'replace' } })` + `sessions.flush()` 安全提交（仍保留前置归档）；仅在存在未恢复原子日志或显式开启 `strictHostFingerprints: true` 时才在摘要请求与历史修改前硬性拒绝未知方法体并保留恢复材料。成功决定前失败可恢复已核验的备份；决定后发布异常会隔离写入并要求冷重开会话，保留已持久成功的历史。`state.js` 与 `session-memory.js` 的跨进程/工作线程状态锁绑定 `threadId`、文件 `(dev, ino)` 身份与原子 `.reclaim` 门禁。
 
 ## 插件入口
 
 `cordis.patch.yml` 注册配置入口，并让四种 preset 在入口就绪后加载。入口将 preset 中的基础压缩引擎替换为 Weave，合并原有配置与插件设置。
 
-`client.js`（单文件无外部 ESM 导入、无 `setInterval`）基于 `settings-schema.js` 的元数据驱动声明式渲染设置页与实时进度卡片（含 `engineActive` 接管冲突提示及 `ReactDOM.createPortal` 弹窗）；`index.js` 通过 `webserver/index-inject` 注入进程级 `x-weave-rpc-token`（`timingSafeEqual` + 非 `owner` 角色 `403` 拦截 + 同源头校验）；`summary-config.js` 负责读取、校验和保存设置；`command-compact.js` 接入手动命令。
+`client.js`（单文件无外部 ESM 导入、无 `setInterval`）基于 `settings-schema.js` 的元数据驱动声明式渲染设置页（含仅在设置页顶部展示的 `engineActive` 接管冲突横幅）与对话页按需实时进度卡片及 `ReactDOM.createPortal` 兼容转换/接管确认弹窗；`index.js` 通过 `webserver/index-inject` 注入进程级 `x-weave-rpc-token`（`timingSafeEqual` + 非 `owner` 角色 `403` 拦截 + 同源头校验）；`summary-config.js` 负责读取、校验和保存设置；`command-compact.js` 接入手动命令。
 
 ## 代码导航
 
