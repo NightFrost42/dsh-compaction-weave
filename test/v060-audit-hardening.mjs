@@ -912,22 +912,46 @@ await test('P1-7-to-P1-13-and-P2-audit-redact-preview-date-config-reinject-lock'
       `${'// header line\n'.repeat(280)}${beginPem}\n${'MIIEOWIBAAKCAQEAv3J8FakeSecretBodyLine1234567890ABCD\n'.repeat(90)}${endPem}\nexport const tail = 1;\n`,
     );
     writeFileSync(join(ws, 'cut-prefix.js'), `${'// pad\n'.repeat(876)}const tok = "${testPrefixSk}";\n`);
+    writeFileSync(
+      join(ws, 'unclosed-over-sample-pem.js'),
+      `${'// header pad\n'.repeat(280)}${beginPem}\n${'MIIEOWIBAAKCAQEAv3J8FakeSecretBodyLine1234567890ABCD\n'.repeat(160)}${endPem}\nexport const afterLarge = 1;\n`,
+    );
+    writeFileSync(
+      join(ws, 'unclosed-small-pem.js'),
+      `export const beforePem = 1;\n${beginPem}\nMIIEOWIBAAKCAQEAv3J8FakeSecretBodyLine1234567890ABCD\nABCD==\nexport const afterPem = 42;\n`,
+    );
     const reinjRedacted = collectActiveWorkspaceFiles({
       session: {
         seq: 1,
         eventAt: () => ({ type: 'tool/result', data: { name: 'read_file', message: { content: [] } } }),
       },
       shadowedSeqs: [],
-      archivedFiles: ['settings.js', 'large-pem.js', 'cut-prefix.js'],
+      archivedFiles: ['settings.js', 'large-pem.js', 'cut-prefix.js', 'unclosed-over-sample-pem.js', 'unclosed-small-pem.js'],
       workspaceRoots: [ws],
       maxFileBytes: 6144,
     });
     const settingsOut = reinjRedacted.files.find((f) => f.path === 'settings.js');
     const largePemOut = reinjRedacted.files.find((f) => f.path === 'large-pem.js');
     const cutOut = reinjRedacted.files.find((f) => f.path === 'cut-prefix.js');
+    const overSamplePemOut = reinjRedacted.files.find((f) => f.path === 'unclosed-over-sample-pem.js');
+    const smallUnclosedPemOut = reinjRedacted.files.find((f) => f.path === 'unclosed-small-pem.js');
     assert.ok(settingsOut && settingsOut.content.includes('mode = "prod"') && !settingsOut.content.includes(testSecretSk));
     assert.ok(largePemOut && !largePemOut.content.includes('MIIEOWIBAAKCAQEAv3J8') && largePemOut.bytes === Buffer.byteLength(largePemOut.content, 'utf8') && largePemOut.bytes <= 6144);
     assert.ok(cutOut && !cutOut.content.includes('ABCDEF'));
+    assert.ok(
+      overSamplePemOut &&
+      overSamplePemOut.content.includes('[redacted-private-key]') &&
+      !overSamplePemOut.content.includes('MIIEOWIBAAKCAQEAv3J8') &&
+      overSamplePemOut.bytes === Buffer.byteLength(overSamplePemOut.content, 'utf8') &&
+      overSamplePemOut.bytes <= 6144,
+    );
+    assert.ok(
+      smallUnclosedPemOut &&
+      smallUnclosedPemOut.content.includes('[redacted-private-key]') &&
+      !smallUnclosedPemOut.content.includes('MIIEOWIBAAKCAQEAv3J8') &&
+      !smallUnclosedPemOut.content.includes('ABCD==') &&
+      smallUnclosedPemOut.content.includes('export const afterPem = 42;'),
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -980,6 +1004,16 @@ await test('P1-7-to-P1-13-and-P2-audit-redact-preview-date-config-reinject-lock'
     summaryText: 'Audit logging must remain enabled. Metric logging must be disabled.',
   });
   assert.equal(crossSubjOk.lost.filter((x) => x.reason === 'polarity').length, 0);
+  const negFlipBad = auditCompaction({
+    userMessages: [{ seq: 1, text: 'Audit logging must not be disabled.' }],
+    summaryText: 'Audit logging must not be enabled.',
+  });
+  assert.ok(negFlipBad.lost.some((x) => x.reason === 'polarity'));
+  const negToPosOk = auditCompaction({
+    userMessages: [{ seq: 1, text: 'Audit logging must not be disabled.' }],
+    summaryText: 'Audit logging must remain enabled.',
+  });
+  assert.equal(negToPosOk.lost.length, 0);
 
   // P1-13(a): smooth resolveCompactSpec across 74191 -> 74192
   const s91 = resolveCompactSpec(DEFAULT_CONFIG, 74191, 8192);
