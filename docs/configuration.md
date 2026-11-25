@@ -2,9 +2,11 @@
 
 [简体中文](configuration.md) · [English](en/configuration.md)
 
-## 摘要设置页
+## 上下文压缩（Weave）设置页
 
-入口：**设置 → 摘要模型**，或 **插件 → Weave 上下文压缩 → 摘要模型**。
+入口：**设置 → 上下文压缩（Weave）**，或 **插件 → Weave 上下文压缩** 的详情页。
+
+启用历史工具与主动压缩时，`history_list`、`history_read`、`history_search`、`context_compact` 四个工具定义合计 **2,563 字符 / 645 DSH tokens / 约 697 BPE tokens**。摘要预算采用启发式估算：`summaryCjkTokensPerChar` 默认 `0.75`，ASCII 约 `0.25` token/字符；实际计费与硬上限仍以目标模型分词器为准，BPE 数值也随分词器而异。
 
 | 设置 | 配置字段 | 默认值 | 可设置范围 |
 | --- | --- | --- | --- |
@@ -107,7 +109,7 @@ Claude 保留 5／60 分钟参考，GPT 保留普通及延长缓存参考，Gemi
 | `idleCompactionMinTokens` | `0` | 触发闲置压缩所需的最小上下文 token 数（0 表示不设额外下限） |
 | `idleRetainTokens` | `0` | 闲置压缩时保留在末尾的近期上下文 token 预算 |
 | `thresholdRatio` | `0.8` | 自动触发比例 |
-| `headroomTokens` | `33000` | 为后续回复和工具结果预留空间 |
+| `headroomTokens` | `33000` | 为后续回复和工具结果预留空间；预算不超过 2 倍该值时上限取 `25%`，超出后平滑过渡至配置值，按比例保留近期尾部时另留至少 1 token 的净压缩裕量 |
 | `minimumReductionRatio` | `0.2` | 自动压缩的最小输入缩减目标 |
 | `observationMaskingEnabled` | `true` | 第一级归档存根掩码（优先掩码旧大体积工具输出，达标时免除摘要调用） |
 | `observationMaskThresholdChars` | `4000` | 触发第一级存根掩码的工具结果最小字符数 |

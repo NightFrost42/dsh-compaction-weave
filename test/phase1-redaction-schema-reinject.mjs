@@ -650,16 +650,16 @@ await test('client-js-sandbox-redacts-pem-asia-renders-telemetry-pills-and-docum
       const text1 = textOf(telemetry);
       assert.ok(!text1.includes('BEGIN'), 'PEM must not leak in UI telemetry');
       if (language === 'zh') {
-        assert.match(text1, /摘要缓存命中 75%/);
+        assert.match(text1, /摘要缓存命中 43%/);
         assert.match(text1, /摘要思考 1\.2k/);
         assert.match(text1, /重注入 3 文件 \(4 KiB\)/);
       } else {
-        assert.match(text1, /Summary cache hit 75%/);
+        assert.match(text1, /Summary cache hit 43%/);
         assert.match(text1, /Summary reasoning 1\.2k/);
         assert.match(text1, /Reinjected 3 files \(4 KiB\)/);
       }
 
-      // Update with ASIA in retryReasonCode and over-100% cache read -> clamped 100%, constant seq still diffs!
+      // Update with ASIA in retryReasonCode and mixed uncached/cached input -> 60% = 1500 / (1000 + 1500), constant seq still diffs!
       statusPayload = {
         ...statusPayload,
         retryReasonCode: FAKE_ASIA,
@@ -674,7 +674,7 @@ await test('client-js-sandbox-redacts-pem-asia-renders-telemetry-pills-and-docum
       assert.equal(telemetry.props['data-retry-reason'], undefined, `${language}: ASIA in retryReasonCode must be rejected`);
       const text2 = textOf(telemetry);
       assert.ok(!text2.includes(FAKE_ASIA));
-      assert.match(text2, language === 'zh' ? /摘要缓存命中 100%/ : /Summary cache hit 100%/);
+      assert.match(text2, language === 'zh' ? /摘要缓存命中 60%/ : /Summary cache hit 60%/);
       assert.match(text2, language === 'zh' ? /摘要思考 420/ : /Summary reasoning 420/);
       assert.match(text2, language === 'zh' ? /重注入 1 文件 \(512 B\)/ : /Reinjected 1 files \(512 B\)/);
 

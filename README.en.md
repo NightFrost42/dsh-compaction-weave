@@ -90,7 +90,7 @@ Once enabled, chat normally. By default, Weave uses the active conversation mode
 
 ## Basic settings
 
-Adjust common options under **Settings → Compaction** (or on the plugin details page). **Saving applies to subsequent operations without restarting DSH; an in-flight compaction keeps its original settings.**
+Adjust common options under **Settings → Context Compaction (Weave)** (or on the plugin details page). **Saving applies to subsequent operations without restarting DSH; an in-flight compaction keeps its original settings.**
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ Retry settings and output limit overrides (`maxTokens` can also be saved indepen
 
 > **Token estimation & permanent tool-schema footprint**:
 > - **Heuristic vs BPE**: Internal planning estimates tokens using a lightweight heuristic (`summaryCjkTokensPerChar` defaulting to `0.75` per CJK char, ~`0.25` per ASCII char) without shipping external BPE tables; actual upstream billing and hard limits follow the target model's BPE tokenizer (raise `summaryCjkTokensPerChar` toward `1.0` in Settings if using finer CJK tokenizers).
-> - **Permanent tool schemas**: With archive history tools and proactive compaction enabled, 4 tool definitions accompany requests (`history_list` 392 chars, `history_read` 1,898 chars, `history_search` 542 chars, `context_compact` 886 chars) totaling **3,723 JSON chars** (~**931–1,241 tokens** at 3–4 chars/token; disabling `proactiveEnabled` drops the 886-char `context_compact` tool).
+> - **Permanent tool schemas**: With archive history tools and proactive compaction enabled, 4 tool definitions accompany requests (`history_list` 271 chars, `history_read` 1,389 chars, `history_search` 385 chars, `context_compact` 513 chars) totaling **2,563 serialized JSON chars / 645 DSH tokens / ~697 BPE tokens** (BPE counts vary by tokenizer; disabling `proactiveEnabled` drops the 513-char `context_compact` definition).
 
 ## Coexisting with `dsh-world` & bridge channel isolation
 

@@ -90,7 +90,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.5.2.tgz
 
 ## 基本设置
 
-在 **设置 → 上下文压缩**（或插件详情页）中修改常用项，**保存后无需重启 DSH，后续操作使用新设置；进行中的压缩保留原设置**。
+在 **设置 → 上下文压缩（Weave）**（或插件详情页）中修改常用项，**保存后无需重启 DSH，后续操作使用新设置；进行中的压缩保留原设置**。
 
 | 设置项 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.5.2.tgz
 
 > **估算口径与常驻工具 Schema 开销说明**：
 > - **Token 估算口径**：插件内置快速启发式估算器（CJK 字符按 `summaryCjkTokensPerChar` 默认 `0.75` 加权、ASCII 字符按 `1/4` 近似），无需依赖外部大型 BPE 运行库；实际计费与上限判定仍以上游模型 BPE 分词器为准（需要更保守兼容较碎分词器时，可在设置页将 `summaryCjkTokensPerChar` 调至 `1.0`）。
-> - **常驻工具 Schema 体积**：启用历史工具与主动压缩后，每轮会随系统工具表常驻注入 4 个工具定义（`history_list` 392 字符、`history_read` 1,898 字符、`history_search` 542 字符、`context_compact` 886 字符），JSON Schema 总计 **3,723 字符**（按 3–4 字符/token 约 **931–1,241 tokens**；若通过配置关闭 `proactiveEnabled`，可省去 `context_compact` 的 886 字符）。
+> - **常驻工具 Schema 体积**：启用历史工具与主动压缩后，每轮会随系统工具表常驻注入 4 个工具定义（`history_list` 271 字符、`history_read` 1,389 字符、`history_search` 385 字符、`context_compact` 513 字符），序列化 JSON 总计 **2,563 字符 / 645 DSH tokens / 约 697 BPE tokens**（BPE 随分词器而异；若通过配置关闭 `proactiveEnabled`，可省去 `context_compact` 的 513 字符定义）。
 
 ## 与 `dsh-world` 共存及第三方桥接隔离
 

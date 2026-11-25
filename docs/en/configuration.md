@@ -2,9 +2,11 @@
 
 [简体中文](../configuration.md) · [English](configuration.md)
 
-## Summary settings
+## Context Compaction (Weave) settings
 
-Open **Settings → Summary model**, or the summary settings in the plugin details.
+Open **Settings → Context Compaction (Weave)**, or the **Weave Context Compaction** plugin details.
+
+With history tools and proactive compaction enabled, the four definitions (`history_list`, `history_read`, `history_search`, `context_compact`) total **2,563 chars / 645 DSH tokens / ~697 BPE tokens**. Summary budgeting uses a heuristic: `summaryCjkTokensPerChar` defaults to `0.75`, with ASCII estimated at ~`0.25` tokens per character. Actual billing and hard limits follow the target tokenizer; BPE counts also vary by tokenizer.
 
 | Setting | Field | Default | Range |
 | --- | --- | --- | --- |
@@ -107,7 +109,7 @@ Values saved by the summary settings page override the corresponding engine fiel
 | `idleCompactionMinTokens` | `0` | Minimum context tokens required before idle compaction runs (`0` = no extra floor) |
 | `idleRetainTokens` | `0` | Recent tail tokens retained during idle compaction |
 | `thresholdRatio` | `0.8` | Automatic trigger ratio |
-| `headroomTokens` | `33000` | Space reserved for replies and tool output |
+| `headroomTokens` | `33000` | Space reserved for replies and tool output; capped at `25%` up to `2×` headroom and ramped smoothly above it, with at least 1 token of net compaction margin beyond a ratio-based recent tail |
 | `minimumReductionRatio` | `0.2` | Target minimum automatic input reduction |
 | `observationMaskingEnabled` | `true` | Stage-1 archive-backed observation masking for older large tool outputs (skips LLM summary when target is met) |
 | `observationMaskThresholdChars` | `4000` | Minimum tool-result length (in chars) for Stage-1 observation masking |
