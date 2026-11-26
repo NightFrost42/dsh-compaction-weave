@@ -27,12 +27,13 @@ import { WeaveCompactionEngine } from '../lib/engine.js';
 import { splitAuditLost } from '../lib/engine/fallback-guards.js';
 import { buildPrecomputedSliceSpec, generateValidatedPrecomputedSpan, handleConcurrentSliceReady } from '../lib/engine/parallel-fold.js';
 import { clearInMemoryBreaker } from '../lib/engine/recovery.js';
-import { retryCompactionFor } from '../lib/engine/resumable.js';
+import { parseCompactSubcommand } from '../lib/command-compact.js';
+import { retryCompactionFor, computeCompressionProgress } from '../lib/engine/resumable.js';
 import { resolveSpec, resolveTargetRoute } from '../lib/engine/routing-budget.js';
 import { prepareContinuation } from '../lib/continuation.js';
 import { freezeContinuation, bindContinuationProgress, readPendingContinuation } from '../lib/continuation-pending.js';
 import { buildCompactionInstruction } from '../lib/prompt.js';
-import { diagnosticContext, failureExplanation } from '../lib/failure-diagnostics.js';
+import { diagnosticContext, FailureDiagnostics, failureExplanation } from '../lib/failure-diagnostics.js';
 import { collectActiveWorkspaceFiles } from '../lib/file-reinject.js';
 import { CompactionArchive, extractSpanIndexMetadata } from '../lib/history.js';
 import { tokenizeForSearch } from '../lib/history-search.js';
@@ -41,12 +42,13 @@ import { instructionText, referenceTexts } from '../lib/instruction-source.js';
 import { CompactionJournal } from '../lib/journal.js';
 import { selectMemoryMessages } from '../lib/memory-policy.js';
 import { extractProgressFacts } from '../lib/progress-facts.js';
+import { hasProgressSignals } from '../lib/progress-state.js';
 import { CompactionProgressTracker } from '../lib/progress-tracker.js';
 import { reconstructDisputedLines } from '../lib/reconstruct.js';
 import { redactCredentials, redactPemPrivateKeys } from '../lib/redact.js';
 import { selectSessionMemory } from '../lib/region.js';
 import { SessionBackupStore } from '../lib/session-backup.js';
-import { SessionMemoryStore } from '../lib/session-memory.js';
+import { SessionMemoryManager, SessionMemoryStore } from '../lib/session-memory.js';
 import {
   clearBreakerState,
   publicResumableSummary,
@@ -55,7 +57,7 @@ import {
   validateResumableCompaction,
   writeResumableCompaction,
 } from '../lib/state.js';
-import { summarizeWithTarget } from '../lib/summary.js';
+import { resolveSummaryTargets, summarizeWithTarget } from '../lib/summary.js';
 import { resolveSummaryCapacity } from '../lib/summary-budget.js';
 import { handleSummaryConfigRpc, mergeSummaryConfig, readSummaryConfig } from '../lib/summary-config.js';
 import { retryableSummaryError } from '../lib/summary-retry.js';
@@ -2933,6 +2935,430 @@ await test('31475c4-audit-remediation-resumable-focus-rpc-diag-pem', async () =>
     const proseOut = redactPemPrivateKeys(pemFollowedByProse, '[redacted-private-key]', { sampleTruncated: false });
     assert.ok(proseOut.includes('following line keeps context'), 'P2-3: non-EOF short prose lines must not be swallowed');
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+await test('e2d2044-audit-remediation-all-6-p1-and-p2', async () => {
+  const root = await mkdtemp(join(TEST_BASE, 'weave-e2d2044-fixes-'));
+  const priorHome = process.env.DSH_HOME;
+  try {
+    // 1. P1-1: Partial set RPC preserves core model/threshold settings while explicit clears & validation still hold
+    const cfgPath = join(root, 'p11-summary-config.json');
+    await handleSummaryConfigRpc(
+      {
+        method: 'set',
+        params: {
+          provider: 'openai',
+          model: 'gpt-5',
+          maxTokens: 16384,
+          thresholdRatio: 0.72,
+          minimumReductionRatio: 0.35,
+          summaryRetryCount: 2,
+        },
+      },
+      cfgPath,
+    );
+    const afterPartialRetry = await handleSummaryConfigRpc(
+      { method: 'set', params: { summaryRetryCount: 1 } },
+      cfgPath,
+    );
+    assert.equal(afterPartialRetry.config.provider, 'openai');
+    assert.equal(afterPartialRetry.config.model, 'gpt-5');
+    assert.equal(afterPartialRetry.config.maxTokens, 16384);
+    assert.equal(afterPartialRetry.config.thresholdRatio, 0.72);
+    assert.equal(afterPartialRetry.config.minimumReductionRatio, 0.35);
+    assert.equal(afterPartialRetry.config.summaryRetryCount, 1);
+
+    await assert.rejects(
+      () => handleSummaryConfigRpc({ method: 'set', params: { provider: 'anthropic' } }, cfgPath),
+      (err) => err?.code === 'SUMMARY_PAIR_REQUIRED',
+      'P1-1: unpaired provider must still reject with SUMMARY_PAIR_REQUIRED',
+    );
+    const explicitClearModel = await handleSummaryConfigRpc(
+      { method: 'set', params: { provider: '', model: '' } },
+      cfgPath,
+    );
+    assert.equal(explicitClearModel.config.provider, '');
+    assert.equal(explicitClearModel.config.model, '');
+    assert.equal(explicitClearModel.config.thresholdRatio, 0.72);
+
+    // 2. P1-2: Stopped breaker prevents auto-resume & pre-batch failures advance consecutiveFailures -> paused_failure
+    const p12State = new SessionStateStore(join(root, 'p12-state'));
+    const nowIso = new Date().toISOString();
+    const preBatchJob = validateResumableCompaction({
+      version: 1,
+      jobId: 'job-prebatch',
+      trigger: 'manual',
+      status: 'interrupted',
+      interruptReason: 'cancelled',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      remainingSeqs: [1, 2],
+      initialTotalNodes: 3,
+      completedNodes: 0,
+      initialTotalTokens: 1000,
+      completedTokens: 0,
+      completedChunks: 0,
+      waveCount: 0,
+      batchCheckpointSeqs: [],
+      allowForeignFallback: false,
+      focusInstruction: 'keep rollback plan',
+      softenCoverageForFocus: true,
+      consecutiveFailures: 0,
+    });
+    assert.equal(publicResumableSummary(preBatchJob, { stopped: true })?.canAutoResume, false);
+
+    writeResumableCompaction(p12State, 'sess-prebatch', preBatchJob);
+    const preBatchEvents = [
+      { seq: 0, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: 'Keep rule.' }], source: { kind: 'user' } } },
+      { seq: 1, type: 'assistant/message', data: { message: { role: 'assistant', content: [{ type: 'text', text: 'Working.' }], source: { kind: 'model' } } } },
+      { seq: 2, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: 'Next.' }], source: { kind: 'user' } } },
+    ];
+    const preBatchSess = {
+      id: 'sess-prebatch',
+      surface: { nodes: [0, 1, 2] },
+      eventAt: (seq) => preBatchEvents[seq],
+      deriveEventMessage: (e) => e.data?.message ?? e.data,
+      requestHeader: () => ({ config: { provider: 'p', model: 'm' } }),
+    };
+    const bus = new Map();
+    const p12Engine = new WeaveCompactionEngine(
+      {
+        on(name, fn) {
+          bus.set(name, fn);
+          return () => bus.delete(name);
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        emit() {},
+        config: {},
+      },
+      resolveConfig({ archiveDir: join(root, 'p12-arch'), failureThreshold: 2 }).config,
+    );
+    p12Engine.sessionState = p12State;
+    let preBatchAttempts = 0;
+    p12Engine._compactManual = async () => {
+      preBatchAttempts += 1;
+      throw Object.assign(new Error('SYNTHETIC_PREBATCH'), { code: 'SYNTHETIC_PREBATCH' });
+    };
+    await assert.rejects(
+      () => p12Engine.resumeCompactionFor(preBatchSess, { agent: { session: preBatchSess, options: { provider: 'p', model: 'm' } } }),
+      /SYNTHETIC_PREBATCH/,
+    );
+    assert.equal(readResumableCompaction(p12State, 'sess-prebatch')?.consecutiveFailures, 1);
+    assert.equal(readResumableCompaction(p12State, 'sess-prebatch')?.status, 'interrupted');
+    await assert.rejects(
+      () => p12Engine.resumeCompactionFor(preBatchSess, { agent: { session: preBatchSess, options: { provider: 'p', model: 'm' } } }),
+      /SYNTHETIC_PREBATCH/,
+    );
+    const pausedPreBatch = readResumableCompaction(p12State, 'sess-prebatch');
+    assert.equal(pausedPreBatch?.consecutiveFailures, 2);
+    assert.equal(pausedPreBatch?.status, 'paused_failure');
+    assert.equal(publicResumableSummary(pausedPreBatch)?.canAutoResume, false);
+
+    // Also verify P2-2: auto-resume insidePreStep skips duplicate weave/pre-compact & keeps softenCoverageForFocus
+    let preHookCalls = 0;
+    let capturedSoften = null;
+    p12State.update('sess-prebatch', (cur) => ({ ...clearBreakerState(cur) }));
+    writeResumableCompaction(p12State, 'sess-prebatch', { ...preBatchJob, status: 'interrupted', consecutiveFailures: 0 });
+    p12Engine._runPreCompactHook = async () => {
+      preHookCalls += 1;
+      return { cancelled: false, effectiveFocus: 'keep rollback plan', additionalContext: '', softenCoverageForFocus: true };
+    };
+    p12Engine._compactManual = async (_agent, _sig, _cmd, _cont, _retry, opts) => {
+      capturedSoften = opts?.hooksHandled === true && opts?.softenCoverageForFocus === true;
+      return { compacted: true };
+    };
+    await p12Engine.resumeCompactionFor(preBatchSess, {
+      agent: { session: preBatchSess, options: { provider: 'p', model: 'm' } },
+      insidePreStep: true,
+    });
+    assert.equal(capturedSoften, true);
+    assert.equal(preHookCalls, 0);
+    assert.equal(parseCompactSubcommand('continue').kind, 'focus');
+
+    // 3. P1-3: recoverBeforeOpen calls truncateTornTail & does not skip running cleanup on committed record
+    const p13Root = join(root, 'p13-torn');
+    const p13Journal = new CompactionJournal({ root: join(p13Root, 'journal') });
+    const p13State = new SessionStateStore(join(p13Root, 'state'));
+    p13Journal.recordSync({ sessionId: 'sess-p13-committed', compactionId: 'weave-done-1', phase: 'committed' });
+    writeResumableCompaction(p13State, 'sess-p13-committed', { ...preBatchJob, status: 'running' });
+    const p13Events = [
+      { type: 'user/message', seq: 0, time: 1, data: { text: 'hi' } },
+      { type: 'compaction/start', seq: 1, time: 2, data: { compactionId: 'weave-orphan-2' } },
+    ];
+    let truncatedTo = null;
+    const flushedBatches = [];
+    let tornActive = true;
+    const p13Adapter = Object.assign(Object.create(StockTransactionAdapter.prototype), {
+      backend: {
+        tracker: { writers: new Map(), claimWrite() {}, releaseClaim() {} },
+        findLog: async () => ({ currentPath: join(p13Root, 'sess-p13-committed.v4.jsonl.zstd') }),
+        acquireLease: async () => ({ release: async () => {} }),
+        readStoredLog: async () => ({
+          meta: { id: 'sess-p13-committed' },
+          inheritedEventCount: 0,
+          tornTruncateTo: tornActive ? 412 : undefined,
+          recoveredTail: tornActive ? [{ type: 'assistant/message', seq: 2, time: 3, data: { text: 'tail' } }] : [],
+          events: tornActive ? [...p13Events, { type: 'assistant/message', seq: 2, time: 3, data: { text: 'tail' } }] : [...p13Events],
+        }),
+        truncateTornTail: async (_meta, off) => {
+          truncatedTo = off;
+          tornActive = false;
+        },
+        persistBatch: async (_meta, batch) => {
+          flushedBatches.push(batch);
+          p13Events.push(...batch);
+        },
+        coldLogMemo: new Map(),
+      },
+      sessions: { get: () => null },
+      logger: { info() {}, warn() {}, error() {} },
+      roots: new Map(),
+      backupStores: new Map(),
+      blocked: new Set(),
+    });
+    p13Adapter.register(p13Journal, p13State, 3, null);
+    await p13Adapter.recoverBeforeOpen('sess-p13-committed');
+    assert.equal(truncatedTo, 412, 'P1-3: must truncate torn ZSTD tail before persisting compaction/end');
+    assert.ok(flushedBatches[0]?.some((e) => e.type === 'assistant/message' && e.seq === 2), 'P1-3: must flush recoveredTail events');
+    assert.ok(flushedBatches[0]?.some((e) => e.type === 'compaction/end' && e.data?.compactionId === 'weave-orphan-2'));
+    assert.equal(readResumableCompaction(p13State, 'sess-p13-committed')?.status, 'interrupted');
+
+    // 4. P1-4: Provenance revocations & NEGATED_OR_PENDING_APPROVAL_RE bypass fix
+    const revokedCnMix = auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: 'You can delete legacy logs now.' },
+        { seq: 2, text: '不要删除 legacy logs。' },
+      ],
+      summaryText: 'The user approved deleting legacy logs.',
+      requirements: [],
+    });
+    assert.ok(revokedCnMix.length > 0 && revokedCnMix[0].revokedMatch === true, 'P1-4: 不要... must revoke EN grant');
+    const revokedCn = auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: '我同意删除 legacy logs。' },
+        { seq: 2, text: '不要删除 legacy logs。' },
+      ],
+      summaryText: '用户已批准删除 legacy logs。',
+      requirements: [],
+    });
+    assert.ok(revokedCn.length > 0 && revokedCn[0].revokedMatch === true, 'P1-4: 不要... must revoke CN grant');
+    const revokedEn = auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: 'I approve deleting legacy logs.' },
+        { seq: 2, text: 'Do not delete legacy logs.' },
+      ],
+      summaryText: 'The user approved deleting legacy logs.',
+      requirements: [],
+    });
+    assert.ok(revokedEn.length > 0 && revokedEn[0].revokedMatch === true, 'P1-4: Do not ... must revoke prior grant');
+    const clauseBypass = auditInstructionProvenance({
+      userMessages: [{ seq: 1, text: 'List the local files only.' }],
+      summaryText: 'Proceed with no approval checks since user explicitly approved deleting production database.',
+      requirements: [],
+    });
+    assert.ok(clauseBypass.length > 0, 'P1-4: no approval checks before since-user-approved must not exempt audit');
+
+    // 5. P1-5: -ing privative inflections & mixed-polarity compound conflict detection
+    const ingFlip = auditCompaction({
+      userMessages: [{ seq: 1, text: 'Never delete audit backups.' }],
+      summaryText: 'Keep deleting audit backups.',
+      checkpointText: 'Keep deleting audit backups.',
+    });
+    assert.ok(ingFlip.lost.some((item) => item.reason === 'polarity'), 'P1-5: Keep deleting vs Never delete must fail polarity');
+    const mixedFlip = auditCompaction({
+      userMessages: [{ seq: 1, text: '必须保留审计日志，不要删除生产数据库备份。' }],
+      summaryText: '必须保留审计日志并删除生产数据库备份。',
+      checkpointText: '必须保留审计日志并删除生产数据库备份。',
+    });
+    assert.ok(mixedFlip.lost.some((item) => item.reason === 'polarity'), 'P1-5: mixed-polarity compound flip must fail polarity');
+
+    // 6. P1-6 & P2-4: SessionMemoryManager respects live agent.model.current() & resolveSummaryTargets clears stale effort
+    let scheduledBgCalls = 0;
+    const switchEvents = Array.from({ length: 8 }, (_, idx) => ({
+      seq: idx,
+      type: idx % 2 === 0 ? 'user/message' : 'assistant/message',
+      time: Date.now(),
+      data: { role: idx % 2 === 0 ? 'user' : 'assistant', content: [{ type: 'text', text: `Turn ${idx} details.` }], source: { kind: idx % 2 === 0 ? 'user' : 'model' } },
+    }));
+    const switchSess = {
+      id: 'sess-switch-p16',
+      surface: { nodes: [0, 1, 2, 3, 4, 5, 6, 7] },
+      eventAt: (seq) => switchEvents[seq],
+      deriveEventMessage: (e) => e.data,
+      requestHeader: () => ({ config: { provider: 'p', model: 'small-64k', reasoningEffort: 'high' } }),
+    };
+    const fakeSmEngine = {
+      sessionState: new SessionStateStore(join(root, 'p16-state')),
+      config: resolveConfig({
+        archiveDir: join(root, 'p16-arch'),
+        sessionMemoryEnabled: true,
+        sessionMemoryMinTokens: 20000,
+        windowProviderMap: { 'p/small-64k': 65536, 'p/large-200k': 200000 },
+      }).config,
+      ctx: {
+        llm: {
+          async *stream() {
+            scheduledBgCalls += 1;
+            yield { type: 'text-delta', text: 'note' };
+            yield { type: 'finish', kind: 'stop' };
+          },
+        },
+      },
+      _busy: new Set(),
+      _stopped: new Map(),
+      _failures: new Map(),
+      _recoveryBlocked: new Map(),
+      _keyOf: (s) => s.id,
+      _resolvePolicy: (agent) => fakeSmEngine.config,
+      _measure: async () => ({
+        totalTokens: 28000,
+        nodes: switchEvents.map((e) => ({ seq: e.seq, tokens: 3500 })),
+      }),
+      _recordFailure() {},
+      _shadowedTokens: (_s, seqs) => seqs.length * 3500,
+      _sourceHashForSeqs: () => 'hash',
+      log() {},
+    };
+    const smMgr = new SessionMemoryManager(fakeSmEngine, { storageRoot: join(root, 'p16-sm') });
+    await smMgr.maybeSchedule(
+      { session: switchSess, options: { provider: 'p', model: 'small-64k' }, model: { current: () => ({ provider: 'p', model: 'large-200k' }) } },
+      { totalTokens: 28000, nodes: switchEvents.map((e) => ({ seq: e.seq, tokens: 3500 })) },
+      { allowSchedule: true },
+    );
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(scheduledBgCalls, 0, 'P1-6: live 200k window retain (~38k) must prevent bg call at 28k tokens');
+
+    const { targets } = resolveSummaryTargets({
+      config: fakeSmEngine.config,
+      agent: {
+        session: switchSess,
+        options: { provider: 'p', model: 'small-64k' },
+        model: { current: () => ({ provider: 'p', model: 'small-64k' }) },
+      },
+    });
+    assert.equal('reasoningEffort' in targets[0], false, 'P2-4: clearing reasoningEffort on live model must not leak stale durable effort');
+
+    // 7. P2-1, P2-3, P2-5, P2-6 quick behavioral assertions
+    // P2-3: tokens + empty-user URL + unclosed PEM short EOF & // comments
+    const redactedTokens = redactCredentials('sk_live_51N9xYz1234567890abcdef glpat-AbCdEf1234567890 hf_AbCdEf1234567890 redis://:SuperSecretPass99@redis.local:6379 sha=0123456789abcdef0123456789abcdef01234567');
+    assert.ok(!redactedTokens.includes('51N9xYz1234567890abcdef'));
+    assert.ok(!redactedTokens.includes('glpat-AbCdEf1234567890'));
+    assert.ok(!redactedTokens.includes('hf_AbCdEf1234567890'));
+    assert.ok(!redactedTokens.includes('SuperSecretPass99'));
+    assert.ok(redactedTokens.includes('0123456789abcdef0123456789abcdef01234567'));
+
+    const rsaHeader = '-----BEGIN RSA ' + 'PRIVATE KEY-----';
+    assert.equal(
+      redactPemPrivateKeys(`before\n${rsaHeader}\nMIIEowIB`, '[redacted-private-key]', { sampleTruncated: false }),
+      'before\n[redacted-private-key]',
+    );
+    assert.equal(
+      redactPemPrivateKeys(`before\n${rsaHeader}\nMIIE\n`, '[redacted-private-key]', { sampleTruncated: false }),
+      'before\n[redacted-private-key]',
+    );
+    const jsPem = redactPemPrivateKeys(`${rsaHeader}\n// MIIEvQIBADANBgkqhkiG9w0BAQEF\n// AbCdEf1234567890`, '[redacted-private-key]', { sampleTruncated: false });
+    assert.ok(!jsPem.includes('MIIEvQIBADAN') && !jsPem.includes('AbCdEf1234567890'));
+
+    // P2-5: 上上周五 (-14 days) + assistant <quoted_text> stripped
+    const wedTs = Date.parse('2026-11-25T10:00:00Z');
+    const cnWeekGround = extractDateGroundings('请对比上上周五的部署记录', wedTs, { tzOffsetMinutes: 0 });
+    assert.equal(cnWeekGround?.anchors?.[0]?.date, '2026-11-13');
+    const astSess = {
+      surface: { nodes: [0] },
+      eventAt: () => ({
+        seq: 0,
+        type: 'assistant/message',
+        time: wedTs,
+        data: { message: { role: 'assistant', content: [{ type: 'text', text: '<quoted_text>Meet tomorrow</quoted_text> Done today.' }], source: { kind: 'model' } } },
+      }),
+      deriveEventMessage: (e) => e.data.message,
+    };
+    const renderedAst = renderDateGrounding(astSess, [0], { tzOffsetMinutes: 0 });
+    assert.ok(!renderedAst.includes('tomorrow=') && renderedAst.includes('today=2026-11-25'));
+
+    // P2-6: tracker atomic reject + progress-state inline fence + _provideService false + oversized FailureDiagnostics trim
+    const tracker = new CompactionProgressTracker();
+    await tracker.withRun('s-prog', { trigger: 'manual', phase: 'planning', attempt: 1, message: 'ok' }, async (runId) => {
+      assert.equal(tracker.update('s-prog', { phase: 'done', attempt: 9, message: 'bad' }, { runId }), false);
+      assert.equal(tracker.snapshot('s-prog')?.attempt, 1);
+      assert.equal(tracker.snapshot('s-prog')?.message, 'ok');
+    });
+
+    assert.equal(hasProgressSignals('```npm test error```\ncompleted step 2'), true);
+    assert.equal(p12Engine._provideService(), false);
+
+    const diag = new FailureDiagnostics(join(root, 'p26-diag'));
+    const scopeErr = Object.assign(new Error('oversized'), { code: 'PROVIDER_ERROR' });
+    const hugeAttempts = Array.from({ length: 20 }, (_, i) => ({
+      number: i + 1,
+      provider: 'p',
+      model: 'm',
+      outcome: 'failed',
+      errors: [{ code: 'PROVIDER_ERROR', message: 'x'.repeat(20_000) }],
+    }));
+    const diagRes = await diag._write(
+      { id: randomUUID(), context: { trigger: 'manual' }, startedAt: nowIso, attempts: hugeAttempts, totalAttempts: 20, omittedAttempts: 0, auditReports: [], pendingAudits: [] },
+      scopeErr,
+      'failed',
+    );
+    assert.equal(diagRes.status, 'saved', 'P2-6: oversized attempts must trim cleanly instead of failing REPORT_TOO_LARGE');
+
+    // P2-1: https origin over non-encrypted socket returns 403
+    process.env.DSH_HOME = join(root, 'p21-dsh');
+    let p21Route = null;
+    const p21Dispose = mountGate(
+      {
+        logger: { info() {}, warn() {}, error() {} },
+        on() {},
+        provide() {},
+        get: () => null,
+        inject(deps, cb) {
+          if (Array.isArray(deps) && deps.includes('webServer')) {
+            return cb({
+              on() { return () => {}; },
+              effect(fn) { return fn(); },
+              webServer: {
+                host: '127.0.0.1',
+                register(r) { p21Route = r; return () => {}; },
+              },
+            });
+          }
+          return () => {};
+        },
+      },
+      {},
+    );
+    try {
+      const httpsMismatchRes = await new Promise((resolveRes) => {
+        const req = Object.assign(new EventEmitter(), {
+          method: 'POST',
+          socket: { remoteAddress: '127.0.0.1', encrypted: false },
+          headers: {
+            host: '127.0.0.1:18800',
+            origin: 'https://127.0.0.1:18800',
+            'content-type': 'application/json',
+          },
+        });
+        const out = { statusCode: 200, body: '' };
+        const res = {
+          set statusCode(c) { out.statusCode = c; },
+          get statusCode() { return out.statusCode; },
+          setHeader() {},
+          end(chunk = '') { out.body = String(chunk); resolveRes({ status: out.statusCode, json: JSON.parse(out.body) }); },
+        };
+        Promise.resolve(p21Route.handler(req, res)).catch(() => {});
+        req.emit('data', Buffer.from('{"method":"get"}'));
+        req.emit('end');
+      });
+      assert.equal(httpsMismatchRes.status, 403, 'P2-1: https origin on non-encrypted socket must be 403');
+    } finally {
+      p21Dispose?.();
+    }
+  } finally {
+    if (priorHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = priorHome;
     await rm(root, { recursive: true, force: true });
   }
 });

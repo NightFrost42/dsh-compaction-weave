@@ -40,9 +40,9 @@
 
 设置页用秒展示等待时间与间隔，配置字段使用毫秒。重试次数指首次请求之后的额外尝试：设置为 2 时，每个未完成的摘要或页面最多尝试 3 次。连续重试采用指数退避，间隔最高 30 秒。
 
-供应商和模型一起选择或一起清空（输出上限 `maxTokens` 也可在不覆盖供应商/模型时独立保存生效）。点击“清除（跟随会话模型）”会清除模型覆盖及其独立输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、CJK 预算权重、闲置时间、审计拦截与覆盖率范围/耗尽兜底策略、熔断后策略、工作区文件重注入、归档/图片阈值、尾部溢出、第一级归档存根掩码、闲置轻压缩、最后兜底急救裁剪（Snip）、自定义参考前缀以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
+供应商和模型一起选择或一起清空（输出上限 `maxTokens` 也可在不覆盖供应商/模型时独立保存生效）。点击“清除（跟随会话模型）”会清除模型覆盖及其独立输出上限，同时保存页面当前的触发比例、最小压缩幅度、重试、并发、推理力度、CJK 预算权重、闲置时间、审计拦截与覆盖率范围/耗尽兜底策略、熔断后策略、工作区文件重注入、归档/图片阈值、尾部溢出、第一级归档存根掩码、闲置轻压缩、最后兜底急救裁剪（Snip）以及已修改的会话记忆／过期窗口折叠参数，包括尚未保存的修改。
 
-**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`summaryCjkTokensPerChar`、`auditBlockOnLoss`、`auditCoverageScope`、`auditExhaustionPolicy`、`pressureBreakerAction`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`observationMaskingEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes`、`maxVisibleImages` 与 `extraReferencePrefixes`），均从后续压缩或请求边界热生效。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
+**保存或清除本页设置无需重启 DSH。** 摘要模型、输出上限、触发比例、最小压缩幅度、重试和闲置设置（以及并发数、推理力度、`summaryCjkTokensPerChar`、`auditBlockOnLoss`、`auditCoverageScope`、`auditExhaustionPolicy`、`pressureBreakerAction`、`postCompactReinjectEnabled`、`persistedOutputEnabled`、`observationMaskingEnabled`、`microcompactEnabled`、`snipEnabled`、`sessionMemoryEnabled`、`sessionMemoryMaxCallsPerSession`、`contextCollapseEnabled`、`archiveWarnBytes`、`maxVisibleAttachmentBytes` 与 `maxVisibleImages`），均从后续压缩或请求边界热生效（`extraReferencePrefixes` 与 `auditProvenanceBlock` 通过插件配置生效）。进行中的压缩继续使用开始时的配置快照，直到本次操作结束。
 
 ### 要求保留审计、断点续传、斜杠命令与实时进度卡片
 
