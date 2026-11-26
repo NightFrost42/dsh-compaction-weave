@@ -146,9 +146,16 @@ test('resolveConfig 把 retainRatio 压到 thresholdRatio 之下', () => {
   assert.ok(config.retainRatio < config.thresholdRatio, `retainRatio=${config.retainRatio}`);
 });
 
-test('resolveConfig 把过大的 headroomTokens 收回到窗口的 1/4', () => {
+test('resolveConfig 保留 headroomTokens 并在 resolveCompactSpec 中平滑单调限幅', () => {
   const { config } = resolveConfig({ windowFallback: 100000, headroomTokens: 900000 });
-  assert.equal(config.headroomTokens, 25000);
+  const { config: lowerCfg } = resolveConfig({ windowFallback: 100000, headroomTokens: 99999 });
+  assert.equal(config.headroomTokens, 900000);
+  const specHigh = resolveCompactSpec(config, 100000, 8192);
+  const specLow = resolveCompactSpec(lowerCfg, 100000, 8192);
+  const effHigh = specHigh.messageBudgetTokens - specHigh.pressureBudgetTokens;
+  const effLow = specLow.messageBudgetTokens - specLow.pressureBudgetTokens;
+  assert.ok(effHigh >= effLow);
+  assert.ok(effHigh <= Math.floor(specHigh.messageBudgetTokens * 0.5));
 });
 
 // ───────────────────────────────────────────────────────── 2. 阈值算法

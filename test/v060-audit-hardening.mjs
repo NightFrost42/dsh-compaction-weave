@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSyn
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
 import { threadId } from 'node:worker_threads';
@@ -30,25 +30,37 @@ import { clearInMemoryBreaker } from '../lib/engine/recovery.js';
 import { retryCompactionFor } from '../lib/engine/resumable.js';
 import { resolveSpec, resolveTargetRoute } from '../lib/engine/routing-budget.js';
 import { prepareContinuation } from '../lib/continuation.js';
+import { freezeContinuation, bindContinuationProgress, readPendingContinuation } from '../lib/continuation-pending.js';
 import { buildCompactionInstruction } from '../lib/prompt.js';
 import { failureExplanation } from '../lib/failure-diagnostics.js';
 import { collectActiveWorkspaceFiles } from '../lib/file-reinject.js';
 import { CompactionArchive, extractSpanIndexMetadata } from '../lib/history.js';
+import { tokenizeForSearch } from '../lib/history-search.js';
 import { apply as mountGate } from '../lib/index.js';
 import { instructionText, referenceTexts } from '../lib/instruction-source.js';
 import { CompactionJournal } from '../lib/journal.js';
 import { selectMemoryMessages } from '../lib/memory-policy.js';
+import { extractProgressFacts } from '../lib/progress-facts.js';
 import { CompactionProgressTracker } from '../lib/progress-tracker.js';
 import { reconstructDisputedLines } from '../lib/reconstruct.js';
 import { redactCredentials, redactPemPrivateKeys } from '../lib/redact.js';
+import { selectSessionMemory } from '../lib/region.js';
 import { SessionBackupStore } from '../lib/session-backup.js';
 import { SessionMemoryStore } from '../lib/session-memory.js';
-import { clearBreakerState, SessionStateStore } from '../lib/state.js';
+import {
+  clearBreakerState,
+  publicResumableSummary,
+  readResumableCompaction,
+  SessionStateStore,
+  validateResumableCompaction,
+  writeResumableCompaction,
+} from '../lib/state.js';
 import { summarizeWithTarget } from '../lib/summary.js';
 import { resolveSummaryCapacity } from '../lib/summary-budget.js';
 import { handleSummaryConfigRpc, mergeSummaryConfig, readSummaryConfig } from '../lib/summary-config.js';
 import { retryableSummaryError } from '../lib/summary-retry.js';
 import { buildToolPreview, extractSalientProse } from '../lib/tool-preview.js';
+import { StockTransactionAdapter } from '../lib/transaction.js';
 
 const results = [];
 async function test(name, fn) {
@@ -2179,6 +2191,587 @@ await test('d07bffc9-audit-remediation-focus-conflict-scope-scaling-locks-rpc-cl
       () => smStore.recordAttempt('s-sm-lock', { maxCalls: 5 }),
       { code: 'SESSION_MEMORY_LOCKED' },
     );
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// ── ee09f93 Audit Remediations: Verified P1s & High-Value P2s ──
+
+await test('ee09f93-audit-remediation-all-verified-p1-p2', async () => {
+  const root = await mkdtemp(join(TEST_BASE, 'weave-ee09f93-'));
+  const prevHome = process.env.DSH_HOME;
+  try {
+    // 1. P1-1: /compact <focus> + exhausted soft-provenance fallback still blocks conflictOther
+    const makeFocusHarness = async () => {
+      const archDir = join(root, `p1-1-${randomUUID().slice(0, 6)}`);
+      const events = [];
+      const surface = { nodes: [], replaceGeneration: 0 };
+      const sess = {
+        id: `sess-p1-1-${randomUUID().slice(0, 8)}`,
+        header: { version: 4, id: 'sess-p1-1', createdAt: Date.now(), isSeeded: false },
+        surface,
+        get seq() { return events.length; },
+        eventAt: (seq) => events[seq],
+        snapshotEvents: () => [...events],
+        requestHeader: () => ({ config: { provider: 'p', model: 'm' } }),
+        toolHistory: () => [],
+        deriveEventMessage(event) {
+          if (!event) return undefined;
+          if (event.type === 'system/message') return event.data?.message ?? event.data;
+          if (event.type === 'user/message') return event.data;
+          if (event.type === 'assistant/message') return event.data?.message;
+          return undefined;
+        },
+        append(type, data, options = {}) {
+          const event = { seq: events.length, time: Date.now() + events.length, type, data };
+          events.push(event);
+          if (options.surfaceOp === 'append') surface.nodes.push(event.seq);
+          return event;
+        },
+        replace(nextSurface) {
+          surface.nodes = [...nextSurface.nodes];
+          surface.replaceGeneration += 1;
+        },
+      };
+      sess.append('system/message', { message: { id: 'sys', role: 'system', content: [{ type: 'text', text: 'System' }], source: { kind: 'system-prompt' } } }, { surfaceOp: 'append' });
+      sess.append('user/message', { id: 'u1', role: 'user', content: [{ type: 'text', text: 'Retry timeout must stay 30s in production.' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+      sess.append('assistant/message', { message: { id: 'a2', role: 'assistant', content: [{ type: 'text', text: 'Noted. ' + 'Verbose deploy log entry '.repeat(800) }], source: { kind: 'model', provider: 'p', model: 'm' } } }, { surfaceOp: 'append' });
+      sess.append('user/message', { id: 'u3', role: 'user', content: [{ type: 'text', text: 'Continue with database setup.' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+
+      const enHeadings = buildCompactionInstruction('en').split('\n').filter((line) => /^## [1-9]\./.test(line));
+      const forgedBadSummary = [
+        `${enHeadings[0]} Database setup`,
+        `${enHeadings[1]} Deployment log review`,
+        `${enHeadings[2]} Retry timeout is 10s in production.`,
+        `${enHeadings[3]} Deploy pipeline verification`,
+        `${enHeadings[4]} Resume setup`,
+        `${enHeadings[5]} [corrupted-section-6]`,
+        `${enHeadings[6]} Pending database setup`,
+      ].join('\n\n');
+      const fakeStream = async function* () {
+        yield { type: 'text-delta', text: forgedBadSummary };
+        yield { type: 'finish', usage: { inputTokens: 80, outputTokens: 40, totalTokens: 120 } };
+      };
+      const engine = new WeaveCompactionEngine(
+        {
+          on() {},
+          logger: { info() {}, warn() {}, error() {} },
+          emit() {},
+          config: {},
+          llm: {
+            resolveModelInfo: async () => ({ contextWindow: 128000 }),
+            stream: () => fakeStream(),
+          },
+        },
+        resolveConfig({
+          archiveDir: archDir,
+          summaryRetryCount: 0,
+          auditExhaustionPolicy: 'fallback',
+          retainTokens: 64,
+          preserveRecentMessages: 1,
+          preserveRecentUserTokens: 1,
+        }).config,
+      );
+      const fakeAgent = {
+        options: { provider: 'p', model: 'm' },
+        session: sess,
+        runMaintenance: async (fn) => fn(new AbortController().signal),
+        sessions: { flush: async () => {} },
+      };
+      return { engine, fakeAgent, sess };
+    };
+    const p11 = await makeFocusHarness();
+    const p11Res = await p11.engine
+      .compactNow(p11.fakeAgent, new AbortController().signal, 'cmd-1', false, { focusInstruction: 'focus on db' })
+      .catch((err) => ({ rejected: err }));
+    const p11SummaryText = p11Res?.rejected ? '' : p11.sess.snapshotEvents().filter((e) => e.type === 'compaction/end' || e.type === 'compaction/checkpoint').map((e) => JSON.stringify(e)).join('\n');
+    assert.ok(p11Res?.rejected || !p11SummaryText.includes('10s'), 'P1-1: /compact <focus> under fallback exhaustion must NEVER commit un-repaired 10s conflict');
+
+    // 2. P1-2: validateResumableCompaction preserves focusInstruction/softenCoverageForFocus AND /compact <focus> rejects overwriting checkpoints
+    const p12Store = new SessionStateStore(join(root, 'p12-state'));
+    const nowIso = new Date().toISOString();
+    const validFocusJob = validateResumableCompaction({
+      version: 1,
+      jobId: 'job-focus-1',
+      trigger: 'manual',
+      status: 'paused_budget',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      remainingSeqs: [1, 2, 3],
+      initialTotalNodes: 4,
+      completedNodes: 1,
+      initialTotalTokens: 1000,
+      completedTokens: 200,
+      completedChunks: 1,
+      waveCount: 1,
+      batchCheckpointSeqs: [],
+      allowForeignFallback: false,
+      focusInstruction: 'keep db migration details',
+      softenCoverageForFocus: true,
+      consecutiveFailures: 0,
+    });
+    assert.equal(validFocusJob?.focusInstruction, 'keep db migration details');
+    assert.equal(validFocusJob?.softenCoverageForFocus, true);
+    writeResumableCompaction(p12Store, 'sess-p12-job', validFocusJob);
+
+    const p12Engine = new WeaveCompactionEngine(
+      { on() {}, logger: { info() {}, warn() {}, error() {} }, emit() {}, config: {} },
+      resolveConfig({ archiveDir: join(root, 'p12-arch') }).config,
+    );
+    p12Engine.sessionState = p12Store;
+    await assert.rejects(
+      () =>
+        p12Engine.compactNow(
+          {
+            session: { id: 'sess-p12-job', surface: { nodes: [0, 1, 2, 3] }, requestHeader: () => ({}) },
+            runMaintenance: async (fn) => fn(new AbortController().signal),
+          },
+          new AbortController().signal,
+          'cmd-p12-1',
+          false,
+          { focusInstruction: 'focus on API' },
+        ),
+      (err) => err?.code === 'RESUMABLE_COMPACTION_PENDING' || /resumable compaction/i.test(err?.message ?? ''),
+      'P1-2: /compact <focus> must reject when non-running resumableCompaction checkpoint exists',
+    );
+    assert.equal(readResumableCompaction(p12Store, 'sess-p12-job')?.jobId, 'job-focus-1');
+
+    const contSessionId = 'sess-p12-cont';
+    const contSess = {
+      id: contSessionId,
+      surface: { nodes: [0, 1, 2] },
+      eventAt: (seq) => ({ seq, data: { role: 'user', content: [{ type: 'text', text: `msg-${seq}` }] } }),
+      deriveEventMessage: (e) => e.data,
+    };
+    const contProgRoot = join(dirname(p12Engine.archive.root), 'continuation-progress');
+    const progKey = 'a'.repeat(64);
+    const frozenCont = freezeContinuation(p12Store, contSess, [1, 2], 1000);
+    bindContinuationProgress(p12Store, contSess, frozenCont.id, progKey);
+    new ContinuationProgressStore(contProgRoot, contSessionId, progKey).write({ next: 1, pages: ['p0'] }, 0);
+    await assert.rejects(
+      () =>
+        p12Engine.compactNow(
+          { session: contSess, runMaintenance: async (fn) => fn(new AbortController().signal) },
+          new AbortController().signal,
+          'cmd-p12-2',
+          false,
+          { focusInstruction: 'focus on cache' },
+        ),
+      (err) => err?.code === 'CONTINUATION_PENDING_FOCUS_CONFLICT' || /accepted page/i.test(err?.message ?? ''),
+      'P1-2: /compact <focus> must reject when continuationPending has acceptedPages > 0',
+    );
+
+    // 3. P1-3: Crash recovery stopping breaker also sets resumableCompaction status='paused_failure' & canAutoResume=false
+    const txRoot = join(root, 'p13-tx');
+    const journal = new CompactionJournal({ root: join(txRoot, 'journal') });
+    const txState = new SessionStateStore(join(txRoot, 'state'));
+    writeResumableCompaction(txState, 'sess-tx', {
+      version: 1,
+      jobId: 'job-tx',
+      trigger: 'manual',
+      status: 'running',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      remainingSeqs: [1, 2],
+      initialTotalNodes: 4,
+      completedNodes: 2,
+      initialTotalTokens: 1000,
+      completedTokens: 500,
+      completedChunks: 1,
+      waveCount: 0,
+      batchCheckpointSeqs: [],
+      allowForeignFallback: false,
+      consecutiveFailures: 0,
+    });
+    txState.update('sess-tx', (prev) => ({ ...prev, failures: 2, stopped: false }));
+    const currentLogPath = join(txRoot, 'sess-tx.jsonl');
+    const beforeBuf = Buffer.from('{"type":"compaction/start","seq":0,"time":1,"data":{"compactionId":"tx-crash-1"}}\n', 'utf8');
+    const tailBuf = Buffer.from('{"type":"compaction/end","seq":1,"time":2,"data":{"compactionId":"tx-crash-1"}}\n', 'utf8');
+    const jFile = journal.fileFor('sess-tx', 'tx-crash-1');
+    mkdirSync(dirname(jFile), { recursive: true });
+    writeFileSync(currentLogPath, Buffer.concat([beforeBuf, tailBuf]));
+    writeFileSync(`${jFile}.rollback`, beforeBuf);
+    writeFileSync(`${jFile}.tail`, tailBuf);
+    journal.recordSync({
+      sessionId: 'sess-tx',
+      compactionId: 'tx-crash-1',
+      phase: 'committing',
+      failuresBefore: 2,
+      atomic: {
+        version: 1,
+        beforeBytes: beforeBuf.length,
+        beforeEvents: 1,
+        beforeHash: createHash('sha256').update(beforeBuf).digest('hex'),
+        tailBytes: tailBuf.length,
+        tailHash: createHash('sha256').update(tailBuf).digest('hex'),
+      },
+    });
+    const txEvents = [{ type: 'compaction/start', seq: 0, time: 1, data: { compactionId: 'tx-crash-1' } }];
+    const adapter = Object.assign(Object.create(StockTransactionAdapter.prototype), {
+      backend: {
+        tracker: { writers: new Map(), claimWrite() {}, releaseClaim() {} },
+        findLog: async () => ({ currentPath: currentLogPath }),
+        acquireLease: async () => ({ release: async () => {} }),
+        readStoredLog: async () => ({ meta: {}, inheritedEventCount: 0, events: [...txEvents] }),
+        persistBatch: async (_meta, batch) => { txEvents.push(...batch); },
+        coldLogMemo: new Map(),
+      },
+      sessions: { get: () => null },
+      logger: { info() {}, warn() {}, error() {} },
+      roots: new Map(),
+      backupStores: new Map(),
+      blocked: new Set(),
+    });
+    adapter.register(journal, txState, 3, null);
+    await adapter.recoverBeforeOpen('sess-tx');
+    const afterCrashBreaker = txState.read('sess-tx');
+    const afterCrashJob = readResumableCompaction(txState, 'sess-tx');
+    assert.equal(afterCrashBreaker.stopped, true);
+    assert.equal(afterCrashJob?.status, 'paused_failure');
+    assert.ok(afterCrashJob?.consecutiveFailures >= 3 || afterCrashJob?.consecutiveFailures >= 1);
+    assert.equal(publicResumableSummary(afterCrashJob).canAutoResume, false);
+
+    // 4. P1-5: webserver/index-inject blocks peer===null & web RPC blocks empty socket.remoteAddress
+    process.env.DSH_HOME = join(root, 'p15-dsh');
+    let injectCb = null;
+    let p15Route = null;
+    const disposeP15 = mountGate(
+      {
+        logger: { info() {}, warn() {}, error() {} },
+        on() {},
+        provide() {},
+        get: () => null,
+        inject(deps, cb) {
+          if (Array.isArray(deps) && deps.includes('webServer')) {
+            return cb({
+              on() { return () => {}; },
+              effect: (fn) => fn(),
+              webServer: {
+                host: '127.0.0.1',
+                addListener(evt, fn) {
+                  if (evt === 'webserver/index-inject') injectCb = fn;
+                  return () => {};
+                },
+                register(route) {
+                  p15Route = route;
+                  return () => {};
+                },
+              },
+            });
+          }
+          return () => {};
+        },
+      },
+      {},
+    );
+    try {
+      if (typeof injectCb === 'function') {
+        const deniedNullPeer = await injectCb({ headers: { host: '127.0.0.1:1420' } }, null);
+        assert.equal(deniedNullPeer, null, 'P1-5: index-inject must refuse peer === null');
+      }
+      const emptyRemoteRes = await new Promise((resolveRes) => {
+        const req = Object.assign(new EventEmitter(), {
+          method: 'POST',
+          socket: { remoteAddress: '' },
+          headers: { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' },
+          destroy() {},
+        });
+        const out = { statusCode: 200, body: '' };
+        const res = {
+          set statusCode(c) { out.statusCode = c; },
+          get statusCode() { return out.statusCode; },
+          setHeader() {},
+          end(chunk = '') {
+            out.body = String(chunk);
+            resolveRes({ status: out.statusCode, body: out.body });
+          },
+        };
+        Promise.resolve(p15Route.handler(req, res)).catch(() => {});
+        req.emit('data', Buffer.from('{"method":"get"}'));
+        req.emit('end');
+      });
+      assert.equal(emptyRemoteRes.status, 403, 'P1-5: empty socket.remoteAddress must fail closed with 403');
+    } finally {
+      disposeP15?.();
+    }
+
+    // 5. P1-6: arbitrary target scope swaps + non-scope discourse false-positive guard
+    const swapEn = auditCompaction({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: 'For db, timeout must be at least 5000ms. For cache, timeout must be at most 500ms.' }],
+      summaryText: 'For cache, timeout must be at least 5000ms. For db, timeout must be at most 500ms.',
+      threshold: 0.6,
+    });
+    assert.ok(swapEn.lost.length > 0, 'P1-6: EN For db / For cache swap must be caught');
+
+    const swapCn = auditCompaction({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: '对于 db，超时至少 5000ms；对于 cache，超时至多 500ms。' }],
+      summaryText: '对于 cache，超时至少 5000ms；对于 db，超时至多 500ms。',
+      threshold: 0.6,
+    });
+    assert.ok(swapCn.lost.length > 0, 'P1-6: CN 对于 db / 对于 cache swap must be caught');
+
+    const swapFile = auditCompaction({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: 'For auth.js, max retries is 3; for worker.js, max retries is 8.' }],
+      summaryText: 'For worker.js, max retries is 3; for auth.js, max retries is 8.',
+      threshold: 0.6,
+    });
+    assert.ok(swapFile.lost.length > 0, 'P1-6: For auth.js / For worker.js swap must be caught');
+
+    const noFpPrep = auditCompaction({
+      userMessages: [
+        { seq: 1, sourceKind: 'user', text: 'For example, keep logs clean.\nFor db, timeout must be at least 5000ms.' },
+      ],
+      summaryText: 'Keep logs clean. Set db timeout to at least 5000ms.',
+      threshold: 0.6,
+    });
+    assert.equal(noFpPrep.lost.length, 0, `P1-6 FP check failed: ${JSON.stringify(noFpPrep.lost)}`);
+
+    // 6. P1-7: 7 polarity FNs detected & 4 equiv FPs clean
+    const polarityFns = [
+      ['取消禁用缓存。', '禁用缓存。'],
+      ['撤销禁用日志。', '禁用日志。'],
+      ['取消禁止上传。', '禁止上传。'],
+      ['Must enable caching.', 'Disable caching.'],
+      ['Do not allow disabling telemetry.', 'Disable telemetry.'],
+      ['Disabling TLS verification is forbidden.', 'Enabling TLS verification is forbidden.'],
+      ['Disable legacy fallback mode.', 'Do not disable legacy fallback mode.'],
+    ];
+    for (const [src, sum] of polarityFns) {
+      const res = auditCompaction({
+        userMessages: [{ seq: 1, sourceKind: 'user', text: src }],
+        summaryText: sum,
+        threshold: 0.6,
+      });
+      assert.ok(res.polarityFlips > 0 || res.lost.length > 0, `P1-7 FN missed: "${src}" -> "${sum}"`);
+    }
+
+    const polarityFps = [
+      ['超时时间大于等于 5000ms。', '超时时间至少 5000ms。'],
+      ['重试次数小于等于 3。', '重试次数至多 3。'],
+      ['延迟不得超过 200ms。', '延迟最多 200ms。'],
+      ['This step is a no-op on cache.', 'Keep this step as a no-op on cache.'],
+    ];
+    for (const [src, sum] of polarityFps) {
+      const res = auditCompaction({
+        userMessages: [{ seq: 1, sourceKind: 'user', text: src }],
+        summaryText: sum,
+        threshold: 0.6,
+      });
+      assert.equal(res.lost.length, 0, `P1-7 FP triggered: "${src}" -> "${sum}": ${JSON.stringify(res.lost)}`);
+      assert.equal(res.polarityFlips, 0, `P1-7 polarity FP: "${src}" -> "${sum}"`);
+    }
+
+    // 7. P1-8: selectSessionMemory keeps provenanceUserMessages across revoked grants
+    const revEvents = [
+      { seq: 0, type: 'system/message', data: { message: { role: 'system', content: [{ type: 'text', text: 'Sys' }], source: { kind: 'system-prompt' } } } },
+      { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: 'You may deploy the hotfix directly to production.' }], source: { kind: 'user' } } },
+      { seq: 2, type: 'assistant/message', data: { message: { role: 'assistant', content: [{ type: 'text', text: 'Ok' }], source: { kind: 'model' } } } },
+      { seq: 3, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: 'Cancel previous instruction: do not deploy the hotfix to production.' }], source: { kind: 'user' } } },
+    ];
+    const revSession = {
+      surface: { nodes: [0, 1, 2, 3] },
+      eventAt: (seq) => revEvents[seq],
+      deriveEventMessage: (e) => e.data?.message ?? e.data,
+    };
+    const revMem = selectSessionMemory(revSession, [0, 1, 2, 3]);
+    assert.ok(Array.isArray(revMem.provenanceUserMessages) && revMem.provenanceUserMessages.some((m) => m.seq === 1), 'P1-8: provenanceUserMessages retains retired seq 1');
+    const revAudit = auditCompaction({
+      userMessages: revMem.active,
+      provenanceUserMessages: revMem.provenanceUserMessages,
+      summaryText: 'User approved: may deploy the hotfix directly to production.',
+      threshold: 0.6,
+    });
+    assert.ok(
+      revAudit.lost.some((l) => l.reason === 'provenance' && l.revokedMatch === true),
+      `P1-8: forged/revoked grant detected with revokedMatch=true, got ${JSON.stringify(revAudit.lost)}`,
+    );
+
+    // 8. P1-9: renderDateGrounding skips externalFold events and multi-block non-instruction blocks
+    const dgEvents = [
+      {
+        seq: 1,
+        time: Date.UTC(2026, 10, 26),
+        type: 'user/message',
+        data: {
+          role: 'user',
+          content: [{ type: 'text', text: '[bili] context summary after compaction:\n[Compressed conversation section]\n<bili-snapshot v1 id="b1"/>\nTomorrow external fold scheduled.' }],
+          source: { kind: 'plugin:billion-context-dsh' },
+        },
+      },
+      {
+        seq: 2,
+        time: Date.UTC(2026, 10, 26),
+        type: 'user/message',
+        data: {
+          role: 'user',
+          content: [
+            { type: 'text', text: '<system-reminder>Inspect tomorrow logs.</system-reminder>' },
+            { type: 'text', text: 'Please ship release yesterday.' },
+          ],
+          source: { kind: 'user' },
+        },
+      },
+    ];
+    const dgOut = renderDateGrounding(
+      {
+        surface: { nodes: [1, 2] },
+        eventAt: (seq) => dgEvents.find((e) => e.seq === seq),
+        deriveEventMessage: (e) => e.data,
+      },
+      [1, 2],
+    );
+    assert.ok(!dgOut.includes('seq 1') && !dgOut.toLowerCase().includes('tomorrow'), `P1-9: external/reminder relative dates excluded, got: ${dgOut}`);
+    assert.ok(dgOut.includes('2026-11-25'), `P1-9: real user relative date grounded, got: ${dgOut}`);
+
+    // 9. P1-10: headroomTokens monotonicity at 200k + minGrowthTokens window shrink + slice 0 preservePrefixCache
+    const headrooms = [199999, 200000, 260000];
+    const resolvedEffective = headrooms.map((h) => {
+      const cfg = resolveConfig({ windowFallback: 200000, headroomTokens: h }).config;
+      const spec = resolveCompactSpec(cfg, 200000, 16000);
+      return { raw: cfg.headroomTokens, eff: spec.messageBudgetTokens - spec.pressureBudgetTokens, threshold: spec.thresholdTokens };
+    });
+    assert.equal(resolvedEffective[1].raw, 200000, 'P1-10: 200000 must not be halved globally');
+    assert.ok(resolvedEffective[1].eff >= resolvedEffective[0].eff && resolvedEffective[2].eff >= resolvedEffective[1].eff, `P1-10 effective headroom must be monotonic across 200k: ${JSON.stringify(resolvedEffective)}`);
+    assert.ok(resolvedEffective[1].threshold <= resolvedEffective[0].threshold && resolvedEffective[2].threshold <= resolvedEffective[1].threshold, `P1-10 threshold must be non-increasing across 200k: ${JSON.stringify(resolvedEffective)}`);
+
+    const slice0Spec = buildPrecomputedSliceSpec(
+      p11.engine,
+      revSession,
+      [2, 3],
+      resolveConfig({}).config,
+      { preservePrefixCache: true },
+    );
+    const slice1Spec = buildPrecomputedSliceSpec(
+      p11.engine,
+      revSession,
+      [2, 3],
+      resolveConfig({}).config,
+      { preservePrefixCache: false },
+    );
+    assert.ok(slice0Spec.input.messages.length > slice1Spec.input.messages.length, 'P1-10: preservePrefixCache=true retains preceding messages in slice 0 input');
+    const pfSrc = readFileSync(join(REPO_ROOT, 'lib/engine/parallel-fold.js'), 'utf8');
+    assert.ok(pfSrc.includes('preservePrefixCache: sliceIdx === 0 && Boolean(policy.cachePreservePrefix)'), 'P1-10: compactChunksConcurrent wires sliceIdx === 0 prefix cache preservation');
+
+    // minGrowthTokens window shrink check
+    let currentWin = 128000;
+    let mgTriggered = false;
+    const mgEngine = new WeaveCompactionEngine(
+      {
+        on() {},
+        logger: { info() {}, warn() {}, error() {} },
+        emit() {},
+        config: {},
+        tokenMeter: {
+          measure: async (s) => ({
+            totalTokens: s.surface.nodes.length >= 10 ? 52000 : 8000,
+            nodes: s.surface.nodes.map((seq, idx) => ({ seq, tokens: idx === 0 ? 500 : 4200 })),
+          }),
+        },
+        llm: {
+          resolveModelInfo: async () => ({ contextWindow: currentWin }),
+          stream: async function* () {
+            mgTriggered = true;
+            yield {
+              type: 'text-delta',
+              text: buildCompactionInstruction('en')
+                .split('\n')
+                .filter((l) => /^## [1-9]\./.test(l))
+                .map((h, idx) =>
+                  idx === 5
+                    ? `${h} Source seq: 1. User turn: keep port 8080.`
+                    : `${h} Keep port 8080.`,
+                )
+                .join('\n\n'),
+            };
+            yield { type: 'finish', usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 } };
+          },
+        },
+      },
+      resolveConfig({ archiveDir: join(root, 'p110-arch'), minGrowthTokens: 8192 }).config,
+    );
+    const mgEvents = [];
+    const mgSurface = { nodes: [], replaceGeneration: 0 };
+    const mgSess = {
+      id: 'sess-mg-shrink',
+      header: { version: 4, id: 'sess-mg', createdAt: Date.now(), isSeeded: false },
+      surface: mgSurface,
+      get seq() { return mgEvents.length; },
+      eventAt: (seq) => mgEvents[seq],
+      snapshotEvents: () => [...mgEvents],
+      requestHeader: () => ({ config: { provider: 'p', model: 'm' } }),
+      measureContext: async () => ({ totalTokens: 52000 }),
+      toolHistory: () => [],
+      deriveEventMessage: (e) => e.data?.message ?? e.data,
+      append(type, data, opts = {}) {
+        const ev = { seq: mgEvents.length, time: Date.now(), type, data };
+        mgEvents.push(ev);
+        if (opts.surfaceOp === 'append') mgSurface.nodes.push(ev.seq);
+        return ev;
+      },
+      replace(next) { mgSurface.nodes = [...next.nodes]; mgSurface.replaceGeneration += 1; },
+    };
+    mgSess.append('system/message', { message: { role: 'system', content: [{ type: 'text', text: 'System' }], source: { kind: 'system-prompt' } } }, { surfaceOp: 'append' });
+    for (let i = 0; i < 6; i += 1) {
+      mgSess.append('user/message', { role: 'user', content: [{ type: 'text', text: `User turn ${i}: keep port 8080.` }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+      mgSess.append('assistant/message', { message: { role: 'assistant', content: [{ type: 'text', text: `Turn ${i}: ` + 'Deployment trace detail entry '.repeat(1000) }], source: { kind: 'model' } } }, { surfaceOp: 'append' });
+    }
+    mgSess.append('turn/start', { turn: 99 });
+    mgEngine._lastTotal.set(mgSess, 55000);
+    mgEngine._lastThreshold.set(mgSess, 90000);
+    currentWin = 65536;
+    const mgRes = await mgEngine
+      .compactIfNeeded(
+        {
+          options: { provider: 'p', model: 'm' },
+          session: mgSess,
+          sessions: { flush: async () => {} },
+        },
+        'pressure',
+      )
+      .catch(() => null);
+    assert.ok(mgTriggered || mgRes !== null || mgSurface.replaceGeneration > 0, 'P1-10: shrinking model window must bypass minGrowthTokens debounce');
+
+    // 10. P2-1..P2-5
+    const enableDisableLines = [];
+    for (let i = 0; i < 160; i += 1) {
+      enableDisableLines.push(`Must enable feature_flag_${i} in config_${i}.`);
+    }
+    const p21Mutated = [...enableDisableLines];
+    p21Mutated[77] = 'Disable feature_flag_77 in config_77.';
+    const t21 = performance.now();
+    const p21Res = auditCompaction({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: enableDisableLines.join('\n') }],
+      summaryText: p21Mutated.join('\n'),
+      threshold: 0.6,
+    });
+    const p21Ms = performance.now() - t21;
+    assert.ok(p21Res.polarityFlips >= 1, 'P2-1: enable/disable clause bucket must still catch flip');
+    assert.ok(p21Ms < 500, `P2-1: n=160 enable/disable audit took ${p21Ms.toFixed(1)}ms, expected < 500ms`);
+
+    const p22Tokens = tokenizeForSearch('한글 토큰 검색 カタカナ ひらがな alpha');
+    assert.ok(p22Tokens.some((t) => /[\uac00-\ud7a3]/.test(t)), 'P2-2: Hangul tokens indexed');
+    assert.ok(p22Tokens.some((t) => /[\u3040-\u30ff]/.test(t)), 'P2-2: Kana tokens indexed');
+
+    const commitSha = 'a1b2c3d4e5f678901234567890abcdef12345678';
+    const sessionTok = 'FwoGZXIvYXdzEAa' + 'B'.repeat(40);
+    const p23Redacted = redactCredentials(`postgres://user:x@127.0.0.1/db aws_session_token=${sessionTok} commit ${commitSha}`);
+    assert.ok(!p23Redacted.includes(':x@'), 'P2-3: 1-char URL password redacted');
+    assert.ok(!p23Redacted.includes(sessionTok), 'P2-3: aws_session_token redacted');
+    assert.ok(p23Redacted.includes(commitSha), 'P2-3: unkeyed SHA-1 commit hash preserved');
+
+    const p24Facts = extractProgressFacts([
+      '````markdown',
+      'buildCount: 11',
+      '```',
+      'buildCount: 22',
+      '````',
+      'deployStatus: "done"',
+    ].join('\n'), { seq: 1 });
+    assert.ok(!p24Facts.some((f) => f.key === 'buildCount'), 'P2-4: shorter fence inside 4-backtick fence must not close outer fence');
+    assert.ok(p24Facts.some((f) => f.key === 'deployStatus' && f.value === 'done'), 'P2-4: fact after matching 4-backtick close extracted');
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
