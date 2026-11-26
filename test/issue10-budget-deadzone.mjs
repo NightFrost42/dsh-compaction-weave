@@ -119,11 +119,21 @@ await test('resolveCompactSpec-and-SessionStateStore-attach-explicit-error-codes
   // resolveCompactSpec error codes + existing message regexes
   assert.throws(
     () => resolveCompactSpec({ thresholdRatio: 0.8, headroomTokens: 1000, retainRatio: 0.16, retainTokens: null }, 10000, 12000),
-    (err) => err?.code === 'COMPACTION_INVALID_BUDGET' && /no message budget/.test(err.message),
+    (err) =>
+      err?.code === 'COMPACTION_INVALID_BUDGET' &&
+      /no message budget/.test(err.message) &&
+      err.contextWindow === 10000 &&
+      err.reservedCompletionTokens === 12000,
   );
   assert.throws(
     () => resolveCompactSpec({ thresholdRatio: 0.8, headroomTokens: 1000, retainRatio: 0.16, retainTokens: 170000 }, 200000, 0),
-    (err) => err?.code === 'COMPACTION_RETAIN_EXCEEDS_THRESHOLD' && /must be less than threshold tokens/.test(err.message),
+    (err) =>
+      err?.code === 'COMPACTION_RETAIN_EXCEEDS_THRESHOLD' &&
+      /must be less than threshold tokens/.test(err.message) &&
+      err.contextWindow === 200000 &&
+      err.reservedCompletionTokens === 0 &&
+      err.retainTokens === 170000 &&
+      err.thresholdTokens === 160000,
   );
   // Explicit retainTokens >= thresholdTokens in deadzone-adjusted window still throws COMPACTION_RETAIN_EXCEEDS_THRESHOLD
   assert.throws(
@@ -404,12 +414,14 @@ await test('failure-diagnostics-captures-explicit-codes-and-chinese-explanations
       {
         err: invalidBudgetErr,
         expectedCode: 'COMPACTION_INVALID_BUDGET',
-        patterns: [/COMPACTION_INVALID_BUDGET/, /contextWindow/, /maxTokens/, /windowProviderMap/],
+        patterns: [/COMPACTION_INVALID_BUDGET/, /contextWindow=4096/, /reservedCompletionTokens=8192/, /maxTokens/, /windowProviderMap/],
+        expectedErrorFields: { contextWindow: 4096, reservedCompletionTokens: 8192 },
       },
       {
         err: retainExceedsErr,
         expectedCode: 'COMPACTION_RETAIN_EXCEEDS_THRESHOLD',
-        patterns: [/COMPACTION_RETAIN_EXCEEDS_THRESHOLD/, /retainTokens/, /retainRatio/, /thresholdRatio/, /contextWindow/, /windowProviderMap/, /maxTokens/],
+        patterns: [/COMPACTION_RETAIN_EXCEEDS_THRESHOLD/, /retainTokens=170000/, /thresholdTokens=160000/, /contextWindow=200000/, /reservedCompletionTokens=0/, /retainRatio/, /thresholdRatio/, /windowProviderMap/, /maxTokens/],
+        expectedErrorFields: { retainTokens: 170000, thresholdTokens: 160000, contextWindow: 200000, reservedCompletionTokens: 0 },
       },
       {
         err: stateUnavailErr,
@@ -433,6 +445,11 @@ await test('failure-diagnostics-captures-explicit-codes-and-chinese-explanations
       }
       const saved = JSON.parse(await readFile(receipt.path, 'utf8'));
       assert.equal(saved.errors[0].code, item.expectedCode);
+      if (item.expectedErrorFields) {
+        for (const [k, v] of Object.entries(item.expectedErrorFields)) {
+          assert.equal(saved.errors[0][k], v, `diagnostics errors[0].${k}`);
+        }
+      }
     }
 
     // STATE_LOCKED & wrapped COMPACTION_AUTOMATIC_BLOCKED causes also produce targeted Chinese guidance
@@ -441,14 +458,14 @@ await test('failure-diagnostics-captures-explicit-codes-and-chinese-explanations
       code: 'COMPACTION_AUTOMATIC_BLOCKED',
       cause: invalidBudgetErr,
     });
-    assert.match(failureExplanation(wrappedBudget), /COMPACTION_INVALID_BUDGET/);
+    assert.match(failureExplanation(wrappedBudget), /COMPACTION_INVALID_BUDGET.*contextWindow=4096.*reservedCompletionTokens=8192/);
     assert.match(failureExplanation(wrappedBudget), /windowProviderMap/);
 
     const wrappedRetain = Object.assign(new Error('automatic blocked'), {
       code: 'COMPACTION_AUTOMATIC_BLOCKED',
       cause: retainExceedsErr,
     });
-    assert.match(failureExplanation(wrappedRetain), /COMPACTION_RETAIN_EXCEEDS_THRESHOLD/);
+    assert.match(failureExplanation(wrappedRetain), /COMPACTION_RETAIN_EXCEEDS_THRESHOLD.*retainTokens=170000.*thresholdTokens=160000/);
     assert.match(failureExplanation(wrappedRetain), /thresholdRatio/);
   } finally {
     await rm(root, { recursive: true, force: true });

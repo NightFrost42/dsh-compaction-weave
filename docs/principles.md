@@ -131,7 +131,7 @@ $$D = \min(T - 1,\ \lfloor \text{currentInput} \times 0.8 \rfloor)$$
 
 - **近期原话预算确定性填充**：摘要模型在第六节只需输出占位符 `[由引擎填充]` 或 `[filled by engine]`。模型返回后，引擎按原始时间顺序将**预算内选定的近期用户原话**（默认最多 `preserveRecentMessages: 32` 条、累计不超过 `preserveRecentUserTokens: 4096` 估算 tokens）逐字填入第六节。纯催促类短消息（如“继续”“好的”）不占用引文预算；预算吃紧时优先淘汰最早的完整引文。该引文预算与第 2.2 节的对话末尾保留尾部 $R$ 彼此独立。
 - **区分真实用户指令与外部参考内容（宿主通道 + 显式标签边界）**：网页正文、技能说明、工具返回或用户转发的引用里经常出现“请删除……”“用户已批准……”这类带有命令语气的句子，如果靠启发式自然语言正则去猜“这句话是不是用户下的命令”，既容易漏掉也容易误杀正常表达。Weave 完全依据**结构边界**区分来源：
-  - 凡是来自宿主非用户输入通道的事件——包括工具结果 `tool/result`，以及内置 `37` 项（详见 [../lib/reference-policy.js](../lib/reference-policy.js)）由两类构成的非用户来源：**DSH V4 一方宿主注入类型**（如 `runtime-context`、`session-reference`、`skill-catalog`、`agent-instructions`、`plan-mode`、`subagent-report`、`schedule` 等）与**常见第三方 IM 桥接通道**（如 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge`）——统一视为外部参考，不进入有效用户指令集合，且支持通过 `extraReferenceSourceKinds` / `extraReferencePrefixes` 自定义扩展。发送到投影摘要请求或接续分页时，用 `<untrusted_reference seq="..." kind="...">...</untrusted_reference>` 显式包起来，转义正文和参数中混入的同名边界标签；同路由原样前缀模式则在请求末尾附上 `<channel-provenance>` 清单标明各条消息来源；多页长消息页头也附带 `channel=untrusted_reference` 标识。
+  - 凡是来自宿主非用户输入通道的事件——包括工具结果 `tool/result`，以及内置 `36` 项（详见 [../lib/reference-policy.js](../lib/reference-policy.js)）由两类构成的非用户来源：**DSH V4 一方宿主注入类型**（如 `runtime-context`、`session-reference`、`skill-catalog`、`agent-instructions`、`plan-mode`、`subagent-report`、`schedule` 等）与**常见第三方 IM 桥接通道**（如 `wechat`、`qq`、`wechat-bridge`、`qq-bridge`、`im-bridge`）——统一视为外部参考，不进入有效用户指令集合，且支持通过 `extraReferenceSourceKinds` / `extraReferencePrefixes` 自定义扩展。发送到投影摘要请求或接续分页时，用 `<untrusted_reference seq="..." kind="...">...</untrusted_reference>` 显式包起来，转义正文和参数中混入的同名边界标签；同路由原样前缀模式则在请求末尾附上 `<channel-provenance>` 清单标明各条消息来源；多页长消息页头也附带 `channel=untrusted_reference` 标识。
   - 在**真实 `user/message` 消息内部**，如果用户引用了他人话语或示例文本，使用 `<untrusted_reference>`、`<quoted_text>`、`<untrusted_text>`、`<reference>`、`<blockquote>` 等显式标签包起引用片段（支持同类嵌套、支持跨行标签属性与引号内斜杠，且遇到嵌套错位或未闭合标签时直接保守地将到本条消息末尾的内容全视为引用），标签外才视为真实用户指令。
 - **早期有效要求独立追踪**：默认开启归档时，滑出第六节近期引文预算的更早用户原话完整保存在磁盘归档中。同时，记忆选择器按事件序号追踪每条用户要求的生命周期，包括生效、修订覆盖、显式取消（包含英文条件保护如 `"cancel that, if approved"` 不会被误拆成无条件取消，以及跳过无约束词的纯闲聊语句）、作用对象与环境范围。只要早期要求未被取消或覆盖，仍作为**有效要求**参与压缩后的独立要求审计；在后台分页接续模式下则逐字保存在 `## Preserved source requirements` 专节。已被用户显式取消的要求及其取消指令会被剔除，防止废弃约束重新进入检查点（`RETIRED_MEMORY_REINTRODUCED`）。
 
@@ -156,7 +156,7 @@ $$D = \min(T - 1,\ \lfloor \text{currentInput} \times 0.8 \rfloor)$$
 
 ### 4.2 单目标路由、自适应推理力度与有限重试
 
-摘要目标按以下优先级解析：（1）显式配置的 `summarizationProvider` 与 `summarizationModel`；（2）当前会话已持久化的模型路由；（3）当前代理声明的模型路由。仅当摘要目标与主对话路由的 `provider/model` 完全一致时，才复用 `temperature`、`stop` 等采样参数，避免跨模型参数不兼容。
+摘要目标按以下优先级解析：（1）显式配置的 `summarizationProvider` 与 `summarizationModel`；（2）当前会话的实时选型（`liveModelSelectionTarget`）；（3）当前会话已持久化的模型路由；（4）当前代理声明的模型路由。仅当摘要目标与主对话路由的 `provider/model` 完全一致时，才复用 `temperature`、`stop` 等采样参数，避免跨模型参数不兼容。
 
 推理力度默认配置为 `summaryReasoningEffort: 'auto'`，按目标模型路由自动适配：
 - **Anthropic / Claude 同路由**：若与主会话同路由且主会话启用了思考，则继承主会话设置以最大化复用提示词缓存；

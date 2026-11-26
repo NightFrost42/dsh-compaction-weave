@@ -24,10 +24,13 @@ import { continuationCallBudget } from '../lib/continuation-budget.js';
 import { ContinuationProgressStore } from '../lib/continuation-progress.js';
 import { extractDateGroundings, renderDateGrounding } from '../lib/date-grounding.js';
 import { WeaveCompactionEngine } from '../lib/engine.js';
-import { handleConcurrentSliceReady } from '../lib/engine/parallel-fold.js';
+import { splitAuditLost } from '../lib/engine/fallback-guards.js';
+import { buildPrecomputedSliceSpec, generateValidatedPrecomputedSpan, handleConcurrentSliceReady } from '../lib/engine/parallel-fold.js';
 import { clearInMemoryBreaker } from '../lib/engine/recovery.js';
 import { retryCompactionFor } from '../lib/engine/resumable.js';
 import { resolveSpec, resolveTargetRoute } from '../lib/engine/routing-budget.js';
+import { prepareContinuation } from '../lib/continuation.js';
+import { buildCompactionInstruction } from '../lib/prompt.js';
 import { failureExplanation } from '../lib/failure-diagnostics.js';
 import { collectActiveWorkspaceFiles } from '../lib/file-reinject.js';
 import { CompactionArchive, extractSpanIndexMetadata } from '../lib/history.js';
@@ -42,6 +45,7 @@ import { SessionBackupStore } from '../lib/session-backup.js';
 import { SessionMemoryStore } from '../lib/session-memory.js';
 import { clearBreakerState, SessionStateStore } from '../lib/state.js';
 import { summarizeWithTarget } from '../lib/summary.js';
+import { resolveSummaryCapacity } from '../lib/summary-budget.js';
 import { handleSummaryConfigRpc, mergeSummaryConfig, readSummaryConfig } from '../lib/summary-config.js';
 import { retryableSummaryError } from '../lib/summary-retry.js';
 import { buildToolPreview, extractSalientProse } from '../lib/tool-preview.js';
@@ -1554,6 +1558,7 @@ await test('v060-release-gate-p1-1-2-3-and-p2-1-8-security-locks-and-client-regr
     const settledTree = await uiClient.settleSettings();
     const timeoutInput = uiClient.field(settledTree, 'weave-summary-timeout');
     assert.equal(String(timeoutInput?.props?.value ?? ''), '8.001');
+    assert.equal(timeoutInput?.props?.step, 0.001, 'P2-3 summaryTimeout input step must be 0.001 for ms precision');
     const saveBtn = uiClient.button(settledTree, 'Save');
     assert.ok(saveBtn);
     saveBtn.props.onClick();
@@ -1810,6 +1815,373 @@ await test('4da2472-audit-remediation-p1-1-p1-2-p2-1-p2-2-and-conflict', async (
       assert.equal(c.failures, 2);
     });
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// ── d07bffc9 Audit Remediations: Focus Hard Conflicts, Scope Swap, Scaling, Worker Locks, RPC Principal ──
+
+await test('d07bffc9-audit-remediation-focus-conflict-scope-scaling-locks-rpc-client', async () => {
+  const root = await mkdtemp(join(TEST_BASE, 'weave-d07bffc9-'));
+  const prevHome = process.env.DSH_HOME;
+  try {
+    // 1. P1-1: splitAuditLost partitions conflictOther vs coverageOther, and precomputed / continuation focus paths still block value conflicts
+    const split = splitAuditLost(
+      null,
+      [
+        { seq: 1, reason: 'coverage', line: 'keep code concise' },
+        { seq: 2, reason: 'value', line: 'timeout must be 5000ms', candidate: 'timeout must be 1000ms' },
+      ],
+      {},
+    );
+    assert.equal(split.coverageOther.length, 1);
+    assert.equal(split.conflictOther.length, 1);
+    assert.equal(split.conflictOther[0].reason, 'value');
+
+    const enHeadings = buildCompactionInstruction('en').split('\n').filter((line) => /^## [1-9]\./.test(line));
+    const events = [];
+    const surface = { nodes: [], replaceGeneration: 0 };
+    const focusSession = {
+      id: `sess-focus-${randomUUID().slice(0, 8)}`,
+      header: { version: 4, id: 'sess-focus', createdAt: Date.now(), isSeeded: false },
+      surface,
+      get seq() { return events.length; },
+      eventAt: (seq) => events[seq],
+      snapshotEvents: () => [...events],
+      requestHeader: () => ({ config: { provider: 'p', model: 'm' } }),
+      toolHistory: () => [],
+      deriveEventMessage(event) {
+        if (!event) return undefined;
+        if (event.type === 'system/message') return event.data?.message ?? event.data;
+        if (event.type === 'user/message') return event.data;
+        if (event.type === 'assistant/message') return event.data?.message;
+        return undefined;
+      },
+      append(type, data, options = {}) {
+        const event = { seq: events.length, time: Date.now() + events.length, type, data };
+        events.push(event);
+        if (options.surfaceOp === 'append') surface.nodes.push(event.seq);
+        return event;
+      },
+    };
+    focusSession.append('system/message', { message: { id: 'sys-0', role: 'system', content: [{ type: 'text', text: 'You are a helpful coding assistant.' }], source: { kind: 'system-prompt' } } }, { surfaceOp: 'append' });
+    focusSession.append('user/message', { id: 'u-1', role: 'user', content: [{ type: 'text', text: 'Hard requirement: connection timeout must be 5000ms.\nPreferred coding style: keep deploy notes concise and readable.' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+    focusSession.append('assistant/message', { message: { id: 'a-2', role: 'assistant', content: [{ type: 'text', text: 'Understood. ' + 'Detailed deployment log trace '.repeat(160) }], source: { kind: 'model', provider: 'p', model: 'm' } } }, { surfaceOp: 'append' });
+    focusSession.append('user/message', { id: 'u-3', role: 'user', content: [{ type: 'text', text: 'Continue with deploy.' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+
+    let activeFocusText = '';
+    const preFocusLogs = [];
+    const makeStreamForText = (text) => async function* () {
+      yield { type: 'text-delta', text };
+      yield { type: 'finish', usage: { inputTokens: 80, outputTokens: 40, totalTokens: 120 } };
+    };
+    const focusPolicy = resolveConfig({
+      archiveDir: join(root, 'focus-arch'),
+      summaryRetryCount: 0,
+      auditExhaustionPolicy: 'block',
+      preserveRecentMessages: 1,
+      preserveRecentUserTokens: 1,
+    }).config;
+    const focusEngine = new WeaveCompactionEngine(
+      {
+        on() {},
+        logger: { info() {}, warn: (m) => preFocusLogs.push(String(m)), error() {} },
+        llm: {
+          resolveModelInfo: async () => ({ contextWindow: 200000 }),
+          stream: () => makeStreamForText(activeFocusText)(),
+        },
+      },
+      focusPolicy,
+    );
+    const conflictSummaryText = enHeadings
+      .map((h, idx) => (idx === 5 ? `${h}\n[filled]` : `${h}\nHard requirement: connection timeout must be 1000ms. Keep deploy notes concise.`))
+      .join('\n\n');
+    const softCoverageSummaryText = enHeadings
+      .map((h, idx) => (idx === 5 ? `${h}\n[filled]` : `${h}\nHard requirement: connection timeout must be 5000ms.`))
+      .join('\n\n');
+    const preSpec = buildPrecomputedSliceSpec(focusEngine, focusSession, [1, 2], focusPolicy);
+    const focusTargets = {
+      targets: [{ provider: 'p', model: 'm' }],
+      budgetSpec: { contextWindow: 200000, reservedCompletionTokens: 8192 },
+    };
+    const focusCapacity = await resolveSummaryCapacity({ llm: {} }, focusTargets, focusPolicy);
+    const focusAgent = {
+      options: { provider: 'p', model: 'm' },
+      session: focusSession,
+    };
+    activeFocusText = conflictSummaryText;
+    const conflictPreRes = await generateValidatedPrecomputedSpan(focusEngine, {
+      session: focusSession,
+      agent: focusAgent,
+      policy: focusPolicy,
+      budgetSpec: focusTargets.budgetSpec,
+      targets: focusTargets,
+      capacity: focusCapacity,
+      maxTokens: 2048,
+      signal: new AbortController().signal,
+      spec: preSpec,
+      referenceMessages: [],
+      softenCoverageForFocus: true,
+    });
+    const repairedText = conflictPreRes.summarized?.rawText ?? conflictPreRes.checkpointBlocks.map((b) => b.text).join('\n');
+    assert.ok(!repairedText.includes('1000ms') && repairedText.includes('5000ms'), 'P1-1 generateValidatedPrecomputedSpan must catch & reconstruct hard value conflict instead of softening 1000ms');
+    assert.ok(!preFocusLogs.some((m) => m.includes('focus-mode constraint audit')), 'P1-1 hard value conflict must not be logged/softened as focus coverage gap');
+
+    preFocusLogs.length = 0;
+    activeFocusText = softCoverageSummaryText;
+    const softPreOk = await generateValidatedPrecomputedSpan(focusEngine, {
+      session: focusSession,
+      agent: focusAgent,
+      policy: focusPolicy,
+      budgetSpec: focusTargets.budgetSpec,
+      targets: focusTargets,
+      capacity: focusCapacity,
+      maxTokens: 2048,
+      signal: new AbortController().signal,
+      spec: preSpec,
+      referenceMessages: [],
+      softenCoverageForFocus: true,
+    });
+    assert.ok(softPreOk && softPreOk.checkpointBlocks?.length, 'P1-1 generateValidatedPrecomputedSpan succeeds when conflict is resolved');
+    focusEngine.dispose();
+
+    const contLogs = [];
+    const makeContNotes = (stateBody) => `## Goal\nContinue deploy.\n\n## State\n${stateBody}\n\n## Next\nProceed.\n\n## Uncertain\nNone.`;
+    const makeContCtx = (text) => ({
+      logger: { warn: (m) => contLogs.push(String(m)) },
+      llm: { stream: () => makeStreamForText(text)() },
+    });
+    const hardContRes = await prepareContinuation({
+      ctx: makeContCtx(makeContNotes('Hard requirement: connection timeout must be 1000ms. Keep deploy notes.')),
+      agent: focusAgent,
+      session: focusSession,
+      seqs: [1, 2],
+      policy: focusPolicy,
+      capacity: focusCapacity,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cont-focus-hard',
+      signal: new AbortController().signal,
+      archiveRoot: join(root, 'cont-arch'),
+      shadowedTokenCount: 50000,
+      shadowedCanonicalBytes: 50000,
+      softenCoverageForFocus: true,
+    });
+    const hardContText = String(hardContRes?.summarized?.rawText ?? '');
+    assert.ok(
+      hardContRes?.summarized?.reconstruction?.length >= 1 &&
+        !hardContText.includes('1000ms') &&
+        hardContText.includes('5000ms'),
+      'P1-1 continuation must catch & reconstruct hard value conflict even when softenCoverageForFocus=true',
+    );
+    assert.ok(!contLogs.some((m) => m.includes('focus-mode continuation constraint audit')));
+
+    // Also verify pure coverage omission (under auditCoverageScope='all' with older rule evicted from Section 6) softens cleanly
+    const contCovEvents = [];
+    const contCovSurface = { nodes: [], replaceGeneration: 0 };
+    const contCovSession = {
+      ...focusSession,
+      id: `sess-cov-${randomUUID().slice(0, 8)}`,
+      surface: contCovSurface,
+      get seq() { return contCovEvents.length; },
+      eventAt: (seq) => contCovEvents[seq],
+      snapshotEvents: () => [...contCovEvents],
+      append(type, data, options = {}) {
+        const event = { seq: contCovEvents.length, time: Date.now() + contCovEvents.length, type, data };
+        contCovEvents.push(event);
+        if (options.surfaceOp === 'append') contCovSurface.nodes.push(event.seq);
+        return event;
+      },
+    };
+    contCovSession.append('system/message', { message: { id: 'sys-c', role: 'system', content: [{ type: 'text', text: 'System prompt.' }], source: { kind: 'system-prompt' } } }, { surfaceOp: 'append' });
+    contCovSession.append('user/message', { id: 'u-c1', role: 'user', content: [{ type: 'text', text: 'Must enable strict_lint_checks across all deploy pipelines.\n' + 'Background filler word '.repeat(60) }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+    contCovSession.append('assistant/message', { message: { id: 'a-c2', role: 'assistant', content: [{ type: 'text', text: 'Ack. ' + 'Detailed deployment trace '.repeat(140) }], source: { kind: 'model', provider: 'p', model: 'm' } } }, { surfaceOp: 'append' });
+    contCovSession.append('user/message', { id: 'u-c3', role: 'user', content: [{ type: 'text', text: 'Hard requirement: connection timeout must be 5000ms.' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+    contCovSession.append('assistant/message', { message: { id: 'a-c4', role: 'assistant', content: [{ type: 'text', text: 'Ready. ' + 'Detailed deployment trace '.repeat(140) }], source: { kind: 'model', provider: 'p', model: 'm' } } }, { surfaceOp: 'append' });
+    contCovSession.append('user/message', { id: 'u-c5', role: 'user', content: [{ type: 'text', text: 'Continue.' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
+    const covPolicy = resolveConfig({
+      archiveDir: join(root, 'cov-arch'),
+      summaryRetryCount: 0,
+      auditExhaustionPolicy: 'block',
+      auditCoverageScope: 'all',
+      preserveRecentMessages: 1,
+      preserveRecentUserTokens: 1,
+    }).config;
+    contLogs.length = 0;
+    const softContOk = await prepareContinuation({
+      ctx: makeContCtx(makeContNotes('Hard requirement: connection timeout must be 5000ms.')),
+      agent: { ...focusAgent, session: contCovSession },
+      session: contCovSession,
+      seqs: [1, 2, 3, 4],
+      policy: covPolicy,
+      capacity: focusCapacity,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cont-focus-soft',
+      signal: new AbortController().signal,
+      archiveRoot: join(root, 'cont-arch-ok'),
+      shadowedTokenCount: 50000,
+      shadowedCanonicalBytes: 50000,
+      softenCoverageForFocus: true,
+    });
+    assert.ok(softContOk && softContOk.summarized && softContOk.checkpointBlocks?.length, 'P1-1 pure coverage gap under /compact <focus> still softens cleanly');
+
+    // 2. P1-2: Prepositional scope prefix swap detection & high-rule-count auditCompaction scaling
+    const enScopeSwap = auditCompaction({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: 'In staging, request timeout must be 5000ms.\nIn production, request timeout must be 1000ms.' }],
+      summaryText: 'In staging, request timeout must be 1000ms.\nIn production, request timeout must be 5000ms.',
+      threshold: 0.6,
+    });
+    assert.ok(enScopeSwap.lost.some((item) => item.reason === 'value'), 'EN prepositional scope swap must catch value conflict');
+
+    const cnScopeSwap = auditCompaction({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: '在测试环境，请求超时必须设为 5000ms。\n在生产环境，请求超时必须设为 1000ms。' }],
+      summaryText: '在测试环境，请求超时必须设为 1000ms。\n在生产环境，请求超时必须设为 5000ms。',
+      threshold: 0.6,
+    });
+    assert.ok(cnScopeSwap.lost.some((item) => item.reason === 'value'), 'CN prepositional scope swap must catch value conflict');
+
+    const declSentenceScope = auditCompaction({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: 'Production DB is ready, do not modify staging.' }],
+      summaryText: 'Production DB is ready; may modify staging.',
+      threshold: 0.6,
+    });
+    assert.ok(declSentenceScope.polarityFlips >= 1, 'Declarative clause before comma must stay separate and catch staging reversal');
+
+    const ruleCount = 160;
+    const ruleLines = [];
+    for (let i = 0; i < ruleCount; i += 1) {
+      ruleLines.push(`Constraint rule ${i}: must set poolLimit_${i} to ${100 + i}ms and forbid delete_target_${i}.`);
+    }
+    const rulesJoined = ruleLines.join('\n');
+    const tScale0 = performance.now();
+    const scaleFaithful = auditCompaction({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: rulesJoined }],
+      summaryText: rulesJoined,
+      threshold: 0.6,
+    });
+    const scaleFaithfulMs = performance.now() - tScale0;
+    assert.equal(scaleFaithful.checked, 160);
+    assert.equal(scaleFaithful.lost.length, 0);
+    assert.ok(scaleFaithfulMs < 1000, `expected 160-rule auditCompaction < 1000ms, got ${scaleFaithfulMs.toFixed(1)}ms`);
+
+    const mutatedRules = [...ruleLines];
+    mutatedRules[42] = 'Constraint rule 42: must set poolLimit_42 to 999ms and forbid delete_target_42.';
+    const tScale1 = performance.now();
+    const scaleMutated = auditCompaction({
+      userMessages: [{ seq: 1, sourceKind: 'user', text: rulesJoined }],
+      summaryText: mutatedRules.join('\n'),
+      threshold: 0.6,
+    });
+    const scaleMutatedMs = performance.now() - tScale1;
+    assert.ok(
+      scaleMutated.lost.some((item) => item.reason === 'value' && String(item.line).includes('poolLimit_42')),
+      '160-rule auditCompaction must still detect mutated rule 42',
+    );
+    assert.ok(scaleMutatedMs < 1000, `expected mutated 160-rule auditCompaction < 1000ms, got ${scaleMutatedMs.toFixed(1)}ms`);
+
+    // 3. P2-1: admission.peer missing .principal fails closed with 403
+    process.env.DSH_HOME = join(root, 'rpc-dsh-home');
+    let registeredRoute = null;
+    const connectionService = { admit: () => ({ peer: {} }) };
+    let disposeGate = null;
+    disposeGate = mountGate(
+      {
+        logger: { info() {}, warn() {}, error() {} },
+        on() {},
+        provide() {},
+        get(name) {
+          return name === 'connection' ? connectionService : null;
+        },
+        inject(deps, cb) {
+          if (Array.isArray(deps) && deps.includes('connection')) return cb({ connection: connectionService });
+          if (Array.isArray(deps) && deps.includes('webServer')) {
+            return cb({
+              on() { return () => {}; },
+              effect: (fn) => fn(),
+              webServer: {
+                host: '127.0.0.1',
+                register(route) {
+                  registeredRoute = route;
+                  return () => {};
+                },
+              },
+            });
+          }
+          return () => {};
+        },
+      },
+      {},
+    );
+    try {
+      const noPrincipalRes = await new Promise((resolveRes) => {
+        const req = Object.assign(new EventEmitter(), { method: 'POST', headers: { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' }, destroy() {} });
+        const out = { statusCode: 200, body: '' };
+        const res = {
+          set statusCode(c) { out.statusCode = c; },
+          get statusCode() { return out.statusCode; },
+          setHeader() {},
+          end(chunk = '') {
+            out.body = String(chunk);
+            resolveRes({ status: out.statusCode, json: JSON.parse(out.body) });
+          },
+        };
+        Promise.resolve(registeredRoute.handler(req, res)).catch(() => {});
+        req.emit('data', Buffer.from('{"method":"get"}'));
+        req.emit('end');
+      });
+      assert.equal(noPrincipalRes.status, 403, 'P2-1 missing peer.principal must fail closed with 403');
+    } finally {
+      disposeGate?.();
+    }
+
+    // 4. P2-2: Same-PID foreign-threadId .lock reclaims after 30s grace while fresh foreign lock stays locked
+    const foreignThreadId = threadId + 4242;
+    const agedAt = new Date(Date.now() - 120_000);
+    const freshAt = new Date();
+
+    const stateStore = new SessionStateStore(join(root, 'locks-state'));
+    mkdirSync(join(root, 'locks-state'), { recursive: true });
+    const stateLockPath = `${stateStore.file('s-worker-lock')}.lock`;
+    writeFileSync(stateLockPath, JSON.stringify({ pid: process.pid, threadId: foreignThreadId, at: agedAt.toISOString(), token: 'dead-worker' }));
+    utimesSync(stateLockPath, agedAt, agedAt);
+    const updatedState = stateStore.update('s-worker-lock', (prev) => ({ ...prev, failures: 1 }));
+    assert.equal(updatedState.failures, 1);
+
+    writeFileSync(stateLockPath, JSON.stringify({ pid: process.pid, threadId: foreignThreadId, at: freshAt.toISOString(), token: 'active-worker' }));
+    utimesSync(stateLockPath, freshAt, freshAt);
+    assert.throws(() => stateStore.update('s-worker-lock', (prev) => ({ ...prev, failures: 2 })), { code: 'STATE_LOCKED' });
+
+    const progRoot = join(root, 'locks-prog');
+    const progKey = createHash('sha256').update('prog-key').digest('hex');
+    const progStore = new ContinuationProgressStore(progRoot, 's-prog-lock', progKey);
+    mkdirSync(join(progStore.file, '..'), { recursive: true });
+    const progLockPath = `${progStore.file}.lock`;
+    writeFileSync(progLockPath, JSON.stringify({ pid: process.pid, threadId: foreignThreadId, at: agedAt.toISOString(), token: 'dead-worker' }));
+    utimesSync(progLockPath, agedAt, agedAt);
+    const progRec = progStore.write({ ok: true }, 0);
+    assert.equal(progRec.revision, 1);
+
+    writeFileSync(progLockPath, JSON.stringify({ pid: process.pid, threadId: foreignThreadId, at: freshAt.toISOString(), token: 'active-worker' }));
+    utimesSync(progLockPath, freshAt, freshAt);
+    assert.throws(() => progStore.write({ ok: true }, 1), { code: 'CONTINUATION_PROGRESS_LOCKED' });
+
+    const smRoot = join(root, 'locks-sm');
+    mkdirSync(smRoot, { recursive: true });
+    const smStore = new SessionMemoryStore(smRoot);
+    const smLockPath = `${smStore.file('s-sm-lock')}.lock`;
+    writeFileSync(smLockPath, JSON.stringify({ pid: process.pid, threadId: foreignThreadId, at: agedAt.toISOString(), token: 'dead-worker' }));
+    utimesSync(smLockPath, agedAt, agedAt);
+    const smRec = smStore.recordAttempt('s-sm-lock', { maxCalls: 5 });
+    assert.equal(smRec.callsUsed, 1);
+
+    writeFileSync(smLockPath, JSON.stringify({ pid: process.pid, threadId: foreignThreadId, at: freshAt.toISOString(), token: 'active-worker' }));
+    utimesSync(smLockPath, freshAt, freshAt);
+    assert.throws(
+      () => smStore.recordAttempt('s-sm-lock', { maxCalls: 5 }),
+      { code: 'SESSION_MEMORY_LOCKED' },
+    );
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
     await rm(root, { recursive: true, force: true });
   }
 });

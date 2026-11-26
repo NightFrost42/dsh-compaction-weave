@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="780" viewBox="0 0 1440 780" font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
   <title>4-Layer Compaction Pipeline: 0-LLM Filters, Concurrent Generation, Ordered Commit &amp; BM25F</title>
-  <desc>Two-row pipeline diagram showing Weave v0.6.0 layered compaction: warm Persisted-Output / idle Microcompact / Observation Masking (Tier-4) / Snip and image/offload, Session Memory or verbatim prefix reuse, 37-channel isolation and UTF-8 byte budget, single-target route-aware effort and 2-worker parallel generation with resumable breakpoints, 6-layer validation and controlled fallback, backend continuation, zstd archiving with strictHostFingerprints:false compatible commit, and BM25F lookup.</desc>
+  <desc>Two-row pipeline diagram showing Weave v0.6.0 layered compaction: warm Persisted-Output / idle Microcompact / Observation Masking (Tier-4) / Snip and image/offload, Session Memory or verbatim prefix reuse, 36-channel isolation and UTF-8 byte budget, single-target route-aware effort and 2-worker parallel generation with resumable breakpoints, 6-layer validation and controlled fallback, backend continuation, zstd archiving with strictHostFingerprints:false compatible commit, and BM25F lookup.</desc>
   <defs>
     <marker id="p-arrow-en" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
       <path d="M 0 1 L 8 5 L 0 9 z" fill="#334155" />
@@ -35,7 +35,7 @@
   <rect x="745" y="105" width="305" height="215" rx="12" fill="#FFFFFF" stroke="#475569" stroke-width="2.5" />
   <text x="765" y="142" font-size="20" font-weight="bold" fill="#0F172A">3. Channels &amp; Dual Budget</text>
   <text x="765" y="178" font-size="16" fill="#334155">
-    <tspan x="765" dy="0">37 host kinds + XML isolate refs</tspan>
+    <tspan x="765" dy="0">36 host kinds + XML isolate refs</tspan>
     <tspan x="765" dy="30">Extract reqs, k:v &amp; date anchors</tspan>
     <tspan x="765" dy="30">Project reads if off-route</tspan>
     <tspan x="765" dy="30">Token + UTF-8 dual budget caps</tspan>

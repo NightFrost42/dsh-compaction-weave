@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
   <title>Context Surface Before &amp; After: 4-Layer Compaction &amp; BM25F Archive Lookup</title>
-  <desc>Compares the visible context surface before and after Weave v0.6.0 compaction across its 4 layered mechanisms (Persisted-Output, idle Microcompact/Collapse, Observation Masking + checkpoint summary/Session Memory, Snip emergency rescue, and dual-watermark image/offload), 37 built-in reference source channels, and lossless zstd archive with BM25F lookup.</desc>
+  <desc>Compares the visible context surface before and after Weave v0.6.0 compaction across its 4 layered mechanisms (Persisted-Output, idle Microcompact/Collapse, Observation Masking + checkpoint summary/Session Memory, Snip emergency rescue, and dual-watermark image/offload), 36 built-in reference source channels, and lossless zstd archive with BM25F lookup.</desc>
   <defs>
     <marker id="arrow-dark-en" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
       <path d="M 0 1 L 8 5 L 0 9 z" fill="#334155" />
@@ -60,7 +60,7 @@
   </text>
   <line x1="1120" y1="568" x2="1120" y2="515" stroke="#0369A1" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#arrow-blue-en)" />
   <rect x="60" y="572" width="460" height="155" rx="12" fill="#FFFFFF" stroke="#475569" stroke-width="2.5" />
-  <text x="84" y="609" font-size="21" font-weight="bold" fill="#0F172A">Quotes, 37 Channels &amp; 6-Layer Audit</text>
+  <text x="84" y="609" font-size="21" font-weight="bold" fill="#0F172A">Quotes, 36 Channels &amp; 6-Layer Audit</text>
   <text x="84" y="646" font-size="17" fill="#334155">
     <tspan x="84" dy="0">Sec. 6 quotes (&lt;=32 / 4096t) + recent scope</tspan>
     <tspan x="84" dy="29">DSH V4 + IM bridge channels + XML tags</tspan>

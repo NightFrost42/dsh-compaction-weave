@@ -35,7 +35,7 @@
   <rect x="745" y="105" width="305" height="215" rx="12" fill="#FFFFFF" stroke="#475569" stroke-width="2.5" />
   <text x="765" y="142" font-size="20" font-weight="bold" fill="#0F172A">3. 通道隔离与双轨预算</text>
   <text x="765" y="178" font-size="16" fill="#334155">
-    <tspan x="765" dy="0">37 项宿主通道 + XML 隔离引用</tspan>
+    <tspan x="765" dy="0">36 项宿主通道 + XML 隔离引用</tspan>
     <tspan x="765" dy="30">提取要求、k:v 进度与相对日期</tspan>
     <tspan x="765" dy="30">非同路由或超限改走坐标投影</tspan>
     <tspan x="765" dy="30">Token + UTF-8 字节双轨预算</tspan>

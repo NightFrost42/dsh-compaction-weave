@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" font-family="Arial, Noto Sans CJK SC, Microsoft YaHei, sans-serif">
   <title>上下文结构对照：四层整理、前后保留与 BM25F 按需回查</title>
-  <desc>展示 DSH Compaction Weave 四层上下文整理（热缓存 Persisted-Output、闲置 Microcompact/Collapse、压力 Observation Masking 与结构化检查点+可选 Session Memory、极限 Snip 与双水位 image/offload）以及可见上下文三段结构、37 项来源隔离与 zstd 归档按需 BM25F 回查。</desc>
+  <desc>展示 DSH Compaction Weave 四层上下文整理（热缓存 Persisted-Output、闲置 Microcompact/Collapse、压力 Observation Masking 与结构化检查点+可选 Session Memory、极限 Snip 与双水位 image/offload）以及可见上下文三段结构、36 项来源隔离与 zstd 归档按需 BM25F 回查。</desc>
   <defs>
     <marker id="arrow-dark" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
       <path d="M 0 1 L 8 5 L 0 9 z" fill="#334155" />
@@ -60,7 +60,7 @@
   </text>
   <line x1="1120" y1="568" x2="1120" y2="515" stroke="#0369A1" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#arrow-blue)" />
   <rect x="60" y="572" width="460" height="155" rx="12" fill="#FFFFFF" stroke="#475569" stroke-width="2.5" />
-  <text x="84" y="609" font-size="21" font-weight="bold" fill="#0F172A">原话预算、37 项通道隔离与 6 层审计</text>
+  <text x="84" y="609" font-size="21" font-weight="bold" fill="#0F172A">原话预算、36 项通道隔离与 6 层审计</text>
   <text x="84" y="646" font-size="17" fill="#334155">
     <tspan x="84" dy="0">第6节填近期原话(≤32条 / 4096t) + 近期覆盖率</tspan>
     <tspan x="84" dy="29">V4 一方注入 + IM 桥接与 XML 标签隔离外部参考</tspan>
