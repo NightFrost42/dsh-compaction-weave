@@ -1,5 +1,10 @@
 # 更新记录
 
+## [Unreleased]
+
+- **摘要容量降级的可观测性（Issue #23 跟进）**：[summary-budget.js](lib/summary-budget.js) 的 `resolveSummaryCapacity` 把 `ctx.llm.resolveModelInfo` 的任何异常都静默吞掉（`catch` 只重抛 abort），随后统一回落到 `windowFallback`，导致「模型不存在 / provider 未注册 / 查询超时 / 宿主未实现该方法」与「确实未知窗口」在诊断里无法区分。本次不改变任何回落行为（`CAP11` 依赖超时回落 200000），仅在 target 记录上新增 `windowLookupFailure` 字段（取 `error.code` / `error.name` / `NO_RESOLVE_MODEL_INFO`）供诊断读取；`windowProviderMap` 显式声明仍优先，不因 adapter 查询失败而误标。新增 [window-lookup-failure.mjs](test/window-lookup-failure.mjs) 锁定该契约。
+
+
 ## [0.5.2] - 2026-11-24
 
 - **审计与溯源假阳修复（Issue #11 收口）**：
