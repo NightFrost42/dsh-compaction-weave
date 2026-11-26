@@ -32,7 +32,7 @@ import { resolveSpec, resolveTargetRoute } from '../lib/engine/routing-budget.js
 import { prepareContinuation } from '../lib/continuation.js';
 import { freezeContinuation, bindContinuationProgress, readPendingContinuation } from '../lib/continuation-pending.js';
 import { buildCompactionInstruction } from '../lib/prompt.js';
-import { failureExplanation } from '../lib/failure-diagnostics.js';
+import { diagnosticContext, failureExplanation } from '../lib/failure-diagnostics.js';
 import { collectActiveWorkspaceFiles } from '../lib/file-reinject.js';
 import { CompactionArchive, extractSpanIndexMetadata } from '../lib/history.js';
 import { tokenizeForSearch } from '../lib/history-search.js';
@@ -2775,6 +2775,164 @@ await test('ee09f93-audit-remediation-all-verified-p1-p2', async () => {
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// ── 31475c4 Audit Remediations: Resumable Focus Round-Trip, Partial Set RPC, Diag Settings, Truncated PEM Tail ──
+
+await test('31475c4-audit-remediation-resumable-focus-rpc-diag-pem', async () => {
+  const root = await mkdtemp(join(TEST_BASE, 'weave-31475c4-'));
+  try {
+    // 1. P1: writeResumableCompaction -> readResumableCompaction preserves focusInstruction & softenCoverageForFocus,
+    //    and resumeCompactionFor restores both into _compactManual
+    const store = new SessionStateStore(join(root, 'state'));
+    const now = new Date().toISOString();
+    const persisted = writeResumableCompaction(store, 'sess-focus-rt', {
+      version: 1,
+      jobId: 'job-focus-rt',
+      trigger: 'manual',
+      status: 'paused_budget',
+      createdAt: now,
+      updatedAt: now,
+      remainingSeqs: [1, 2],
+      initialTotalNodes: 3,
+      completedNodes: 1,
+      initialTotalTokens: 2000,
+      completedTokens: 800,
+      completedChunks: 1,
+      waveCount: 1,
+      batchCheckpointSeqs: [],
+      allowForeignFallback: false,
+      focusInstruction: 'preserve auth migration rules only',
+      softenCoverageForFocus: true,
+      consecutiveFailures: 0,
+    });
+    assert.equal(persisted.focusInstruction, 'preserve auth migration rules only');
+    assert.equal(persisted.softenCoverageForFocus, true);
+    const reread = readResumableCompaction(store, 'sess-focus-rt');
+    assert.equal(reread?.focusInstruction, 'preserve auth migration rules only');
+    assert.equal(reread?.softenCoverageForFocus, true);
+
+    const defaulted = writeResumableCompaction(store, 'sess-focus-default', {
+      version: 1,
+      jobId: 'job-focus-def',
+      trigger: 'manual',
+      status: 'interrupted',
+      createdAt: now,
+      updatedAt: now,
+      remainingSeqs: [1],
+      initialTotalNodes: 1,
+      completedNodes: 0,
+      initialTotalTokens: 500,
+      completedTokens: 0,
+      completedChunks: 0,
+      waveCount: 0,
+      batchCheckpointSeqs: [],
+      allowForeignFallback: false,
+      consecutiveFailures: 0,
+    });
+    assert.equal(defaulted.focusInstruction, null);
+    assert.equal(defaulted.softenCoverageForFocus, false);
+
+    const rtEvents = [
+      { seq: 0, type: 'system/message', data: { message: { role: 'system', content: [{ type: 'text', text: 'Sys' }], source: { kind: 'system-prompt' } } } },
+      { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: 'Keep rule A.' }], source: { kind: 'user' } } },
+      { seq: 2, type: 'assistant/message', data: { message: { role: 'assistant', content: [{ type: 'text', text: 'Ack.' }], source: { kind: 'model' } } } },
+    ];
+    const rtSess = {
+      id: 'sess-focus-rt',
+      surface: { nodes: [0, 1, 2] },
+      eventAt: (seq) => rtEvents[seq],
+      deriveEventMessage: (e) => e.data?.message ?? e.data,
+      requestHeader: () => ({ config: { provider: 'p', model: 'm' } }),
+    };
+    const rtEngine = new WeaveCompactionEngine(
+      {
+        on() {},
+        logger: { info() {}, warn() {}, error() {} },
+        emit() {},
+        config: {},
+        tokenMeter: {
+          measure: async () => ({
+            totalTokens: 1500,
+            nodes: [
+              { seq: 0, tokens: 100 },
+              { seq: 1, tokens: 700 },
+              { seq: 2, tokens: 700 },
+            ],
+          }),
+        },
+        llm: { resolveModelInfo: async () => ({ contextWindow: 128000 }) },
+      },
+      resolveConfig({ archiveDir: join(root, 'arch-rt') }).config,
+    );
+    rtEngine.sessionState = store;
+    let capturedManualOpts = null;
+    rtEngine._compactManual = async (_agent, _signal, _cmd, _cont, _fromRetry, opts) => {
+      capturedManualOpts = opts;
+      return { compacted: true };
+    };
+    const resumeRes = await rtEngine.resumeCompactionFor(rtSess, {
+      agent: { options: { provider: 'p', model: 'm' }, session: rtSess },
+      signal: new AbortController().signal,
+      insideMaintenance: true,
+      allowPolicyRestart: true,
+    });
+    assert.deepEqual(resumeRes, { compacted: true });
+    assert.equal(capturedManualOpts?.focusInstruction, 'preserve auth migration rules only');
+    assert.equal(capturedManualOpts?.softenCoverageForFocus, true);
+
+    // 2. P2-1: Partial set RPC preserves RETRY_SETTING_KEYS while explicit set updates them
+    const cfgPath = join(root, 'summary-config.json');
+    await handleSummaryConfigRpc(
+      {
+        method: 'set',
+        params: { summaryRetryCount: 4, summaryRetryDelayMs: 2500, summaryTimeoutMs: 240000 },
+      },
+      cfgPath,
+    );
+    const partialRes = await handleSummaryConfigRpc(
+      { method: 'set', params: { provider: 'anthropic', model: 'claude-sonnet' } },
+      cfgPath,
+    );
+    assert.equal(partialRes.config.summaryRetryCount, 4);
+    assert.equal(partialRes.config.summaryRetryDelayMs, 2500);
+    assert.equal(partialRes.config.summaryTimeoutMs, 240000);
+    const explicitUpdateRes = await handleSummaryConfigRpc(
+      { method: 'set', params: { summaryRetryCount: 1 } },
+      cfgPath,
+    );
+    assert.equal(explicitUpdateRes.config.summaryRetryCount, 1);
+    assert.equal(explicitUpdateRes.config.summaryRetryDelayMs, 2500);
+    assert.equal(explicitUpdateRes.config.summaryTimeoutMs, 240000);
+
+    // 3. P2-2: diagnosticContext().settings captures new 0.6.0 scalar & boolean settings without leaking strings/paths
+    const diag = diagnosticContext(null, resolveConfig({ archiveDir: join(root, 'secret-dir') }).config);
+    for (const key of [
+      'summaryConcurrency',
+      'persistedOutputEnabled',
+      'microcompactEnabled',
+      'snipEnabled',
+      'contextCollapseEnabled',
+      'sessionMemoryMaxCallsPerSession',
+      'postCompactReinjectMaxFiles',
+    ]) {
+      assert.ok(Object.hasOwn(diag.settings, key), `P2-2: diagnosticContext().settings missing ${key}`);
+    }
+    assert.equal(Object.hasOwn(diag.settings, 'archiveDir'), false, 'P2-2: paths must never leak into diagnostic settings');
+
+    // 4. P2-3: redactPemPrivateKeys strips <12-char unpadded EOF base64 tail when sampleTruncated: false
+    const pemHeader = '-----BEGIN ' + 'PRIVATE KEY-----';
+    const pemTrunc = `${pemHeader}\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC\nAbCd1234`;
+    const pemRedacted = redactPemPrivateKeys(pemTrunc, '[redacted-private-key]', { sampleTruncated: false });
+    assert.ok(!pemRedacted.includes('AbCd1234'), `P2-3: truncated EOF base64 line leaked: ${pemRedacted}`);
+    assert.ok(pemRedacted.includes('[redacted-private-key]'));
+
+    const pemFollowedByProse = `${pemHeader}\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC\nshortword\nfollowing line keeps context`;
+    const proseOut = redactPemPrivateKeys(pemFollowedByProse, '[redacted-private-key]', { sampleTruncated: false });
+    assert.ok(proseOut.includes('following line keeps context'), 'P2-3: non-EOF short prose lines must not be swallowed');
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
