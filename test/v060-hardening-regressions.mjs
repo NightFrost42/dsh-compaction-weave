@@ -3,8 +3,10 @@ import vm from 'node:vm';
 import { syncBuiltinESMExports } from 'node:module';
 import { performance } from 'node:perf_hooks';
 import { CompactionArchive, spanEntries } from '../lib/history.js';
+import { registerHistoryTools } from '../lib/tools.js';
+import { CompactionProgressTracker } from '../lib/progress-tracker.js';
 import { CompactBM25FIndex } from '../lib/history-search.js';
-import { probeDiskLiveness } from '../lib/disk-liveness.js';
+import { probeDiskLiveness, renderDiskLivenessNotice } from '../lib/disk-liveness.js';
 import { extractCliFlags } from '../lib/audit/polarity.js';
 import { ruleNegative } from '../lib/audit/normalize.js';
 import { scalarSubjectVerdict } from '../lib/audit/numeric.js';
@@ -1982,6 +1984,586 @@ await test('codex-round3-redact-braces-auth-separators-and-snip-flush-blocker-re
   assert.ok(ok.recovered >= 1);
   assert.equal(f.engine._pendingSnipFlushSessions.has(f.session), false);
   assert.equal(f.engine._recoveryBlocked.has(key), false);
+});
+
+await test('redline-seal-P1-1-async-busy-toctou-and-progress-tracker', async () => {
+  // 1a. prepareAutoCompaction paused at resolveModelInfo does not steal _busy / progressTracker from active compactRegion
+  const resolveGate = deferred();
+  const streamStarted = deferred();
+  const streamGate = deferred();
+  let resolveCount = 0;
+  const fAuto = fixture({ thresholdRatio: 0.4, manualOnly: false, auto: true, continuationEnabled: false });
+  fAuto.session.append('turn/start', { turn: 1 });
+  fAuto.session.append('step/start', { turn: 1, step: 1 });
+  fAuto.add('system', 'Sys.');
+  const u1 = fAuto.add('user', 'Keep timeout fixed at 30s.');
+  const a1 = fAuto.add('assistant', 'Detailed analysis. '.repeat(200));
+  for (let i = 0; i < 4; i += 1) {
+    fAuto.add('user', `Follow-up turn ${i + 1}.`);
+    fAuto.add('assistant', 'More trace data. '.repeat(900));
+  }
+  fAuto.add('user', 'Latest question.');
+  fAuto.session.append('turn/end', { turn: 1 });
+  fAuto.ctx.llm.resolveModelInfo = async () => {
+    resolveCount += 1;
+    if (resolveCount === 1) await resolveGate.promise;
+    return { contextWindow: 32000, maxTokens: 2048 };
+  };
+  fAuto.ctx.llm.stream = async function* (req) {
+    fAuto.calls.push(req);
+    streamStarted.resolve();
+    await streamGate.promise;
+    yield { type: 'text-delta', text: summary('Keep timeout fixed at 30s.') };
+    yield { type: 'finish', kind: 'stop' };
+  };
+
+  const autoPromise = fAuto.engine.compactIfNeeded(fAuto.agent, 'pressure', signal());
+  await delay(10);
+  const regionPromise = fAuto.engine.compactNow(fAuto.agent, signal());
+  await streamStarted.promise;
+  assert.equal(fAuto.engine._busy.has(fAuto.session), true);
+  const regionRunId = fAuto.engine.progressTracker.snapshot(fAuto.session.id).runId;
+  assert.ok(regionRunId);
+
+  resolveGate.resolve();
+  const autoResult = await autoPromise;
+  assert.equal(autoResult, null);
+  assert.equal(fAuto.engine._busy.has(fAuto.session), true, 'compactNow still holds _busy');
+  assert.equal(fAuto.engine.progressTracker.snapshot(fAuto.session.id).runId, regionRunId);
+
+  streamGate.resolve();
+  const regionResult = await regionPromise;
+  assert.ok(regionResult);
+  assert.equal(fAuto.engine._busy.has(fAuto.session), false);
+
+  // 1b. runContextCollapse paused at weave/pre-compact does not clobber concurrent compactNow
+  const preHookGate = deferred();
+  const colStreamStarted = deferred();
+  const colStreamGate = deferred();
+  let preHookCb = null;
+  const fCol = fixture({ auto: false, retainTokens: 0 });
+  fCol.ctx.on = (ev, fn) => {
+    if (ev === 'weave/pre-compact') preHookCb = fn;
+  };
+  fCol.ctx.emit = async (ev, payload) => (ev === 'weave/pre-compact' && preHookCb ? preHookCb(payload) : undefined);
+  let preHookCount = 0;
+  fCol.engine._runPreCompactHook = async () => {
+    preHookCount += 1;
+    if (preHookCount === 1) await preHookGate.promise;
+    return { cancelled: false, effectiveFocus: '', additionalContext: '' };
+  };
+  fCol.session.append('turn/start', { turn: 1 });
+  fCol.session.append('step/start', { turn: 1, step: 1 });
+  fCol.add('system', 'Sys.');
+  const cu1 = fCol.add('user', 'Task A.');
+  const ca1 = fCol.add('assistant', 'Details '.repeat(1200));
+  fCol.add('user', 'Task B.');
+  fCol.add('assistant', 'More details '.repeat(1200));
+  fCol.add('user', 'Follow up.');
+  fCol.session.append('turn/end', { turn: 1 });
+  fCol.ctx.llm.stream = async function* (req) {
+    fCol.calls.push(req);
+    colStreamStarted.resolve();
+    await colStreamGate.promise;
+    yield { type: 'text-delta', text: summary('Task A.') };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  const colPromise = fCol.engine._runContextCollapse(
+    fCol.agent,
+    { seqs: [cu1.seq, ca1.seq], startSeq: cu1.seq, endSeq: ca1.seq, totalTokens: 2500 },
+    fCol.engine.config,
+    signal(),
+    2500,
+  );
+  await delay(10);
+  const colRegionPromise = fCol.engine.compactNow(fCol.agent, signal());
+  await colStreamStarted.promise;
+  const colRegRunId = fCol.engine.progressTracker.snapshot(fCol.session.id).runId;
+  preHookGate.resolve();
+  assert.equal(await colPromise, null);
+  assert.equal(fCol.engine._busy.has(fCol.session), true);
+  assert.equal(fCol.engine.progressTracker.snapshot(fCol.session.id).runId, colRegRunId);
+  colStreamGate.resolve();
+  await colRegionPromise;
+  assert.equal(fCol.engine._busy.has(fCol.session), false);
+
+  // 1c. emergencySnip paused at _measure bails cleanly without deleting _busy or leaving stale _snipAttemptedAt
+  const measureGate = deferred();
+  const snipStreamStarted = deferred();
+  const snipStreamGate = deferred();
+  const fSnip = fixture({ auto: false, snipEnabled: true });
+  fSnip.session.append('turn/start', { turn: 1 });
+  fSnip.session.append('step/start', { turn: 1, step: 1 });
+  fSnip.add('system', 'Sys.');
+  const su1 = fSnip.add('user', 'Analyze logs.');
+  const sa1 = fSnip.add('assistant', 'Huge log '.repeat(1800));
+  fSnip.add('user', 'Latest turn.');
+  const origMeasure = fSnip.engine._measure.bind(fSnip.engine);
+  let waitFirstMeasure = true;
+  fSnip.engine._measure = async (s) => {
+    if (waitFirstMeasure) {
+      waitFirstMeasure = false;
+      await measureGate.promise;
+    }
+    return origMeasure(s);
+  };
+  fSnip.ctx.llm.stream = async function* (req) {
+    fSnip.calls.push(req);
+    snipStreamStarted.resolve();
+    await snipStreamGate.promise;
+    yield { type: 'text-delta', text: summary('Analyze logs.') };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  const snipPromise = fSnip.engine._emergencySnip(
+    fSnip.agent,
+    { policy: fSnip.engine.config, messageBudgetTokens: 1000, thresholdTokens: 800 },
+    signal(),
+    'budget-wall',
+  );
+  await delay(10);
+  const snipRegionPromise = fSnip.engine.compactRegion(su1.seq, sa1.seq, fSnip.agent, signal());
+  await snipStreamStarted.promise;
+  assert.equal(fSnip.engine._busy.has(fSnip.session), true);
+  measureGate.resolve();
+  assert.equal(await snipPromise, null);
+  assert.equal(fSnip.engine._busy.has(fSnip.session), true);
+  assert.equal(fSnip.engine._snipAttemptedAt.has(fSnip.session), false);
+  snipStreamGate.resolve();
+  await snipRegionPromise;
+  assert.equal(fSnip.engine._busy.has(fSnip.session), false);
+
+  // 1d. CompactionProgressTracker.withRun isolates concurrent non-nested calls on active sessionId
+  const tracker = new CompactionProgressTracker();
+  const outerGate = deferred();
+  let capturedOuterId = null;
+  let concurrentId = 'unset';
+  let cancelAborted = false;
+  const pOuter = tracker.withRun('sess-pt-lock', { trigger: 'manual', phase: 'summarizing' }, async (runId) => {
+    capturedOuterId = runId;
+    assert.equal(tracker.registerCancel('sess-pt-lock', runId, { signal: { aborted: false }, abort() { cancelAborted = true; } }), true);
+    await outerGate.promise;
+    return 'outer';
+  });
+  await delay(10);
+  const pConcurrent = await tracker.withRun('sess-pt-lock', { trigger: 'idle', phase: 'masking' }, async (runId) => {
+    concurrentId = runId;
+    assert.equal(tracker.update('sess-pt-lock', { phase: 'masking', maskedCount: 77 }), false);
+    assert.equal(tracker.update('sess-pt-lock', { phase: 'masking', maskedCount: 88 }, { runId: capturedOuterId }), false);
+    assert.equal(tracker.updateStream('sess-pt-lock', { idleMs: 999 }, { runId: capturedOuterId }), false);
+    assert.equal(tracker.registerCancel('sess-pt-lock', capturedOuterId, { signal: { aborted: false }, abort() {} }), false);
+    assert.equal(tracker.finish('sess-pt-lock', {}, { runId: capturedOuterId }), false);
+    assert.equal(tracker.fail('sess-pt-lock', new Error('hijack'), { runId: capturedOuterId }), false);
+    tracker.clear('sess-pt-lock');
+    await delay(5);
+    let nestedId = 'unset';
+    await tracker.withRun('sess-pt-lock', { phase: 'masking' }, async (innerId) => {
+      nestedId = innerId;
+      assert.equal(tracker.update('sess-pt-lock', { phase: 'planning' }, { runId: capturedOuterId }), false);
+    });
+    assert.equal(nestedId, null);
+    return 'concurrent';
+  });
+  assert.equal(pConcurrent, 'concurrent');
+  assert.equal(concurrentId, null);
+  assert.equal(tracker.snapshot('sess-pt-lock').runId, capturedOuterId);
+  assert.equal(tracker.snapshot('sess-pt-lock').phase, 'summarizing');
+  assert.equal(tracker.snapshot('sess-pt-lock').active, true);
+  assert.equal(tracker.isCancellable('sess-pt-lock'), true);
+  assert.equal(tracker.cancelRun('sess-pt-lock', 'test').cancelled, true);
+  assert.equal(cancelAborted, true);
+  outerGate.resolve();
+  assert.equal(await pOuter, 'outer');
+  assert.equal(tracker.snapshot('sess-pt-lock').active, false);
+});
+
+await test('redline-seal-P1-2-resumable-unshrinkable-tail-clears-checkpoint', async () => {
+  const registeredHooks = new Map();
+  const root = scratch();
+  const events = [];
+  const surface = { nodes: [], replaceGeneration: 0 };
+  const session = {
+    id: randomUUID(),
+    surface,
+    header: { cwd: root },
+    get seq() { return events.length; },
+    eventAt: (seq) => events[seq],
+    snapshotEvents: () => [...events],
+    requestHeader: () => ({ config: { provider: 'p', model: 'm' } }),
+    toolHistory: () => [],
+    deriveEventMessage: (event) => (event?.type === 'user/message' ? event.data : event?.data?.message),
+    append(type, data, options = {}) {
+      const event = { seq: events.length, time: Date.now(), type, data, ...options };
+      events.push(event);
+      if (options.surfaceOp === 'append') surface.nodes.push(event.seq);
+      else if (options.surfaceOp?.op === 'replace') {
+        const a = surface.nodes.indexOf(options.surfaceOp.startSeq);
+        const b = surface.nodes.indexOf(options.surfaceOp.endSeq);
+        assert.ok(a >= 0 && b >= a);
+        surface.nodes.splice(a, b - a + 1, event.seq);
+        surface.replaceGeneration += 1;
+      }
+      return event;
+    },
+  };
+  const addMsg = (role, text) => {
+    const message = {
+      id: randomUUID(),
+      role,
+      content: [{ type: 'text', text }],
+      source: role === 'assistant' ? { kind: 'model', provider: 'p', model: 'm' } : { kind: role },
+    };
+    return session.append(`${role}/message`, role === 'user' ? message : { message }, { surfaceOp: 'append' });
+  };
+  let llmCalls = 0;
+  const ctx = {
+    on(event, fn) { registeredHooks.set(event, fn); },
+    provide() {},
+    logger: { info() {}, warn() {} },
+    sessions: { get: (id) => (id === session.id ? session : null), async flush() { return true; } },
+    tokenMeter: {
+      measure() {
+        const nodes = surface.nodes.map((seq) => ({ seq, tokens: approxTokens(blocksToText(session.deriveEventMessage(events[seq])?.content)) }));
+        return { nodes, totalTokens: nodes.reduce((sum, node) => sum + node.tokens, 0) };
+      },
+    },
+    llm: {
+      async resolveModelInfo() { return { contextWindow: 200000, maxTokens: 8192 }; },
+      async *stream() {
+        llmCalls += 1;
+        yield { type: 'text-delta', text: summary() };
+        yield { type: 'finish', kind: 'stop' };
+      },
+    },
+  };
+  const engine = new WeaveCompactionEngine(ctx, resolveConfig({
+    archiveDir: join(root, 'archive'),
+    language: 'en',
+    auto: false,
+    sessionMemoryEnabled: false,
+  }).config);
+  engine.historyToolsAvailable = true;
+  fixtures.push(engine);
+  const agent = { session, options: { provider: 'p', model: 'm' }, runMaintenance: (fn) => fn(signal()) };
+
+  session.append('turn/start', { turn: 1 });
+  session.append('step/start', { turn: 1, step: 1 });
+  addMsg('system', 'Stable system.');
+  const uTiny = addMsg('user', 'Ok.');
+  const aTiny = addMsg('assistant', 'Done.');
+  const remainingSeqs = [uTiny.seq, aTiny.seq];
+
+  writeResumableCompaction(engine.sessionState, session.id, {
+    jobId: 'job-unshrinkable-tail',
+    status: 'interrupted',
+    trigger: 'manual',
+    manual: true,
+    remainingSeqs,
+    remainingSourceSha256: engine._sourceHashForSeqs(session, remainingSeqs),
+    completedChunks: 1,
+    completedNodes: 4,
+    completedTokens: 4000,
+    initialTotalNodes: 6,
+    initialTotalTokens: 4010,
+    consecutiveFailures: 0,
+    updatedAt: new Date().toISOString(),
+  });
+
+  let spillCalls = 0;
+  engine._spillTailToolOutputs = async () => { spillCalls += 1; };
+  const preStepHook = registeredHooks.get('agent/pre-step');
+  assert.equal(typeof preStepHook, 'function');
+
+  // First pre-step resumes job-unshrinkable-tail -> unshrinkable tail clears checkpoint instead of resurrecting it
+  await preStepHook({ agent, signal: signal(), messages: [], turn: 2, step: 1 }, () => {});
+  assert.equal(readResumableCompaction(engine.sessionState, session.id), null);
+  assert.equal(llmCalls, 0);
+
+  // Subsequent pre-steps must NOT loop auto-resume and must reach spillTailToolOutputs normally
+  await preStepHook({ agent, signal: signal(), messages: [], turn: 2, step: 2 }, () => {});
+  await preStepHook({ agent, signal: signal(), messages: [], turn: 2, step: 3 }, () => {});
+  assert.equal(llmCalls, 0);
+  assert.equal(spillCalls, 2);
+});
+
+await test('redline-seal-P1-3-multiroot-disk-liveness-and-reinject-no-host-path', () => {
+  const root = scratch();
+  const wsA = join(root, 'wsA');
+  const wsB = join(root, 'wsB');
+  mkdirSync(join(wsA, 'src'), { recursive: true });
+  mkdirSync(wsB, { recursive: true });
+  writeFileSync(join(wsA, 'src', 'app.js'), 'export const appReady = true;\n', 'utf8');
+
+  const events = [
+    {
+      seq: 0,
+      type: 'working-directory/change',
+      data: { cwd: wsB },
+    },
+    {
+      seq: 1,
+      type: 'user/message',
+      data: {
+        id: 'u1',
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: `Inspect ${join(wsA, 'src', 'app.js')} and removed ${join(wsA, 'src', 'gone.js')}.`,
+        }],
+      },
+    },
+    {
+      seq: 2,
+      type: 'assistant/message',
+      data: {
+        message: {
+          id: 'a1',
+          role: 'assistant',
+          content: [{ type: 'tool-call', callId: 'c1', name: 'Read', arguments: { path: join(wsA, 'src', 'app.js') } }],
+        },
+      },
+    },
+  ];
+  const session = {
+    id: randomUUID(),
+    header: { cwd: wsA },
+    get seq() { return events.length; },
+    eventAt: (seq) => events[seq],
+    deriveEventMessage: (ev) => (ev?.type === 'user/message' ? ev.data : ev?.data?.message),
+  };
+
+  const liveness = probeDiskLiveness({
+    session,
+    shadowedSeqs: [1, 2],
+    archivedFiles: [],
+    summaryText: `Inspect ${join(wsA, 'src', 'app.js')} and removed ${join(wsA, 'src', 'gone.js')}.`,
+  });
+  const notice = renderDiskLivenessNotice(liveness);
+  assert.deepEqual(liveness.existing, ['src/app.js']);
+  assert.deepEqual(liveness.missing, ['src/gone.js']);
+  assert.ok(notice.includes('src/gone.js'));
+  assert.ok(!notice.includes(wsA.replaceAll('\\', '/')) && !notice.includes(wsA));
+  assert.ok(!notice.includes(wsB.replaceAll('\\', '/')) && !notice.includes(wsB));
+
+  const reinject = collectActiveWorkspaceFiles({ session, shadowedSeqs: [1, 2], maxFileBytes: 4096, maxBytes: 8192 });
+  assert.equal(reinject.files.length, 1);
+  assert.equal(reinject.files[0].path, 'src/app.js');
+  assert.ok(!reinject.text.includes(wsA.replaceAll('\\', '/')) && !reinject.text.includes(wsA));
+  assert.ok(!reinject.text.includes(wsB.replaceAll('\\', '/')) && !reinject.text.includes(wsB));
+});
+
+await test('redline-seal-P1-4-sanitize-archive-default-redact', async () => {
+  const archive = new CompactionArchive({ root: join(scratch(), 'archive-p14') });
+  const skTok = ['sk_', 'live_', 'archiveP14Secret99'].join('');
+  const bearerTok = ['Bearer ', 'bearerP14Token88'].join('');
+  const pgDsn = ['postgres://', 'app:dbPassP14', '@db.local:5432/prod'].join('');
+  const pairCallId = ['sk_', 'live_', 'call_pair_9988'].join('');
+  const events = [
+    {
+      seq: 0,
+      type: 'assistant/message',
+      data: {
+        message: {
+          id: 'a-p14',
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool-call',
+              callId: pairCallId,
+              name: 'fetch_data',
+              arguments: { authorization: bearerTok, nested: { name: skTok } },
+            },
+            {
+              type: 'text',
+              text: 'block with nested payloads',
+              data: { name: skTok },
+              message: { name: bearerTok },
+              source: { callId: pgDsn },
+            },
+          ],
+        },
+        args: { token: skTok, type: pgDsn },
+        input: { headers: { Authorization: bearerTok } },
+        metadata: { dsn: pgDsn },
+        source: { kind: 'model', apiKey: skTok, name: skTok },
+      },
+    },
+    {
+      seq: 1,
+      type: 'tool/result',
+      data: {
+        callId: pairCallId,
+        message: {
+          id: 'r-p14',
+          role: 'tool',
+          toolCallId: pairCallId,
+          content: [{ type: 'text', text: `ok ${bearerTok}` }],
+          source: { kind: 'tool-result', callId: pairCallId },
+        },
+        output: { apiKey: skTok },
+        meta: { dsn: pgDsn },
+        error: `failed with ${bearerTok}`,
+      },
+    },
+  ];
+  const session = {
+    id: 'sess-p14',
+    get seq() { return events.length; },
+    eventAt: (seq) => events[seq],
+    deriveEventMessage: (ev) => ev?.data?.message,
+  };
+  const built = spanEntries(session, [0, 1]);
+  await archive.writeSpan({ sessionId: 'sess-p14', compactionId: 'cmp-p14', entries: built });
+  // Direct root-level assistant entry with content[] preserves callId/name while redacting arguments
+  await archive.writeSpan({
+    sessionId: 'sess-p14',
+    compactionId: 'cmp-p14-direct',
+    entries: [{
+      seq: 0,
+      role: 'assistant',
+      content: [{ type: 'tool-call', callId: pairCallId, name: 'fetch_data', arguments: { secret: skTok } }],
+    }],
+  });
+  const directSpan = await archive.readSpan('sess-p14', 'cmp-p14-direct');
+  assert.equal(directSpan.ok, true);
+  assert.equal(directSpan.entries[0].content[0].callId, pairCallId);
+  assert.equal(directSpan.entries[0].content[0].name, 'fetch_data');
+  assert.equal(JSON.stringify(directSpan.entries).includes('archiveP14Secret99'), false);
+
+  const span = await archive.readSpan('sess-p14', 'cmp-p14');
+  assert.equal(span.ok, true);
+  assert.equal(span.entries[0].event.data.message.content[0].callId, pairCallId);
+  assert.equal(span.entries[0].event.data.message.content[0].name, 'fetch_data');
+  assert.equal(span.entries[0].event.data.source.kind, 'model');
+  assert.equal(span.entries[1].event.data.callId, pairCallId);
+  assert.equal(span.entries[1].event.data.message.toolCallId, pairCallId);
+  assert.equal(span.entries[1].event.data.message.source.callId, pairCallId);
+  assert.equal(span.entries[1].tool[0].callId, pairCallId);
+
+  const dumpedSpan = JSON.stringify(span.entries);
+  const tools = new Map();
+  registerHistoryTools(
+    {
+      tools: { register: (spec) => tools.set(spec.name, spec) },
+      logger: { info() {}, warn() {} },
+    },
+    { archiveEnabled: true },
+    archive,
+  );
+  const rawRead = await tools.get('history_read').execute({ compactionId: 'cmp-p14', raw: true }, { session: { id: 'sess-p14' } });
+  for (const text of [dumpedSpan, rawRead]) {
+    for (const secret of ['archiveP14Secret99', 'bearerP14Token88', 'dbPassP14']) {
+      assert.equal(text.includes(secret), false, `leaked secret substring: ${secret}`);
+    }
+  }
+});
+
+await test('redline-seal-P1-5-history-tools-fs-errors-no-dsh-home-leak', async () => {
+  const dshHome = scratch();
+  const archive = new CompactionArchive({ root: join(dshHome, 'archive-v2') });
+  const tools = new Map();
+  registerHistoryTools(
+    {
+      tools: { register: (spec) => tools.set(spec.name, spec) },
+      logger: { info() {}, warn() {} },
+    },
+    { archiveEnabled: true },
+    archive,
+  );
+  const { createHash } = await import('node:crypto');
+  const bytes = Buffer.from('attachment payload bytes');
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  const ref = { attachmentId: `sha256:${digest}`, bytes: bytes.length, mimeType: 'image/png', name: 'img.png' };
+  archive.attachments = { async readImage() { return { data: bytes }; } };
+  await archive.writeSpan({
+    sessionId: 'sess-p15-att',
+    compactionId: 'cmp-p15-att',
+    entries: [{ seq: 0, type: 'user/message', role: 'user', text: 'image', blocks: [{ type: 'image', attachment: ref }] }],
+  });
+  // Delete .blob and verify readAttachment + v2 history_read(rawBase64) do not expose <DSH_HOME> path
+  rmSync(join(archive.dirFor('sess-p15-att'), 'attachments', `${digest}.blob`));
+  await assert.rejects(
+    archive.readAttachment('sess-p15-att', 'cmp-p15-att', ref.attachmentId, 0, 1024),
+    (err) => {
+      assert.match(err.message, /archived attachment blob missing|attachment owner archive is incomplete/);
+      assert.equal(err.message.includes(dshHome), false, err.message);
+      return true;
+    },
+  );
+  const v3Span = await archive.readSpan('sess-p15-att', 'cmp-p15-att');
+  assert.equal(v3Span.ok, false);
+  assert.match(v3Span.detail, /archived attachment blob missing/);
+  assert.equal(v3Span.detail.includes(dshHome), false, v3Span.detail);
+
+  // Also test v2 span missing .blob reaching readAttachmentPage directly via history_read({ rawBase64: true })
+  const v2Dir = archive.dirFor('sess-p15-v2');
+  mkdirSync(v2Dir, { recursive: true });
+  const v2Entry = { seq: 0, type: 'user/message', role: 'user', text: 'image', blocks: [{ type: 'image', attachment: ref }] };
+  const body = JSON.stringify(v2Entry);
+  let fnv = 0x811c9dc5;
+  for (let i = 0; i < body.length; i += 1) {
+    fnv ^= body.charCodeAt(i) & 0xff;
+    fnv = Math.imul(fnv, 0x01000193) >>> 0;
+    fnv ^= (body.charCodeAt(i) >>> 8) & 0xff;
+    fnv = Math.imul(fnv, 0x01000193) >>> 0;
+  }
+  const v2Header = {
+    kind: 'compaction-weave/span',
+    version: 2,
+    sessionId: 'sess-p15-v2',
+    compactionId: 'cmp-p15-v2',
+    entries: 1,
+    bytes: Buffer.byteLength(body, 'utf8'),
+    checksum: fnv.toString(16).padStart(8, '0'),
+  };
+  writeFileSync(join(v2Dir, 'cmp-p15-v2.jsonl'), JSON.stringify(v2Header) + '\n' + body + '\n', 'utf8');
+  const rawAttErr = await tools.get('history_read').execute(
+    { compactionId: 'cmp-p15-v2', attachmentId: ref.attachmentId, rawBase64: true },
+    { session: { id: 'sess-p15-v2' } },
+  );
+  assert.match(rawAttErr, /archived attachment blob missing/);
+  assert.equal(rawAttErr.includes(dshHome), false, rawAttErr);
+
+  // Trigger ENOTDIR on sessionDir and verify history_list, history_search, and history_read(seq) scrub paths
+  const sessionFile = archive.dirFor('sess-p15-enotdir');
+  mkdirSync(dirname(sessionFile), { recursive: true });
+  writeFileSync(sessionFile, 'not a directory', 'utf8');
+  const execCtx = { session: { id: 'sess-p15-enotdir' } };
+  for (const [toolName, args] of [
+    ['history_list', {}],
+    ['history_search', { query: 'anything' }],
+    ['history_read', { seq: 0 }],
+  ]) {
+    const out = await tools.get(toolName).execute(args, execCtx);
+    assert.equal(out.includes(dshHome), false, `${toolName} leaked DSH_HOME: ${out}`);
+    assert.equal(out.includes(sessionFile), false, `${toolName} leaked session path: ${out}`);
+  }
+
+  // Wrapped error path scrubbing preserves diagnostic text while removing paths with spaces, backticks, Unicode POSIX paths, and >500-char trailing paths
+  const winPath = ['C:', '\\Host Root\\.dsh\\Session Archive.jsonl'].join('');
+  const posixHomePath = ['/', 'home', '/review-user/.dsh/archive.jsonl'].join('');
+  const uncPath = ['\\\\server', '\\Share Dir\\file.bin'].join('');
+  const wrappedTools = new Map();
+  registerHistoryTools(
+    {
+      tools: { register: (spec) => wrappedTools.set(spec.name, spec) },
+      logger: { info() {}, warn() {} },
+    },
+    { archiveEnabled: true },
+    {
+      async listSpans() {
+        throw new Error(`failed to open ${winPath}, \`${posixHomePath}\`, /资料, and ${uncPath}`);
+      },
+      async readSpan() {
+        throw new Error(`${'x '.repeat(260)}/very/long/trailing/secret-host-path.jsonl`);
+      },
+    },
+  );
+  const listErr = await wrappedTools.get('history_list').execute({}, { session: { id: 'sess-wrap' } });
+  for (const leak of ['Host Root', 'Session Archive', 'review-user', 'archive.jsonl', '/资料', 'Share Dir']) {
+    assert.equal(listErr.includes(leak), false, `history_list leaked ${leak}: ${listErr}`);
+  }
+  const longReadErr = await wrappedTools.get('history_read').execute({ compactionId: 'c1' }, { session: { id: 'sess-wrap' } });
+  assert.equal(longReadErr.includes('secret-host-path'), false, longReadErr);
 });
 
 for (const engine of fixtures) engine.dispose();

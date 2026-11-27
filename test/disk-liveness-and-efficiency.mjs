@@ -469,7 +469,9 @@ await test('disk-liveness-workspace-roots-changes-traversal-tags-and-truncation'
 
     assert.ok(probe.checked >= 5);
     assert.ok(probe.missing.includes('src/gone.js'));
-    assert.ok(probe.missing.some((p) => p.replaceAll('\\', '/').endsWith('/sub/deleted-ws1.txt')));
+    assert.ok(probe.missing.includes('sub/deleted-ws1.txt'));
+    assert.ok(!probe.missing.some((p) => p.includes(base.replaceAll('\\', '/')) || p.includes(base)));
+    assert.ok(!probe.existing.some((p) => p.includes(base.replaceAll('\\', '/')) || p.includes(base)));
     assert.ok(!probe.missing.some((p) => p.includes('ref-only-missing') || p.includes('quote-only-missing') || p.includes('fence-only-missing')));
     assert.ok(!probe.missing.some((p) => p.includes('outside')));
     assert.deepEqual(probe.modified, ['src/edited.js']);
