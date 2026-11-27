@@ -766,6 +766,7 @@ await test('http-rpc-enforces-same-origin-method-size-and-reactive-never-repeats
       {
         on() {},
         provide() {},
+        get(name) { return name === 'connection' ? { requestRejection: () => undefined } : null; },
         inject(deps, fn) {
           if (Array.isArray(deps) && deps.includes('webServer')) {
             return fn({
@@ -792,6 +793,7 @@ await test('http-rpc-enforces-same-origin-method-size-and-reactive-never-repeats
         new Promise((resolve) => {
           const req = new EventEmitter();
           req.method = method;
+          req.socket = { remoteAddress: '127.0.0.1' };
           req.headers = headers;
           req.destroy = () => {};
           const resHeaders = {};

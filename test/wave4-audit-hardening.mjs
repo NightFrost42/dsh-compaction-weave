@@ -561,7 +561,7 @@ await test('W4-P1-7-activeCompactions-end-race-and-P2-2-lastRunAt-cap-and-HISTOR
     {
       on(name, cb) { listeners.set(name, cb); return () => {}; },
       provide() {},
-      get() { return null; },
+      get(name) { return name === 'connection' ? { requestRejection: () => undefined } : null; },
       inject(deps, cb) {
         if (Array.isArray(deps) && deps.includes('webServer')) {
           return cb({
@@ -582,6 +582,7 @@ await test('W4-P1-7-activeCompactions-end-race-and-P2-2-lastRunAt-cap-and-HISTOR
       new Promise((resolveRes) => {
         const req = Object.assign(new EventEmitter(), {
           method: 'POST',
+          socket: { remoteAddress: '127.0.0.1' },
           headers: { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' },
         });
         const out = { statusCode: 200, body: '' };

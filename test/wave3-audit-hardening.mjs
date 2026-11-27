@@ -126,6 +126,7 @@ function makeMockSession({ id = `w3-${randomUUID()}`, openTurn = null } = {}) {
 await test('P0-1-rpc-enforces-connection-auth-host-origin-and-json-content-type', async () => {
   let registered = null;
   let connectionService = null;
+  let injectListener = null;
   const dispose = mountGate(
     {
       on() {},
@@ -139,6 +140,10 @@ await test('P0-1-rpc-enforces-connection-auth-host-origin-and-json-content-type'
         }
         if (Array.isArray(deps) && deps.includes('webServer')) {
           return cb({
+            on(ev, listener) {
+              if (ev === 'webserver/index-inject') injectListener = listener;
+              return () => {};
+            },
             effect(fn) {
               return fn();
             },
@@ -158,9 +163,13 @@ await test('P0-1-rpc-enforces-connection-auth-host-origin-and-json-content-type'
   );
   try {
     assert.ok(registered?.handler);
-    const send = (method, headers, body = '{"method":"get"}') =>
+    const tbl = [];
+    injectListener?.(tbl);
+    const bootTok = tbl.find((r) => r?.name === '__WEAVE_RPC_TOKEN__')?.value;
+    assert.ok(bootTok);
+    const send = (method, headers, body = '{"method":"get"}', extraReq = {}) =>
       new Promise((resolveRes) => {
-        const req = Object.assign(new EventEmitter(), { method, headers });
+        const req = Object.assign(new EventEmitter(), { method, socket: { remoteAddress: '127.0.0.1' }, headers, ...extraReq });
         const out = { statusCode: 200, headers: {}, body: '' };
         const res = {
           set statusCode(code) { out.statusCode = code; },
@@ -177,7 +186,7 @@ await test('P0-1-rpc-enforces-connection-auth-host-origin-and-json-content-type'
         Promise.resolve(p).catch(() => {});
       });
 
-    // Without connection service: strict origin, host & content-type
+    // Without connection service: strict origin, host & fail-closed token enforcement
     const noOrigin = await send('POST', { host: '127.0.0.1:3000', 'content-type': 'application/json' });
     assert.equal(noOrigin.status, 403);
 
@@ -198,13 +207,22 @@ await test('P0-1-rpc-enforces-connection-auth-host-origin-and-json-content-type'
     const badMime = await send('POST', {
       host: '127.0.0.1:3000',
       origin: 'http://127.0.0.1:3000',
+      'x-weave-rpc-token': bootTok,
       'content-type': 'text/plain',
     });
     assert.equal(badMime.status, 415);
 
+    const noTokenLoopback = await send('POST', {
+      Host: '127.0.0.1:3000',
+      Origin: 'http://127.0.0.1:3000',
+      'Content-Type': 'application/json; charset=utf-8',
+    });
+    assert.equal(noTokenLoopback.status, 401);
+
     const validLoopback = await send('POST', {
       Host: '127.0.0.1:3000',
       Origin: 'http://127.0.0.1:3000',
+      'x-weave-rpc-token': bootTok,
       'Content-Type': 'application/json; charset=utf-8',
     });
     assert.equal(validLoopback.status, 200);
@@ -289,9 +307,9 @@ await test('Issue19-rpc-index-inject-token-and-same-origin-header-fallback', asy
     // Non-array table should not crash listener
     for (const listener of indexInjectListeners) listener(null);
 
-    const send = (method, headers, body = '{"method":"get"}') =>
+    const send = (method, headers, body = '{"method":"get"}', extraReq = {}) =>
       new Promise((resolveRes) => {
-        const req = Object.assign(new EventEmitter(), { method, headers });
+        const req = Object.assign(new EventEmitter(), { method, socket: { remoteAddress: '127.0.0.1' }, headers, ...extraReq });
         const out = { statusCode: 200, headers: {}, body: '' };
         const res = {
           set statusCode(code) { out.statusCode = code; },
@@ -353,7 +371,7 @@ await test('Issue19-rpc-index-inject-token-and-same-origin-header-fallback', asy
     // Valid token MUST NOT bypass cross-site Origin, Origin: null, cross-site Sec-Fetch-Site, untrusted Host, GET, or non-JSON
     const tokenCrossOrigin = await send('POST', {
       host: '127.0.0.1:3000',
-      origin: 'https://evil.example',
+      origin: 'http://evil.example',
       'x-weave-rpc-token': validToken,
       'content-type': 'application/json',
     });
@@ -398,14 +416,13 @@ await test('Issue19-rpc-index-inject-token-and-same-origin-header-fallback', asy
     });
     assert.equal(tokenBadMime.status, 415);
 
-    // Tier 3: No connection, no token + missing Origin + Sec-Fetch-Site: same-origin or same-origin Referer => 200
+    // No connection, no token + missing Origin + Sec-Fetch-Site: same-origin or same-origin Referer => 401 (fail-closed)
     const sameOriginFetch = await send('POST', {
       host: '127.0.0.1:3000',
       'sec-fetch-site': '  Same-Origin  ',
       'content-type': 'application/json',
     });
-    assert.equal(sameOriginFetch.status, 200);
-    assert.equal(sameOriginFetch.json.ok, true);
+    assert.equal(sameOriginFetch.status, 401);
 
     const sameSiteNotEnough = await send('POST', {
       host: '127.0.0.1:3000',
@@ -420,15 +437,15 @@ await test('Issue19-rpc-index-inject-token-and-same-origin-header-fallback', asy
       referer: 'http://127.0.0.1:3000/settings?tab=weave',
       'content-type': 'application/json',
     });
-    assert.equal(sameOriginReferer.status, 200);
-    assert.equal(sameOriginReferer.json.ok, true);
+    assert.equal(sameOriginReferer.status, 401);
 
-    const ipv6Referer = await send('POST', {
+    const ipv6RefererWithTok = await send('POST', {
       host: '[::1]:3000',
       referer: 'http://[::1]:3000/settings',
+      'x-weave-rpc-token': validToken,
       'content-type': 'application/json',
     });
-    assert.equal(ipv6Referer.status, 200);
+    assert.equal(ipv6RefererWithTok.status, 200);
 
     // Cross-site / wrong-port / non-http(s) / userinfo / relative Referer + missing Origin => 403
     for (const badReferer of [
@@ -518,18 +535,30 @@ await test('Issue19-rpc-index-inject-token-and-same-origin-header-fallback', asy
     });
     assert.equal(port80VsHttpsReferer.status, 403);
 
-    const https443Origin = await send('POST', {
-      host: '127.0.0.1:443',
-      origin: 'https://127.0.0.1',
-      'content-type': 'application/json',
-    });
+    const https443Origin = await send(
+      'POST',
+      {
+        host: '127.0.0.1:443',
+        origin: 'https://127.0.0.1',
+        'x-weave-rpc-token': validToken,
+        'content-type': 'application/json',
+      },
+      '{"method":"get"}',
+      { socket: { remoteAddress: '127.0.0.1', encrypted: true } },
+    );
     assert.equal(https443Origin.status, 200);
 
-    const https443Referer = await send('POST', {
-      host: '127.0.0.1:443',
-      referer: 'https://127.0.0.1:443/settings',
-      'content-type': 'application/json',
-    });
+    const https443Referer = await send(
+      'POST',
+      {
+        host: '127.0.0.1:443',
+        referer: 'https://127.0.0.1:443/settings',
+        'x-weave-rpc-token': validToken,
+        'content-type': 'application/json',
+      },
+      '{"method":"get"}',
+      { socket: { remoteAddress: '127.0.0.1', encrypted: true } },
+    );
     assert.equal(https443Referer.status, 200);
 
     // Contradictory Tier-3 headers => 403
@@ -623,6 +652,7 @@ await test('Issue19-rpc-index-inject-token-and-same-origin-header-fallback', asy
     const reloadedRes = await new Promise((resolveRes) => {
       const req = Object.assign(new EventEmitter(), {
         method: 'POST',
+        socket: { remoteAddress: '127.0.0.1' },
         headers: {
           host: '127.0.0.1:3000',
           'x-weave-rpc-token': firstBootToken,
@@ -748,6 +778,7 @@ await test('Issue19-client-attaches-rpc-token-header-on-rpc-and-status-poller', 
       new Promise((resolveRes) => {
         const req = Object.assign(new EventEmitter(), {
           method: options.method,
+          socket: { remoteAddress: '127.0.0.1' },
           // Simulate DSH Desktop 0.2.3-alpha.2: loopback Host, no Origin, no Referer, no Sec-Fetch-Site
           headers: { host: '127.0.0.1:3000', ...options.headers },
         });

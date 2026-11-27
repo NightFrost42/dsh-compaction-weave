@@ -181,6 +181,7 @@ function createRpcInvoker(routeHandler) {
   return async (method, params = {}) => {
     const req = new EventEmitter();
     req.method = 'POST';
+    req.socket = { remoteAddress: '127.0.0.1' };
     req.headers = { host: '127.0.0.1:8080', origin: 'http://127.0.0.1:8080', 'content-type': 'application/json' };
     req.destroy = () => {};
     let resolvedBody = '';
@@ -847,6 +848,7 @@ await test('C3-compact-reset-guards-active-lock-and-pending-journal-plus-reset-b
     services.set('sessions', sessions);
     services.set('llm', llm);
     services.set('tokenMeter', tokenMeter);
+    services.set('connection', { requestRejection: () => undefined });
     services.set('webServer', {
       register(spec) {
         if (spec.path === SUMMARY_RPC_PATH) registeredRoute = spec.handler;

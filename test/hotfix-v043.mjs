@@ -1039,10 +1039,13 @@ await test('breaker-rpcs-status-retry-and-bypass-with-gate', async () => {
     const sessionsMap = new Map();
     const hooks = new Map();
     let runtimeRef = null;
+    const connMock = { requestRejection: () => undefined };
     const gateCtx = {
       logger: { info() {}, warn() {}, error() {} },
       effect: (fn) => fn(),
+      get: (name) => (name === 'connection' ? connMock : undefined),
       inject: (_deps, fn) => {
+        if (Array.isArray(_deps) && _deps.includes('connection')) return fn({ connection: connMock });
         if (Array.isArray(_deps) && _deps.includes('sessions')) return fn({ sessions: sessionsMap, sessionPersistence: {} });
         if (Array.isArray(_deps) && _deps.includes('webServer')) {
           return fn({
@@ -1153,6 +1156,7 @@ await test('breaker-rpcs-status-retry-and-bypass-with-gate', async () => {
       let bodyText = '';
       const req = Readable.from([Buffer.from(JSON.stringify({ method, params }))]);
       req.method = 'POST';
+      req.socket = { remoteAddress: '127.0.0.1' };
       req.headers = { origin: 'http://localhost', host: 'localhost', 'content-type': 'application/json' };
       const res = {
         set statusCode(code) {

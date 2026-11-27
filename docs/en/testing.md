@@ -9,9 +9,9 @@ Under Windows / Node.js `v24.19.0`, `0.6.0` completes the 6-layer acyclic `lib/a
 | Verification gate | Scope & conditions | Result | Reference |
 | --- | --- | --- | --- |
 | **Static & DAG topology (`npm run check`)** | `288` release files, package `0.6.0`, syntax, links, install examples, secrets, and module DAG | **91 non-client ESM modules, 0 cycles passed** | [../../scripts/check.mjs](../../scripts/check.mjs) |
-| **Offline unit suites (`npm test`)** | Separate child processes + isolated temp `DSH_HOME` | **103 suites, 1,485 checks passed, 0 failures** | [../../test/v060-audit-hardening.mjs](../../test/v060-audit-hardening.mjs) |
-| **DSH `0.2.2-rc.1` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **111 suites, 1,616 checks passed, 0 failures** | — |
-| **DSH `0.2.2-rc.3` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **111 suites, 1,616 checks passed, 0 failures** | — |
+| **Offline unit suites (`npm test`)** | Separate child processes + isolated temp `DSH_HOME` | **103 suites, 1,486 checks passed, 0 failures** | [../../test/v060-audit-hardening.mjs](../../test/v060-audit-hardening.mjs) |
+| **DSH `0.2.2-rc.1` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **111 suites, 1,617 checks passed, 0 failures** | — |
+| **DSH `0.2.2-rc.3` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **111 suites, 1,617 checks passed, 0 failures** | — |
 | **Clean release packaging (`npm run pack:release`)** | Generates `dist/dsh-compaction-weave-0.6.0.tgz`, `dsh-compaction-weave.tgz`, source tarball, and `SHA256SUMS.txt` | Payload matches `package.json.files` whitelist cleanly | [../../scripts/release.mjs](../../scripts/release.mjs) |
 
 ---
@@ -33,9 +33,9 @@ To measure real-world accuracy, compression, multi-cycle KV cache recovery, comp
 
 | System | Completed | Overall Accuracy | `w1` Spec Evolution | `w2` Tool-Heavy Debug | Mean Eff / Wire Reduction | Mean `w1` / `w2` Comp Wall Ms | Mean Summary Calls | Total Spend (Magpie / Norm USD) | Key Takeaways |
 | :--- | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
-| **`weave-0.6.0`** | **6 / 6** | **131 / 132 (99.24%)** | **108 / 108** (`3/3`) | **23 / 24 (95.83%)** (`3/3`) | **`76.07%` / `76.07%`** | `48,537 ms` / **`75.67 ms`** | **`0.50`** (`0` on `w2`) | `$1.0200` / `$0.7632` | Highest overall & `w2` accuracy (`Gemini 8/8`, `GPT 8/8`, `DeepSeek 7/8`) with **`0` LLM summary calls** on `w2` |
-| **`dsh-basic`** | 6 / 6 | 123 / 132 (93.18%) | **108 / 108** (`3/3`) | 15 / 24 (62.50%) (`3/3`) | `58.91%` / `58.91%` | `56,292 ms` / `8.67 ms` | `0.83` | `$0.7912` / `$0.6057` | `w1` passed at full budget, but `ToolResultPruner` head/tail slicing drops middle constants (`3/3` missed `4750` / `517`) |
-| **`billion-context@ced22b1`** | 6 / 6 | 114 / 132 (86.36%) | **108 / 108** (`3/3`) | **6 / 24 (25.00%)** (`gpt` **0/8**) | `40.38%` / **`3.53%`** | `33,996 ms` / **`39,695 ms`** | `0.50` | **`$1.1478`** / **`$0.9989`** | `w1` passed cleanly, but `w2` collapsed (`Gemini 3/8`, `DeepSeek 3/8`, `GPT 0/8`), wire reduction was **`3.53%`**, and norm spend was `30.9%` above Weave |
+| **`weave-0.6.0`** | **6 / 6** | **131 / 132 (99.24%)** | **108 / 108** (`3/3`) | **23 / 24 (95.83%)** (`3/3`) | **`76.07%` / `76.07%`** (`6/6`) | `48,537 ms` / **`75.67 ms`** | **`0.50`** (`0` on `w2`) | `$1.0200` / `$0.7632` | Highest overall & `w2` accuracy (`Gemini 8/8`, `GPT 8/8`, `DeepSeek 7/8`) with **`0` LLM summary calls** on `w2` |
+| **`dsh-basic`** | 6 / 6 | 123 / 132 (93.18%) | **108 / 108** (`3/3`) | 15 / 24 (62.50%) (`3/3`) | `70.69%` / `70.69%` (`5/6` non-null; `58.91%` zero-filled) | `56,292 ms` / `8.67 ms` | `0.83` | **`$0.7912` / `$0.6057`** | `w1` passed & Suite A lowest spend (`-22.4%` Magpie / `-20.6%` Norm vs Weave), trading off `w2` middle constants lost (`15/24`) |
+| **`billion-context@ced22b1`** | 6 / 6 | 114 / 132 (86.36%) | **108 / 108** (`3/3`) | **6 / 24 (25.00%)** (`gpt` **0/8**) | `48.45%` / **`4.24%`** (`5/6` non-null; `40.38%` / `3.53%` zero-filled) | `33,996 ms` / **`39,695 ms`** | `0.50` | **`$1.1478`** (`+12.53%`) / **`$0.9989`** (`+30.89%`) | `w1` passed cleanly, but `w2` collapsed (`Gemini 3/8`, `DeepSeek 3/8`, `GPT 0/8`), wire reduction was **`4.24%` non-null**, and spend was `+12.53%` Magpie / `+30.89%` Norm above Weave |
 
 <details>
 <summary>Expand per-branch breakdown across all 18 standalone runs</summary>
@@ -73,9 +73,11 @@ Running 5 consecutive compactions followed by 6 replies per cycle (`6` long traj
 
 | System | Compactions | Accuracy | Gen 1–4 Wire Reduction | Comp Wall / End-to-End Wall | Total HTTP Reqs (Comp Reqs) | Total Spend (Magpie / Norm USD) |
 | :--- | :---: | :---: | :--- | ---: | ---: | ---: |
-| **`weave-0.6.0`** | **4 / 4** | **186 / 186 (100%)** | `67.72% / 59.98% / 57.62% / 56.15%` | `118,631 ms` / **`275,620 ms`** | `32` (`6`) | **`$0.6042` / `$0.4906`** |
+| **`weave-0.6.0`** | **4 / 4** | **186 / 186 (100%)** | `67.72% / 59.98% / 57.62% / 56.15%` | `118,631 ms` / **`275,620 ms`** | `32` (`6` comp reqs: 4 succeeded + 2 retries) | **`$0.6042` / `$0.4906`** |
 | `dsh-basic` | 4 / 4 | 186 / 186 (100%) | `68.34% / 71.59% / 71.19% / 65.03%` | `111,682 ms` / `476,540 ms` (`1.73×` slower) | `30` (`4`) | `$0.6482` / `$0.5116` (no verbatim Sec. 6 or archive) |
 | `billion-context@ced22b1` | 4 / 4 | 186 / 186 (100%) | **`-30.97%`**, `25.34%`, **`-8.07%`**, `34.81%` | `185,885 ms` / `415,957 ms` (`1.51×` slower) | `42` (**`15`**) | **`$0.8623` / `$0.7139`** (**+42.7% / +45.5%**) |
+
+*(The raw benchmark JSON [`docs/benchmarks/v0.6.0-live-three-way.json`](../benchmarks/v0.6.0-live-three-way.json) preserves the unmodified `2026-11-25` live capture at `candidateCommit: 01f6502`.)*
 
 ---
 

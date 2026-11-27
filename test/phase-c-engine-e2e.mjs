@@ -1293,6 +1293,9 @@ await test('rpc-status-exposes-sanitized-sessionMemory-without-leaking-prose-or-
       on() {
         return () => {};
       },
+      get(name) {
+        return name === 'connection' ? { requestRejection: () => undefined } : null;
+      },
       provide(name, value) {
         if (name === 'compactionWeaveRuntime') runtimeProvided = value;
       },
@@ -1322,6 +1325,7 @@ await test('rpc-status-exposes-sanitized-sessionMemory-without-leaking-prose-or-
     let responseBody = '';
     const req = Object.assign(Readable.from([body]), {
       method: 'POST',
+      socket: { remoteAddress: '127.0.0.1' },
       headers: { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' },
     });
     const res = {

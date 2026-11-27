@@ -272,6 +272,7 @@ function makeHostFixture({ home, windowTokens = 120000, extraEngineConfig = {}, 
   services.set('llm', llm);
   services.set('tokenMeter', tokenMeter);
   services.set('webServer', webServer);
+  services.set('connection', { requestRejection: () => undefined });
 
   const tryDeliverInjects = () => {
     for (let i = pendingInjects.length - 1; i >= 0; i -= 1) {
@@ -309,6 +310,7 @@ function makeHostFixture({ home, windowTokens = 120000, extraEngineConfig = {}, 
     get llm() { return services.get('llm'); },
     get tokenMeter() { return services.get('tokenMeter'); },
     get webServer() { return services.get('webServer'); },
+    get connection() { return services.get('connection'); },
     get compactionWeaveRuntime() { return services.get('compactionWeaveRuntime'); },
     get compactionWeaveTransactions() { return services.get('compactionWeaveTransactions'); },
   });
@@ -328,6 +330,7 @@ function makeHostFixture({ home, windowTokens = 120000, extraEngineConfig = {}, 
     new Promise((resolve, reject) => {
       const req = new EventEmitter();
       req.method = 'POST';
+      req.socket = { remoteAddress: '127.0.0.1' };
       req.headers = { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' };
       req.destroy = () => {};
       const res = {

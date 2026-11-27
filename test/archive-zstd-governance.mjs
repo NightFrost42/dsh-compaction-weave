@@ -640,7 +640,7 @@ await test('archiveWarnBytes-config-and-runtime-rpcs-soft-warning-never-auto-del
       },
       on() { return () => {}; },
       provide(k, v) { provided.set(k, v); },
-      get(k) { return provided.get(k); },
+      get(k) { return k === 'connection' ? { requestRejection: () => undefined } : provided.get(k); },
       inject(deps, fn) {
         if (deps.includes('webServer')) {
           return fn({
@@ -679,6 +679,7 @@ await test('archiveWarnBytes-config-and-runtime-rpcs-soft-warning-never-auto-del
       let bodyText = '';
       const req = Readable.from([Buffer.from(JSON.stringify({ method, params }))]);
       req.method = 'POST';
+      req.socket = { remoteAddress: '127.0.0.1' };
       req.headers = { origin: 'http://localhost', host: 'localhost', 'content-type': 'application/json' };
       const res = {
         set statusCode(c) { statusCode = c; },

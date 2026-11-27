@@ -143,7 +143,7 @@ async function createIsolatedSessionFixture({
       provided.set(name, val);
     },
     get(name) {
-      return provided.get(name);
+      return name === 'connection' ? { requestRejection: () => undefined } : provided.get(name);
     },
     inject(deps, fn) {
       if (Array.isArray(deps) && deps.includes('llm')) {
@@ -246,6 +246,7 @@ async function createIsolatedSessionFixture({
     let bodyText = '';
     const req = Readable.from([Buffer.from(JSON.stringify({ method, params }))]);
     req.method = 'POST';
+    req.socket = { remoteAddress: '127.0.0.1' };
     req.headers = { origin: 'http://localhost', host: 'localhost', 'content-type': 'application/json' };
     const res = {
       set statusCode(c) { statusCode = c; },

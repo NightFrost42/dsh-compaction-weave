@@ -108,16 +108,16 @@ Adjust common options under **Settings → Context Compaction (Weave)** (or on t
 
 ## Tests and verification
 
-`0.6.0` passed all static topology checks, offline unit regressions, and isolated dual-host integration suites against **DSH `0.2.2-rc.1` / `0.2.2-rc.3`** (`0` failures). Live Magpie gateway three-way benchmark summary (`Weave 0.6.0` vs `DSH Basic` vs `billion-context@0.0.1328-master.ced22b1`, full data in [`docs/benchmarks/v0.6.0-live-three-way.json`](docs/benchmarks/v0.6.0-live-three-way.json)):
+`0.6.0` passed all static topology checks, offline unit regressions, and isolated dual-host integration suites against **DSH `0.2.2-rc.1` / `0.2.2-rc.3`** (`0` failures). Live Magpie gateway three-way benchmark summary (`Weave 0.6.0` vs `DSH Basic` vs `billion-context@0.0.1328-master.ced22b1`, raw `2026-11-25` capture preserved at `candidateCommit: 01f6502` in [`docs/benchmarks/v0.6.0-live-three-way.json`](docs/benchmarks/v0.6.0-live-three-way.json)):
 
 | Comparison metric (2026-11-25 Live) | `Weave 0.6.0` | `DSH Basic` | `billion-context@0.0.1328-master.ced22b1` |
 | --- | :---: | :---: | :---: |
 | **Suite A Overall Accuracy (`w1` + Tool-Heavy `w2`)** | **131/132 (`99.24%`)**<br>(`w2` `23/24`, `0` LLM summary calls) | 123/132 (`93.18%`)<br>(`w2` `15/24`) | 114/132 (`86.36%`)<br>(`w2` `6/24`, GPT `0/8`) |
-| **Suite A Reduction & `w2` Comp Wall** | **`76.07%`** eff / wire<br>`w2` mean **`75.67 ms`** | `58.91%`<br>`w2` `8.67 ms` | **`3.53%`** wire (`40.38%` eff)<br>`w2` `39,695 ms`, `+30.9%` spend |
-| **Suite B 5-Cycle Cache & Spend** | **`100/100`** · Highest cache hit<br>(DeepSeek **`72.11%`** / GPT **`64.48%`**)<br>Lowest spend **`$0.0410`** / **`$0.7789`** | `100/100` · Mid cache hit<br>(`52.15%` / `57.45%`)<br>`$0.0584` / `$0.8315` | `100/100` · Net cycle bloat **`-34.95%`..`-38.42%`**<br>Costlier **`2.15×`** (`$0.0879`) / **`1.53×`** (`$1.1885`) |
-| **Suite C 15-Switch Multi-Model** | **186/186 (`100%`)** · `4/4` 1st-pass<br>Fastest **`275.62 s`** · Lowest **`$0.6042` / `$0.4906`** | `186/186` (no Sec. 6 quotes/archive)<br>`476.54 s` · `$0.6482` / `$0.5116` | `186/186` · `15` autonomous compactions<br>`415.96 s` · Costlier **`+42.7%`** (`$0.8623` / `$0.7139`) |
+| **Suite A Reduction, Wall & Spend** | **`76.07%`** eff / wire (6/6)<br>`w2` `75.67 ms` · `$1.0200` / Norm `$0.7632` | **`70.69%`** (5/6 non-null mean; `58.91%` zero-filled)<br>`w2` `8.67 ms` · `$0.7912` / Norm `$0.6057` (`w2` recall loss vs lower spend) | **`4.24%`** wire / `48.45%` eff (5/6 non-null; `3.53%` / `40.38%` zero-filled)<br>`w2` `39,695 ms` · Magpie `+12.53%` / Norm `+30.89%` |
+| **Suite B 5-Cycle Cache & Spend** | **`100/100`** · Highest cache hit<br>(DeepSeek **`72.11%`** / GPT **`64.48%`**)<br>Lowest spend **`$0.0410`** / **`$0.7789`** | `100/100` · Mid cache hit<br>(`52.15%` / `57.45%`)<br>`$0.0584` / `$0.8315` | `100/100` · DeepSeek C1 `-34.95%` (recovered `+11.86%..+39.76%` C2–C5); GPT `-38.42%..-7.15%` all C1–C5<br>Costlier **`2.15×`** (`$0.0879`) / **`1.53×`** (`$1.1885`) |
+| **Suite C 15-Switch Multi-Model** | **186/186 (`100%`)** · `4/4` compactions (across `6` summary requests: `4/6` succeeded w/ 2 retries)<br>Fastest **`275.62 s`** · Lowest **`$0.6042` / `$0.4906`** | `186/186` (no Sec. 6 quotes/archive)<br>`476.54 s` · `$0.6482` / `$0.5116` | `186/186` · `15` autonomous compactions<br>`415.96 s` · Costlier **`+42.7%`** (`$0.8623` / `$0.7139`) |
 
-Compaction produces a lossy summary backed by on-demand archive lookup, and input token reduction differs from actual billing changes depending on cache hits, regenerations, and provider pricing. See [Testing](docs/en/testing.md) for full experimental conditions, real-host runtime evaluations, and module navigation.
+Compaction produces a lossy summary backed by on-demand archive lookup, and input token reduction differs from actual billing changes depending on cache hits, retries, pricing basis (both Magpie billed USD and list-normalized Norm USD are shown above), and `null` pre-warm telemetry samples. See [Testing](docs/en/testing.md) for full experimental conditions, real-host runtime evaluations, and module navigation.
 
 ## Diagnostics and feedback
 

@@ -797,6 +797,9 @@ await test('a2-index-rpc-engineActive-and-client-restart-banner-and-scope-ui', a
         provide(name, svc) {
           if (name === 'compactionWeaveRuntime') runtimeRef = svc;
         },
+        get(name) {
+          return name === 'connection' ? { requestRejection: () => undefined } : null;
+        },
         inject(deps, fn) {
           if (Array.isArray(deps) && deps.includes('webServer')) {
             return fn({

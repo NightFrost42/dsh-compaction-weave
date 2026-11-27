@@ -326,6 +326,7 @@ function createRpcHarness(root, engine, session) {
           tracker: { writers: new Map() },
         };
       }
+      if (name === 'connection') return { requestRejection: () => undefined };
       return providedServices.get(name);
     },
     inject(deps, cb) {
@@ -361,6 +362,7 @@ function createRpcHarness(root, engine, session) {
     const body = Buffer.from(JSON.stringify({ method, params }), 'utf8');
     const req = new EventEmitter();
     req.method = 'POST';
+    req.socket = { remoteAddress: '127.0.0.1' };
     req.headers = { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' };
     let statusCode = 200;
     let payload = '';

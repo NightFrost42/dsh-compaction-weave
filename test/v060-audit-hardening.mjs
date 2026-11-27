@@ -49,7 +49,8 @@ import { extractProgressFacts } from '../lib/progress-facts.js';
 import { hasProgressSignals } from '../lib/progress-state.js';
 import { CompactionProgressTracker } from '../lib/progress-tracker.js';
 import { reconstructDisputedLines } from '../lib/reconstruct.js';
-import { redactCredentials, redactPemPrivateKeys } from '../lib/redact.js';
+import { redactCredentials, redactErrorText, redactPemPrivateKeys } from '../lib/redact.js';
+import { materializeUserMessageSection, stripMaterializedUserSection } from '../lib/validate.js';
 import { selectSessionMemory } from '../lib/region.js';
 import { SessionBackupStore } from '../lib/session-backup.js';
 import { SessionMemoryManager, SessionMemoryStore } from '../lib/session-memory.js';
@@ -527,6 +528,7 @@ await test('P0-1-P1-1-P2-8-rpc-admit-electron-fallback-viewer-gate-and-body-limi
       new Promise((resolveRes) => {
         const req = Object.assign(new EventEmitter(), {
           method: 'POST',
+          socket: { remoteAddress: '127.0.0.1' },
           headers,
           destroy() {},
         });
@@ -557,7 +559,7 @@ await test('P0-1-P1-1-P2-8-rpc-admit-electron-fallback-viewer-gate-and-body-limi
 
     // Oversized body >64KiB writes 413 JSON without premature req.destroy()
     const oversized = await sendRaw(
-      { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' },
+      { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'x-weave-rpc-token': token, 'content-type': 'application/json' },
       JSON.stringify({ method: 'get', pad: 'x'.repeat(70 * 1024) }),
     );
     assert.equal(oversized.status, 413);
@@ -3749,6 +3751,275 @@ await test('aff2666-audit-remediation-all-verified-p0-p1-p2-and-extra-guards', a
     });
     assert.deepEqual(seenTargets, ['p1/missing', 'p2/ok']);
     assert.equal(p210Res.rawText, 'ok summary');
+  } finally {
+    if (priorHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = priorHome;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+await test('8c05d59-audit-remediation-all-p0-p1-p2-guards', async () => {
+  const root = await mkdtemp(join(TEST_BASE, 'weave-8c05d59-'));
+  const priorHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = join(root, 'dsh-home');
+  try {
+    // [P0-1] Quoted/commented/diff-prefixed PGP/PEM blank lines, URL @ password, rk_live_/npm_/pypi- tokens
+    const pgpBegin = '-----BEGIN ' + 'PGP PRIVATE KEY BLOCK-----';
+    const pgpEnd = '-----END ' + 'PGP PRIVATE KEY BLOCK-----';
+    const quotedPgp = [
+      `> ${pgpBegin}`,
+      '> ',
+      '> lQOYBGSecretBodyData1234567890',
+      `> ${pgpEnd}`,
+    ].join('\n');
+    const commentedPgp = [
+      `# ${pgpBegin}`,
+      '#   ',
+      '# Version: GnuPG v2',
+      '#',
+      '# lQOYBGCommentSecretData1234567',
+      `# ${pgpEnd}`,
+    ].join('\n');
+    const diffPgp = [
+      `+${pgpBegin}`,
+      '+Version: GnuPG v2',
+      '+',
+      '+lQOYBGDiffSecretBodyData123456',
+      `+${pgpEnd}`,
+    ].join('\n');
+    for (const sample of [quotedPgp, commentedPgp, diffPgp]) {
+      const redacted = redactCredentials(sample);
+      assert.doesNotMatch(redacted, /Secret/i);
+      assert.ok(redacted.includes('[redacted-private-key]'));
+    }
+
+    const urlAt = 'postgres://appuser:p@ss@word99@db.internal:5432/prod?sslmode=require';
+    assert.equal(redactCredentials(urlAt), 'postgres://appuser:[redacted]@db.internal:5432/prod?sslmode=require');
+
+    const extraToks = ['rk_live_' + '51H8abcdef123456', 'npm_' + 'AbCdEfGhIjKlMnOpQrSt', 'pypi-' + 'AgEIcHlwaS5vcmcCJD123456'].join(' ');
+    const extraRedacted = redactCredentials(extraToks);
+    assert.doesNotMatch(extraRedacted, /51H8abcdef|AbCdEfGh|AgEIcHlwaS5v/);
+
+    // [P0-1 / P1-7] Workspace file reinject blocks prod.env, *.jks, .pgpass, kubeconfig + redacts >60B base64 blobs
+    const ws = join(root, 'ws');
+    await mkdir(ws, { recursive: true });
+    for (const [name, body] of [
+      ['prod.env', 'DB_PASS=secret1'],
+      ['app.jks', 'keystore'],
+      ['.pgpass', 'host:5432:db:u:secret'],
+      ['kubeconfig', 'apiVersion: v1\ntoken: secret'],
+      ['notes.txt', 'header\nRAW_BLOB=QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=\nfooter\n'],
+    ]) {
+      await writeFile(join(ws, name), body, 'utf8');
+    }
+    const reinjSess = {
+      id: 's-reinj-p01',
+      header: { cwd: ws },
+      surface: { nodes: [0, 1, 2, 3, 4] },
+      eventAt(seq) {
+        const names = ['prod.env', 'app.jks', '.pgpass', 'kubeconfig', 'notes.txt'];
+        return {
+          seq,
+          type: 'tool/call',
+          data: { id: `c${seq}`, name: 'read_file', arguments: JSON.stringify({ path: names[seq] }) },
+        };
+      },
+      deriveEventMessage: () => null,
+      toolHistory: () => [],
+    };
+    const reinjOut = collectActiveWorkspaceFiles({
+      session: reinjSess,
+      shadowedSeqs: [0, 1, 2, 3, 4],
+      workspaceRoots: [ws],
+      maxFiles: 5,
+      maxBytes: 24576,
+      maxFileBytes: 6144,
+    });
+    assert.deepEqual(reinjOut.files.map((f) => f.path), ['notes.txt']);
+    assert.ok(reinjOut.text.includes('[redacted-blob]'));
+    assert.doesNotMatch(reinjOut.text, /QUJDREVGR0hJSkt/);
+
+    // [P0-2] redactErrorText scrubs Bearer and DB URLs before persistence
+    const rawErr = `HTTP_401: Upstream failed with Bearer ${'sk-' + 'leaktestsecret987654321'} and postgres://u:s@cr3t@db.internal/app`;
+    const cleanErr = redactErrorText(rawErr);
+    assert.ok(!cleanErr.includes('leaktestsecret987654321') && !cleanErr.includes('s@cr3t'));
+    assert.ok(cleanErr.includes('Bearer [redacted]'));
+
+    // [P1-1 / P1-2] RPC fails closed when conn===null & missing socket; cross-preset returns engineActive: false
+    let p11Handler = null;
+    let p11Inject = null;
+    let p11Runtime = null;
+    const p11Sess = { id: 'sess-world', agentPreset: 'preset-world', surface: { nodes: [] }, seq: 0, eventAt: () => null };
+    const p11Dispose = mountGate({
+      on() {},
+      provide(name, svc) { if (name === 'compactionWeaveRuntime') p11Runtime = svc; },
+      get(name) { return name === 'sessions' ? { get: (id) => (id === p11Sess.id ? p11Sess : null) } : null; },
+      inject(deps, cb) {
+        if (Array.isArray(deps) && deps.includes('webServer')) {
+          return cb({
+            on(ev, fn) { if (ev === 'webserver/index-inject') p11Inject = fn; return () => {}; },
+            effect: (fn) => fn(),
+            webServer: { host: '127.0.0.1', register(r) { p11Handler = r.handler; return () => {}; } },
+          });
+        }
+        return () => {};
+      },
+    }, {});
+    try {
+      const tbl = [];
+      p11Inject?.(tbl, { principal: { kind: 'owner', id: 'o' } });
+      const tok = tbl.find((x) => x.name === '__WEAVE_RPC_TOKEN__')?.value;
+      assert.ok(tok);
+      p11Runtime.registerEngine({ ctx: { presetName: 'preset-a' }, config: { failureThreshold: 3 }, refreshLiveConfig() {} });
+      assert.equal(p11Runtime.getEngineForSession(p11Sess), null, 'P1-2 cross-preset session must not bind unrelated preset engine');
+
+      const invokeP11 = (headers, socket, bodyObj = { method: 'status', params: { sessionId: p11Sess.id } }) =>
+        new Promise((resolveRes) => {
+          const req = Object.assign(new EventEmitter(), { method: 'POST', headers, ...(socket === undefined ? {} : { socket }), destroy() {} });
+          const res = { statusCode: 200, setHeader() {}, end(c = '') { resolveRes({ status: this.statusCode, json: JSON.parse(String(c)) }); } };
+          Promise.resolve(p11Handler(req, res)).catch(() => {});
+          req.emit('data', Buffer.from(JSON.stringify(bodyObj)));
+          req.emit('end');
+        });
+
+      assert.equal((await invokeP11({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' }, { remoteAddress: '127.0.0.1' })).status, 401);
+      assert.equal((await invokeP11({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'x-weave-rpc-token': tok, 'content-type': 'application/json' }, undefined)).status, 403);
+      const statusOk = await invokeP11({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'x-weave-rpc-token': tok, 'content-type': 'application/json' }, { remoteAddress: '127.0.0.1' });
+      assert.equal(statusOk.status, 200);
+      assert.equal(statusOk.json.value.engineActive, false, 'P1-2 status must report engineActive=false when session preset mismatches');
+    } finally {
+      p11Dispose?.();
+    }
+
+    // [P1-3] publicResumableSummary honors configured failureThreshold
+    const resJob = {
+      version: 1,
+      jobId: 'job-1',
+      trigger: 'auto',
+      status: 'interrupted',
+      interruptReason: 'error',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      initialTotalNodes: 4,
+      initialTotalTokens: 1000,
+      completedNodes: 2,
+      completedTokens: 500,
+      completedChunks: 1,
+      waveCount: 1,
+      remainingSeqs: [3, 4],
+      allowForeignFallback: false,
+      consecutiveFailures: 1,
+    };
+    assert.equal(publicResumableSummary(resJob, { failureThreshold: 1 }).canAutoResume, false);
+    assert.equal(publicResumableSummary(resJob, { failureThreshold: 3 }).canAutoResume, true);
+
+    // [P1-6] 128k reinject keeps 24,576 B + compact SessionMemory strips Section 6 and backs off after 2 oversized errors
+    const spec128k = resolveCompactSpec(DEFAULT_CONFIG, 131072, 8192);
+    const lim128k = resolveAdaptiveReinjectLimits({ policy: DEFAULT_CONFIG, spec: spec128k });
+    assert.equal(lim128k.maxBytes, 24576);
+
+    const largeSec6Summary = [
+      '## 1. Primary Request and Intent\n- keep API.\n',
+      '## 2. Key Technical Concepts\n- node.\n',
+      '## 3. Files and Code Sections\n- a.js.\n',
+      '## 4. Errors and Fixes\n- none.\n',
+      '## 5. Problem Solving\n- ok.\n',
+      '## 6. All User Messages\n\n### User message 1 (seq 1)\n```text\n' + 'u'.repeat(16000) + '\n```\n',
+      '## 7. Pending Tasks\n- none.\n',
+      '## 8. Work Completed\n- done.\n',
+      '## 9. Context for Continuing Work\n- continue.\n',
+    ].join('\n');
+    const stripped = stripMaterializedUserSection(largeSec6Summary, 'en');
+    assert.ok(Buffer.byteLength(stripped, 'utf8') < 1024);
+    const rematerialized = materializeUserMessageSection(stripped, [{ seq: 1, text: 'keep API' }], 'en');
+    assert.ok(rematerialized.includes('keep API'));
+
+    // [P1-8 / P2-4] client UI: no submitDefaults when config===null, .5 accepted, 1e0 rejected, engineInactiveBody banner
+    const uiClient = mountClient({
+      language: 'en',
+      handler: async (payload) => {
+        if (payload.method === 'get') return { config: null, engineActive: false };
+        if (payload.method === 'models') return { providers: [] };
+        if (payload.method === 'set') return { config: payload.params };
+        return {};
+      },
+    });
+    try {
+      let tree = await uiClient.settleSettings();
+      assert.match(textOf(findNode(tree, (n) => n.props?.['data-settings-engine-inactive'] === 'true')), /billion-context/);
+
+      uiClient.field(tree, 'weave-summary-retry-delay').props.onChange({ target: { value: '.5' } });
+      tree = uiClient.renderSettings();
+      uiClient.button(tree, 'Save').props.onClick();
+      await uiClient.settleSettings();
+      const savedParams = uiClient.requests.filter((r) => r.method === 'set').at(-1)?.params;
+      assert.ok(savedParams, 'P2-4 save must submit when retryDelay=.5');
+      assert.equal(savedParams.summaryRetryDelayMs, 500, 'P2-4 .5s must serialize to 500ms');
+      assert.equal(Object.hasOwn(savedParams, 'summaryTimeoutMs'), false, 'P1-8 untouched defaults must not be injected when config===null');
+      assert.equal(Object.hasOwn(savedParams, 'idleCompactionMinutes'), false);
+      assert.equal(Object.hasOwn(savedParams, 'auditBlockOnLoss'), false);
+
+      tree = uiClient.renderSettings();
+      uiClient.field(tree, 'weave-summary-retry-count').props.onChange({ target: { value: '1e0' } });
+      tree = uiClient.renderSettings();
+      const countBeforeSci = uiClient.requests.filter((r) => r.method === 'set').length;
+      uiClient.button(tree, 'Save').props.onClick();
+      await uiClient.settleSettings();
+      assert.equal(uiClient.requests.filter((r) => r.method === 'set').length, countBeforeSci, 'P2-4 1e0 must be rejected');
+    } finally {
+      uiClient.unmount();
+    }
+
+    // [P2-3] handleConcurrentSliceReady reconciles state when commitSignal aborts right after commit
+    let afterCommitCalled = false;
+    const mockSess = { id: 's-p23', surface: { nodes: [1, 2, 10] } };
+    const mockState = { committedCount: 0, currentBatchCps: [], remaining: [1, 2], currentWaveCount: 1 };
+    const abortCtrl = new AbortController();
+    await handleConcurrentSliceReady({
+      _getBudgetSpec: () => null,
+      _compactRegionCore: async () => {
+        mockSess.surface.nodes = [10];
+        abortCtrl.abort();
+        return { compactionId: 'c-p23', replacementSeq: 10 };
+      },
+      _measure: async () => null,
+      _trackUpdate() {},
+    }, {
+      prepared: {},
+      spec: { start: 1, end: 2 },
+      commitSignal: abortCtrl.signal,
+      session: mockSess,
+      agent: {},
+      manual: false,
+      trigger: 'auto',
+      maxTokens: 1000,
+      policy: {},
+      budgetSpec: null,
+      capacityContext: null,
+      deferCapacityFailureRecord: false,
+      allowForeignFallback: false,
+      checkpointMeta: null,
+      sourceCommandId: undefined,
+      results: [],
+      foldResults: [],
+      sliceSpecsLength: 1,
+      chunkBase: 0,
+      totalChunks: 1,
+      primaryModelLabel: 'p/m',
+      stopBelowTokens: null,
+      earlyStopController: new AbortController(),
+      effectiveFoldThreshold: 6,
+      maxWaves: 4,
+      focusInstruction: '',
+      additionalContext: '',
+      softenCoverageForFocus: false,
+      onAfterCommit: () => { afterCommitCalled = true; },
+      state: mockState,
+    });
+    assert.equal(mockState.committedCount, 1);
+    assert.deepEqual(mockState.currentBatchCps, [10]);
+    assert.deepEqual(mockState.remaining, []);
+    assert.equal(afterCommitCalled, false);
   } finally {
     if (priorHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = priorHome;
