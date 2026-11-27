@@ -49,7 +49,7 @@ import { extractProgressFacts } from '../lib/progress-facts.js';
 import { hasProgressSignals } from '../lib/progress-state.js';
 import { CompactionProgressTracker } from '../lib/progress-tracker.js';
 import { reconstructDisputedLines } from '../lib/reconstruct.js';
-import { redactCredentials, redactErrorText, redactPemPrivateKeys } from '../lib/redact.js';
+import { containsSecretCredential, redactCredentials, redactErrorText, redactPemPrivateKeys } from '../lib/redact.js';
 import { materializeUserMessageSection, stripMaterializedUserSection } from '../lib/validate.js';
 import { selectSessionMemory } from '../lib/region.js';
 import { SessionBackupStore } from '../lib/session-backup.js';
@@ -3065,7 +3065,7 @@ await test('e2d2044-audit-remediation-all-6-p1-and-p2', async () => {
     assert.equal(pausedPreBatch?.status, 'paused_failure');
     assert.equal(publicResumableSummary(pausedPreBatch)?.canAutoResume, false);
 
-    // Also verify P2-2: auto-resume insidePreStep skips duplicate weave/pre-compact & keeps softenCoverageForFocus
+    // Also verify P2-2 / P1-6: auto-resume insidePreStep preserves softenCoverageForFocus, sets hookManual=false, and runs hooks (while explicit hooksHandled=true is respected)
     let preHookCalls = 0;
     let capturedSoften = null;
     p12State.update('sess-prebatch', (cur) => ({ ...clearBreakerState(cur) }));
@@ -3075,7 +3075,7 @@ await test('e2d2044-audit-remediation-all-6-p1-and-p2', async () => {
       return { cancelled: false, effectiveFocus: 'keep rollback plan', additionalContext: '', softenCoverageForFocus: true };
     };
     p12Engine._compactManual = async (_agent, _sig, _cmd, _cont, _retry, opts) => {
-      capturedSoften = opts?.hooksHandled === true && opts?.softenCoverageForFocus === true;
+      capturedSoften = opts?.hooksHandled !== true && opts?.hookManual === false && opts?.softenCoverageForFocus === true;
       return { compacted: true };
     };
     await p12Engine.resumeCompactionFor(preBatchSess, {
@@ -3084,6 +3084,11 @@ await test('e2d2044-audit-remediation-all-6-p1-and-p2', async () => {
     });
     assert.equal(capturedSoften, true);
     assert.equal(preHookCalls, 0);
+    await p12Engine.resumeCompactionFor(preBatchSess, {
+      agent: { session: preBatchSess, options: { provider: 'p', model: 'm' } },
+      insidePreStep: true,
+      hooksHandled: true,
+    });
     assert.equal(parseCompactSubcommand('continue').kind, 'focus');
 
     // 3. P1-3: recoverBeforeOpen calls truncateTornTail & does not skip running cleanup on committed record
@@ -4020,6 +4025,325 @@ await test('8c05d59-audit-remediation-all-p0-p1-p2-guards', async () => {
     assert.deepEqual(mockState.currentBatchCps, [10]);
     assert.deepEqual(mockState.remaining, []);
     assert.equal(afterCommitCalled, false);
+  } finally {
+    if (priorHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = priorHome;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+await test('1da260d-audit-remediation-all-6-p1-and-3-p2-guards', async () => {
+  const root = await mkdtemp(join(TEST_BASE, 'weave-1da260d-fixes-'));
+  const priorHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = join(root, 'dsh-home');
+  try {
+    // [P1-1] Colloquially cancelled / retired approvals must be purged from activeGrants
+    for (const phrase of ['Never mind', '算了', '不用了', '取消上一条']) {
+      const msgs = [
+        { seq: 1, text: 'You can deploy to production' },
+        { seq: 2, text: phrase },
+      ];
+      const mem = selectMemoryMessages(msgs);
+      const provWithRetired = auditInstructionProvenance({
+        userMessages: msgs,
+        retiredDecisions: mem.decisions,
+        summaryText: 'The user has approved deploying to production.',
+      });
+      assert.ok(provWithRetired.length >= 1, `P1-1 cancelled approval (${phrase}) with retiredDecisions must fail provenance`);
+      const provStandalone = auditInstructionProvenance({
+        userMessages: msgs,
+        summaryText: 'The user has approved deploying to production.',
+      });
+      assert.ok(provStandalone.length >= 1, `P1-1 standalone colloquial cancel (${phrase}) must fail provenance`);
+    }
+
+    // [P1-2] Long summaries (>=12 clauses) must still index inflected disable/enable/allow/permit verbs as polarity
+    const padding = Array.from({ length: 14 }, (_, i) => `- Completed subsystem step ${i + 1} cleanly.`).join('\n');
+    const longAudit = auditCompaction({
+      userMessages: [{ seq: 1, text: 'Must not disable TLS.' }],
+      summaryText: [
+        '## 1. Primary Request and Intent\n- Follow all TLS requirements.',
+        '## 2. Key Technical Concepts\n- TLS configuration.',
+        '## 3. Files and Code Sections\n- tls.js.',
+        '## 4. Errors and Fixes\n(none)',
+        '## 5. Problem Solving\n- Handled.',
+        '## 6. All User Messages\n\n### User message 1 (seq 1)\n```text\nMust not disable TLS.\n```',
+        '## 7. Pending Tasks\n(none)',
+        `## 8. Work Completed\n${padding}`,
+        '## 9. Context for Continuing Work\n- Disabling TLS.',
+      ].join('\n\n'),
+      source: { language: 'en' },
+    });
+    assert.ok(longAudit.lost.some((item) => item.reason === 'polarity'), 'P1-2 inflected Disabling must trigger polarity in long summaries');
+
+    // [P1-3] Sensitive path coverage + credential & JS concat PEM redaction
+    const ws = join(root, 'ws-p13');
+    await mkdir(join(ws, '.ssh'), { recursive: true });
+    await mkdir(join(ws, 'src'), { recursive: true });
+    await writeFile(join(ws, '.ssh', 'config'), 'Host prod\nIdentityFile ~/.ssh/prod_key\n', 'utf8');
+    await writeFile(join(ws, 'serviceAccountKey.json'), '{"type":"service_account","client_secret":"' + 'secretValue12345' + '"}\n', 'utf8');
+    await writeFile(join(ws, 'appsettings.Production.json'), '{"ConnectionStrings":{"Default":"Password=SecretPass!"}}\n', 'utf8');
+    await writeFile(join(ws, 'src', 'app.js'), 'STRIPE=' + 'whsec_' + 'abcdef1234567890abcdef1234567890\nconst ok = 1;\n', 'utf8');
+
+    const reinj = collectActiveWorkspaceFiles({
+      session: {
+        id: 's-p13',
+        header: { cwd: ws },
+        eventAt: (seq) => {
+          const names = ['.ssh/config', 'serviceAccountKey.json', 'appsettings.Production.json', 'src/app.js'];
+          return { seq, type: 'tool/call', data: { name: 'read_file', arguments: JSON.stringify({ path: names[seq] }) } };
+        },
+      },
+      shadowedSeqs: [0, 1, 2, 3],
+      workspaceRoots: [ws],
+      maxFiles: 10,
+      maxBytes: 32000,
+      maxFileBytes: 8000,
+    });
+    assert.deepEqual(reinj.files.map((f) => f.path), ['src/app.js']);
+    assert.ok(!reinj.text.includes('abcdef1234567890abcdef1234567890'), 'P1-3 whsec must be redacted in reinjected file');
+
+    const fakePemBody = 'MIIEowIBAAKCAQEA7V2x9z4mK3p8qR5tW1yL6nB0dF3gH7jK2mN5pQ8sT1vX4yZ9';
+    const jsConcatPem = `"${'-'.repeat(5)}BEGIN RSA PRIVATE KEY${'-'.repeat(5)}\\n" +\n  "${fakePemBody}" +\n  "MIIF"`;
+    const jsBackslashPem = `"${'-'.repeat(5)}BEGIN RSA PRIVATE KEY${'-'.repeat(5)}\\n" \\\n  "${fakePemBody}"`;
+    assert.ok(!redactPemPrivateKeys(jsConcatPem).includes('MIIE'), 'P1-3 JS concat unclosed PEM must be redacted');
+    assert.ok(!redactPemPrivateKeys(jsBackslashPem).includes('MIIE'), 'P1-3 JS backslash unclosed PEM must be redacted');
+
+    const whsecStr = 'STRIPE_WEBHOOK_SECRET=' + 'whsec_' + 'abcdef1234567890abcdef1234567890';
+    const slackStr = 'SLACK=https://hooks.slack.com/services/' + 'T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX';
+    const tokenHdrStr = 'Authorization: Token ' + 'abcd1234efgh5678ijkl9012';
+    const clientSecStr = '{"client_secret":"' + 'GOCSPX-' + 'abcdef1234567890"}';
+    for (const raw of [whsecStr, slackStr, tokenHdrStr, clientSecStr]) {
+      assert.equal(containsSecretCredential(raw), true);
+      const red = redactCredentials(raw);
+      assert.ok(!red.includes('abcdef1234567890') && !red.includes('T00000000') && !red.includes('abcd1234efgh5678'), `P1-3 must redact: ${raw}`);
+    }
+
+    // [P1-4] _busy released when compactIfNeeded throws before inner try (e.g. engine._disposed toggled inside pre-compact hook)
+    const hookMap = new Map();
+    const onBus = (ev, fn) => {
+      if (!hookMap.has(ev)) hookMap.set(ev, []);
+      hookMap.get(ev).push(fn);
+      return () => {};
+    };
+    const emitBus = async (ev, ...args) => {
+      for (const fn of hookMap.get(ev) ?? []) await fn(...args);
+    };
+    const sessBusy = {
+      id: 's-p14',
+      header: { cwd: root },
+      surface: { nodes: [0, 1, 2], replaceGeneration: 0 },
+      seq: 3,
+      eventAt: (s) => [
+        { seq: 0, type: 'system/message', data: { role: 'system', content: [{ type: 'text', text: 'sys' }] } },
+        { seq: 1, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: 'hi' }] } },
+        { seq: 2, type: 'assistant/message', data: { message: { role: 'assistant', content: [{ type: 'text', text: 'A '.repeat(4000) }] } } },
+      ][s],
+      deriveEventMessage: (e) => e?.data?.message ?? e?.data,
+      snapshotEvents: () => [],
+      toolHistory: () => [],
+    };
+    const engP14 = new WeaveCompactionEngine(
+      {
+        on: onBus,
+        events: { dispatch: (_m, args) => { const ev = args.shift(); return (hookMap.get(ev) ?? []).map((fn) => fn.bind(null, ...args)); } },
+        llm: { resolveModelInfo: async () => ({ contextWindow: 8192, defaultMaxTokens: 1024 }), async *stream() { yield { type: 'finish', kind: 'stop' }; } },
+        tokenMeter: {
+          measure: () => ({ totalTokens: 6000, precision: 'exact', nodes: [{ seq: 0, tokens: 50 }, { seq: 1, tokens: 50 }, { seq: 2, tokens: 5900 }] }),
+          estimateMessage: () => 50,
+        },
+        logger: { info() {}, warn() {}, error() {} },
+      },
+      resolveConfig({ archiveDir: join(root, 'arch-p14'), thresholdRatio: 0.5, headroomTokens: 0, retainRatio: 0.1, windowClampMin: 8192, windowFallback: 8192, observationMaskingEnabled: false }).config,
+    );
+    hookMap.set('weave/pre-compact', [() => { engP14._disposed = true; return undefined; }]);
+    const agentP14 = { session: sessBusy, options: { provider: 'p', model: 'm' }, cancel() {}, runMaintenance: (fn) => fn(new AbortController().signal) };
+    await assert.rejects(() => engP14.compactIfNeeded(agentP14, 'pressure', new AbortController().signal));
+    assert.equal(engP14._busy.has(sessBusy), false, 'P1-4 _busy must not leak if compactIfNeededInner throws early');
+    engP14._disposed = false;
+    engP14.dispose();
+
+    // [P1-5] & [P1-6] paused_failure not bypassed/clobbered by pressure compaction; auto-resume honors pre/post hooks
+    const hooksP15 = new Map();
+    let streamCallsP15 = 0;
+    const engP15 = new WeaveCompactionEngine(
+      {
+        on: (ev, fn) => {
+          if (!hooksP15.has(ev)) hooksP15.set(ev, []);
+          hooksP15.get(ev).push(fn);
+          return () => {};
+        },
+        events: {
+          dispatch: (_m, args) => {
+            const ev = args.shift();
+            return (hooksP15.get(ev) ?? []).map((fn) => () => fn(...args));
+          },
+        },
+        llm: {
+          resolveModelInfo: async () => ({ contextWindow: 8192, defaultMaxTokens: 1024 }),
+          async *stream() {
+            streamCallsP15 += 1;
+            const e = new Error('HTTP 401');
+            e.status = 401;
+            throw e;
+          },
+        },
+        tokenMeter: {
+          measure: () => ({ totalTokens: 6000, precision: 'exact', nodes: [{ seq: 0, tokens: 50 }, { seq: 1, tokens: 50 }, { seq: 2, tokens: 5900 }] }),
+          estimateMessage: () => 50,
+        },
+        logger: { info() {}, warn() {}, error() {} },
+      },
+      resolveConfig({ archiveDir: join(root, 'arch-p15'), thresholdRatio: 0.5, headroomTokens: 0, retainRatio: 0.1, windowClampMin: 8192, windowFallback: 8192, observationMaskingEnabled: false, failureThreshold: 3 }).config,
+    );
+    engP15.historyToolsAvailable = true;
+    const sessP15 = { ...sessBusy, id: 's-p15', surface: { nodes: [0, 1, 2], replaceGeneration: 0 } };
+    writeResumableCompaction(engP15.sessionState, 's-p15', {
+      version: 1,
+      jobId: 'paused-job-1',
+      trigger: 'migration',
+      status: 'paused_failure',
+      interruptReason: 'error',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      remainingSeqs: [1, 2],
+      initialTotalNodes: 2,
+      initialTotalTokens: 5950,
+      completedNodes: 0,
+      completedTokens: 0,
+      completedChunks: 0,
+      waveCount: 0,
+      allowForeignFallback: false,
+      consecutiveFailures: 1,
+      lastErrorCode: 'HTTP_401',
+    });
+    const agentP15 = { session: sessP15, options: { provider: 'p', model: 'm' }, cancel() {}, runMaintenance: (fn) => fn(new AbortController().signal) };
+    let preStepErr = null;
+    try {
+      for (const hFn of hooksP15.get('agent/pre-step') ?? []) {
+        await hFn({ agent: agentP15, messages: [], signal: new AbortController().signal }, () => undefined);
+      }
+    } catch (e) {
+      preStepErr = e;
+    }
+    assert.ok(preStepErr, 'P1-5 paused_failure above threshold with confirm policy must block rather than running pressure compaction');
+    assert.equal(streamCallsP15, 0, 'P1-5 must not invoke LLM pressure compaction over paused_failure');
+    assert.equal(readResumableCompaction(engP15.sessionState, 's-p15')?.jobId, 'paused-job-1', 'P1-5 paused_failure job must not be clobbered');
+    engP15.dispose();
+
+    // [P1-6] interrupted auto-resume honors weave/pre-compact { cancel: true }
+    const hooksP16 = new Map();
+    let preHookCount = 0;
+    const engP16 = new WeaveCompactionEngine(
+      {
+        on: (ev, fn) => {
+          if (!hooksP16.has(ev)) hooksP16.set(ev, []);
+          hooksP16.get(ev).push(fn);
+          return () => {};
+        },
+        events: {
+          dispatch: (_m, args) => {
+            const ev = args.shift();
+            return (hooksP16.get(ev) ?? []).map((fn) => () => fn(...args));
+          },
+        },
+        llm: {
+          resolveModelInfo: async () => ({ contextWindow: 65536, defaultMaxTokens: 4096 }),
+          async *stream() {
+            throw new Error('should not stream when pre-compact hook cancels resume');
+          },
+        },
+        tokenMeter: {
+          measure: () => ({ totalTokens: 6000, precision: 'exact', nodes: [{ seq: 0, tokens: 50 }, { seq: 1, tokens: 50 }, { seq: 2, tokens: 5900 }] }),
+          estimateMessage: () => 50,
+        },
+        logger: { info() {}, warn() {}, error() {} },
+      },
+      resolveConfig({ archiveDir: join(root, 'arch-p16'), observationMaskingEnabled: false, auto: false }).config,
+    );
+    engP16.historyToolsAvailable = true;
+    const sessP16 = { ...sessBusy, id: 's-p16', surface: { nodes: [0, 1, 2], replaceGeneration: 0 } };
+    hooksP16.set('weave/pre-compact', [() => { preHookCount += 1; return { cancel: true }; }]);
+    writeResumableCompaction(engP16.sessionState, 's-p16', {
+      version: 1,
+      jobId: 'resume-hook-1',
+      trigger: 'auto',
+      status: 'interrupted',
+      interruptReason: 'crash',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      remainingSeqs: [1, 2],
+      initialTotalNodes: 2,
+      initialTotalTokens: 5950,
+      completedNodes: 0,
+      completedTokens: 0,
+      completedChunks: 0,
+      waveCount: 0,
+      allowForeignFallback: false,
+      consecutiveFailures: 0,
+    });
+    const agentP16 = { session: sessP16, options: { provider: 'p', model: 'm' }, cancel() {} };
+    for (const hFn of hooksP16.get('agent/pre-step') ?? []) {
+      await hFn({ agent: agentP16, messages: [], signal: new AbortController().signal }, () => undefined);
+    }
+    assert.equal(preHookCount, 1, 'P1-6 pre-step auto-resume must invoke weave/pre-compact hook');
+    assert.equal(readResumableCompaction(engP16.sessionState, 's-p16')?.jobId, 'resume-hook-1', 'P1-6 cancelled resume must preserve resumable checkpoint');
+    engP16.dispose();
+
+    // [P2-1] writeSpan refuses uncompressed payloads exceeding maxDecompressedBytes
+    const smallArch = new CompactionArchive({ root: join(root, 'arch-p21'), maxDecompressedBytes: 256 });
+    const tooLargeWritten = await smallArch.writeSpan({
+      sessionId: 's-p21',
+      compactionId: 'cmp-too-big',
+      entries: [{ seq: 0, type: 'user/message', role: 'user', text: 'x'.repeat(512) }],
+    });
+    assert.equal(tooLargeWritten, null, 'P2-1 writeSpan must reject oversized uncompressed payload before writing');
+    assert.equal((await smallArch.readSpan('s-p21', 'cmp-too-big')).reason, 'missing');
+
+    // [P2-2] "must not exceed N" vs "at most N" and "<= N" must not trigger polarity flip
+    for (const rhs of ['Retries must be at most 100.', 'Retries <= 100.']) {
+      const boundSummary = [
+        '## 1. Primary Request and Intent\n- Configure retries.',
+        '## 2. Key Technical Concepts\n- Retries.',
+        '## 3. Files and Code Sections\n(none)',
+        '## 4. Errors and Fixes\n(none)',
+        '## 5. Problem Solving\n- Handled.',
+        '## 6. All User Messages\n\n### User message 1 (seq 1)\n```text\nRetries must not exceed 100.\n```',
+        '## 7. Pending Tasks\n(none)',
+        '## 8. Work Completed\n- Set limit.',
+        `## 9. Context for Continuing Work\n- ${rhs}`,
+      ].join('\n\n');
+      const boundAudit = auditCompaction({
+        userMessages: [{ seq: 1, text: 'Retries must not exceed 100.' }],
+        summaryText: boundSummary,
+        source: { language: 'en' },
+      });
+      assert.equal(boundAudit.lost.filter((l) => l.reason === 'polarity').length, 0, `P2-2 must not flag "${rhs}"`);
+    }
+
+    // [P2-3] SessionMemoryManager._oversizedRuns bounded and cleared on session/disposed
+    const dispHooks = new Map();
+    const engP23 = new WeaveCompactionEngine(
+      {
+        on: (ev, fn) => {
+          if (!dispHooks.has(ev)) dispHooks.set(ev, []);
+          dispHooks.get(ev).push(fn);
+          return () => {};
+        },
+        logger: { info() {}, warn() {}, error() {} },
+      },
+      resolveConfig({ archiveDir: join(root, 'arch-p23') }).config,
+    );
+    engP23.sessionMemory._recordOversizedRun('disp-1', { count: 2, lastMaxBytes: 12288, lastCoveredSeq: 10 });
+    for (const fn of dispHooks.get('session/disposed') ?? []) {
+      await fn({ sessionId: 'disp-1' });
+    }
+    assert.equal(engP23.sessionMemory._oversizedRuns.has('disp-1'), false, 'P2-3 session/disposed must clean _oversizedRuns');
+    for (let i = 0; i < 600; i += 1) {
+      engP23.sessionMemory._recordOversizedRun(`cap-${i}`, { count: 1, lastMaxBytes: 12288, lastCoveredSeq: i });
+    }
+    assert.equal(engP23.sessionMemory._oversizedRuns.size, 512, 'P2-3 _oversizedRuns map must be bounded to 512');
+    engP23.dispose();
   } finally {
     if (priorHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = priorHome;

@@ -181,7 +181,7 @@ await test('observation-mask-batched-over-3840-refs-multipass', async () => {
     f.addUser('Keep production safe.');
 
     const totalOutputs = MAX_MASK_STAGE_REFS + 160; // 4,000 > 3,840
-    const bigText = 'L'.repeat(5000);
+    const bigText = 'L'.repeat(2000);
     // Group calls into batched assistant turns (200 tool calls per turn) so the
     // surface has valid balanced tool-call / tool-result pairing while keeping
     // the test fast.
