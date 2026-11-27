@@ -9,9 +9,9 @@ Under Windows / Node.js `v24.19.0`, `0.6.0` completes the 6-layer acyclic `lib/a
 | Verification gate | Scope & conditions | Result | Reference |
 | --- | --- | --- | --- |
 | **Static & DAG topology (`npm run check`)** | `289` release files, package `0.6.0`, syntax, links, install examples, secrets, and module DAG | **91 non-client ESM modules, 0 cycles passed** | [../../scripts/check.mjs](../../scripts/check.mjs) |
-| **Offline unit suites (`npm test`)** | Separate child processes + isolated temp `DSH_HOME` | **104 suites, 1,582 checks passed, 0 failures** | [../../test/v060-audit-hardening.mjs](../../test/v060-audit-hardening.mjs) |
-| **DSH `0.2.2-rc.1` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **112 suites, 1,714 checks passed, 0 failures** | — |
-| **DSH `0.2.2-rc.3` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **112 suites, 1,714 checks passed, 0 failures** | — |
+| **Offline unit suites (`npm test`)** | Separate child processes + isolated temp `DSH_HOME` | **104 suites, 1,585 checks passed, 0 failures** | [../../test/v060-audit-hardening.mjs](../../test/v060-audit-hardening.mjs) |
+| **DSH `0.2.2-rc.1` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **112 suites, 1,717 checks passed, 0 failures** | — |
+| **DSH `0.2.2-rc.3` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **112 suites, 1,717 checks passed, 0 failures** | — |
 | **Clean release packaging (`npm run pack:release`)** | Generates `dist/dsh-compaction-weave-0.6.0.tgz`, `dsh-compaction-weave.tgz`, source tarball, and `SHA256SUMS.txt` | Payload matches `package.json.files` whitelist cleanly | [../../scripts/release.mjs](../../scripts/release.mjs) |
 
 ---

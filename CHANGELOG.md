@@ -45,7 +45,10 @@
 - **终审纯工程红线闭环加固（`1f52fba` 后 5 项工程/安全 P1 + 6Astra 二审收口）**：
   - [engine/fallback-guards.js](lib/engine/fallback-guards.js)、[engine/span-commit.js](lib/engine/span-commit.js) 与 [progress-tracker.js](lib/progress-tracker.js) 补齐 `prepareAutoCompaction` / `runContextCollapse` / `emergencySnip` / `compactRegionInner` 跨 `await` 并发锁重检与 `withRun` 并发抑制隔离作用域；[engine/resumable.js](lib/engine/resumable.js) 排除 `retainedOriginalSeqs` 避免不可缩减尾部无限续传；
   - [disk-liveness.js](lib/disk-liveness.js) 与 [file-reinject.js](lib/file-reinject.js) 修复多工作区根路径回退泄漏宿主机绝对路径；[history.js](lib/history.js) 将 `sanitizeArchiveEntry` 升级为结构化模式状态机（默认全量脱敏非信封负载并保留 `tool/call` 与 `tool/result` 配对标识）；[attachments.js](lib/attachments.js)、[history.js](lib/history.js) 与 [tools.js](lib/tools.js) 收敛 `fs` 异常并清理含空格/反引号/非 ASCII/超长截断边界路径避免泄漏 `<DSH_HOME>`。
-- **发布验证与对比基准**：全量通过 `npm run check`（`289` 发布源文件、`91` 模块 `0` 环 DAG）、`npm test`（`104` 套 / `1,582` 项用例，`0` 失败）与 DSH `0.2.2-rc.1` / `0.2.2-rc.3` 双宿主集成测试（各 `112` 套 / `1,714` 项用例，`0` 失败），并在最新实盘网关完成 `Weave 0.6.0` vs `dsh-basic` vs `billion-context@0.0.1328-master.ced22b1` 三方对照评测（详见 [docs/benchmarks/v0.6.0-live-three-way.json](docs/benchmarks/v0.6.0-live-three-way.json)）。
+- **性能与表面隔离闭环加固（`3ea14b2` 后 Round-1 工程红线与 6Astra 复审收口）**：
+  - [proactive.js](lib/proactive.js) 将 `weave-compaction-status` 失败回执（含 `_restoreState` 失败路径）收紧为显式 `ALLOWED_SURFACE_ERROR_CODES` 白名单与静态分类模板，完全消除向模型表面泄漏宿主机路径、`diagnosticText`、Cookie/Token 与 provenance/hook 摘录的风险（完整信息仅保留于本地诊断文件与 `warn` 日志）；
+  - [continuation.js](lib/continuation.js) 在 `selectContinuationWave` 提取 `createSessionMemorySelector`/`createProgressSelector` 与共用 `renderSourceItem`、预计算 `prefixMinBytes` 无损 $O(1)$ 下界剪枝与无分配分页计数 `countRenderedPages`，保持严格倒序求值以兼容非单调 `workReport` 信封；[memory-policy.js](lib/memory-policy.js) 移除 `byShape` 有损驱逐、允许无约束更新命中受约束旧规则并对受安全门禁保护的纯整数同形模板采用等价签名分组；[instruction-source.js](lib/instruction-source.js) 将 `codeSpanRanges` 重写为单遍线性扫描。
+- **发布验证与对比基准**：全量通过 `npm run check`（`289` 发布源文件、`91` 模块 `0` 环 DAG）、`npm test`（`104` 套 / `1,585` 项用例，`0` 失败）与 DSH `0.2.2-rc.1` / `0.2.2-rc.3` 双宿主集成测试（各 `112` 套 / `1,717` 项用例，`0` 失败），并在最新实盘网关完成 `Weave 0.6.0` vs `dsh-basic` vs `billion-context@0.0.1328-master.ced22b1` 三方对照评测（详见 [docs/benchmarks/v0.6.0-live-three-way.json](docs/benchmarks/v0.6.0-live-three-way.json)）。
 
 ## [0.5.3-hotfix.1] - 2026-11-25
 

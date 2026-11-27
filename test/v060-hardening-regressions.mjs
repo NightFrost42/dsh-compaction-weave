@@ -11,7 +11,8 @@ import { extractCliFlags } from '../lib/audit/polarity.js';
 import { ruleNegative } from '../lib/audit/normalize.js';
 import { scalarSubjectVerdict } from '../lib/audit/numeric.js';
 import { sourceEvidenceSentences } from '../lib/audit.js';
-import { instructionText } from '../lib/instruction-source.js';
+import { instructionRanges, instructionText } from '../lib/instruction-source.js';
+import { selectMemoryMessages } from '../lib/memory-policy.js';
 import { residentConstraints } from '../lib/continuation.js';
 import { validateProgressFacts } from '../lib/progress-facts.js';
 import { runConcurrentPool } from '../lib/concurrency.js';
@@ -2564,6 +2565,373 @@ await test('redline-seal-P1-5-history-tools-fs-errors-no-dsh-home-leak', async (
   }
   const longReadErr = await wrappedTools.get('history_read').execute({ compactionId: 'c1' }, { session: { id: 'sess-wrap' } });
   assert.equal(longReadErr.includes('secret-host-path'), false, longReadErr);
+});
+
+await test('goal-round1-P1-1-proactive-failure-receipt-no-host-path', async () => {
+  const fakeUnixPath = ['', 'home', 'alice', 'private', 'config.json'].join('/');
+  const fakeShadowPath = ['', 'etc', 'shadow'].join('/');
+  const failures = [
+    Object.assign(new Error('audit constraint lost'), { code: 'CONSTRAINT_LOST' }),
+    Object.assign(
+      new Error(`reason=provenance, kind=approval, line="用户已批准删除${fakeUnixPath}。Cookie: session=synthetic-cookie-123 token=synthetic_tok_987"`),
+      {
+        code: 'PROVENANCE_LOST',
+        constraintReason: 'provenance',
+        provenanceKind: 'approval',
+        provenanceLine: `用户已批准删除${fakeUnixPath}。Cookie: session=synthetic-cookie-123 token=synthetic_tok_987`,
+      },
+    ),
+    Object.assign(new Error('cancelled by hook'), {
+      code: `${fakeUnixPath}`,
+      hookCancelled: true,
+      hookReason: `blocked ${fakeShadowPath} token=synthetic_secret999`,
+    }),
+    Object.assign(new Error('custom upstream secret error'), {
+      code: 'TOKEN_SYNTHETIC_SECRET_123',
+    }),
+  ];
+
+  for (const err of failures) {
+    const f = fixture({ auto: false, proactiveEnabled: true });
+    f.session.append('turn/start', { turn: 1 });
+    f.add('system', 'Sys.');
+    f.add('user', 'Keep strict limit <= 30s.');
+    f.add('assistant', 'Details '.repeat(400));
+    f.engine._measure = async () => ({
+      totalTokens: 50000,
+      nodes: f.surface.nodes.map((seq) => ({ seq, tokens: Math.floor(50000 / Math.max(1, f.surface.nodes.length)) })),
+    });
+    f.engine._compactManual = async () => {
+      throw err;
+    };
+    const req = await f.engine.proactive.request(f.agent, 'Completed investigation phase');
+    assert.equal(req.status, 'queued');
+    const outcome = await f.engine.diagnostics.run(
+      f.session,
+      { trigger: 'proactive' },
+      () => f.engine.proactive.consume(f.agent, signal(), []),
+    );
+    assert.equal(outcome.status, 'failed');
+    assert.ok(typeof outcome.diagnosticId === 'string' && outcome.diagnosticId.length > 0);
+    if (err.code === 'TOKEN_SYNTHETIC_SECRET_123' || err.code === fakeUnixPath) {
+      assert.equal(outcome.code, 'COMPACTION_FAILED');
+    } else {
+      assert.equal(outcome.code, err.code);
+    }
+
+    const appended = f.events.at(-1);
+    assert.equal(appended.type, 'user/message');
+    assert.equal(appended.data.source?.kind, 'weave-compaction-status');
+    const receiptText = appended.data.content?.[0]?.text ?? '';
+    assert.equal(receiptText.includes(f.root), false, `receipt leaked root: ${receiptText}`);
+    assert.equal(receiptText.includes('.json'), false, `receipt leaked .json path: ${receiptText}`);
+    assert.equal(receiptText.includes('诊断日志：'), false, `receipt leaked 诊断日志：: ${receiptText}`);
+    assert.equal(receiptText.includes(fakeUnixPath), false, `receipt leaked posix path: ${receiptText}`);
+    assert.equal(receiptText.includes(fakeShadowPath), false, `receipt leaked shadow path: ${receiptText}`);
+    assert.equal(receiptText.includes('synthetic-cookie-123'), false, `receipt leaked cookie: ${receiptText}`);
+    assert.equal(receiptText.includes('synthetic_tok_987'), false, `receipt leaked token: ${receiptText}`);
+    assert.equal(receiptText.includes('synthetic_secret999'), false, `receipt leaked hook token: ${receiptText}`);
+    assert.equal(receiptText.includes('TOKEN_SYNTHETIC_SECRET_123'), false, `receipt leaked arbitrary code: ${receiptText}`);
+    assert.equal(receiptText.includes(outcome.diagnosticId), true);
+    assert.equal(f.logs.some((line) => line.includes('诊断编号：')), true);
+  }
+
+  // _restoreState failure during consume() also normalizes unknown uppercase codes
+  const fRestore = fixture({ auto: false, proactiveEnabled: true });
+  fRestore.session.append('turn/start', { turn: 1 });
+  fRestore.add('system', 'Sys.');
+  fRestore.add('user', 'Keep strict limit <= 30s.');
+  fRestore.add('assistant', 'Details '.repeat(400));
+  const reqRestore = await fRestore.engine.proactive.request(fRestore.agent, 'Completed phase');
+  assert.equal(reqRestore.status, 'queued');
+  fRestore.engine._restoreState = () => {
+    throw Object.assign(new Error('restore secret failure'), { code: 'TOKEN_SYNTHETIC_SECRET_123' });
+  };
+  const restoreOutcome = await fRestore.engine.proactive.consume(fRestore.agent, signal(), []);
+  assert.equal(restoreOutcome.status, 'blocked');
+  assert.equal(restoreOutcome.code, 'STATE_UNAVAILABLE');
+  const restoreReceiptText = fRestore.events.at(-1).data.content?.[0]?.text ?? '';
+  assert.equal(restoreReceiptText.includes('TOKEN_SYNTHETIC_SECRET_123'), false);
+});
+
+await test('goal-round1-P1-2-continuation-wave-binary-search-and-byShape-linear', async () => {
+  const f = fixture({ auto: false });
+  f.ctx.llm.resolveModelInfo = async () => ({ contextWindow: 48000, maxTokens: 4096 });
+  f.session.append('turn/start', { turn: 1 });
+  f.add('system', 'Sys.');
+  const padBlock = 'segment '.repeat(500);
+  for (let i = 0; i < 1029; i += 1) {
+    f.add('user', `Unique user step ${i}: confirm token alpha-${i} stays isolated. ${padBlock}`);
+    f.add('assistant', `Unique assistant reply ${i}: verified branch ${i * 7}. ${padBlock}`);
+  }
+  const capacity = await resolveSummaryCapacity(
+    f.ctx,
+    { targets: [{ provider: 'p', model: 'm' }] },
+    f.engine.config,
+    signal(),
+  );
+  const tWave0 = performance.now();
+  const wave = selectContinuationWave(f.session, {
+    endSeq: f.surface.nodes.at(-1),
+    policy: f.engine.config,
+    maxPages: DEFAULT_CONFIG.maxSummaryChunks,
+    capacity,
+  });
+  const waveMs = performance.now() - tWave0;
+  assert.equal(wave.limited, true);
+  assert.ok(wave.remainingCount > 0);
+  assert.ok(wave.pages <= DEFAULT_CONFIG.maxSummaryChunks);
+  assert.ok(waveMs < 2000, `selectContinuationWave took ${waveMs.toFixed(1)}ms`);
+
+  // Maximality check: next balanced node after wave.end cannot fit within maxPages
+  const waveEndIdx = f.surface.nodes.indexOf(wave.end);
+  assert.ok(waveEndIdx >= 1 && waveEndIdx + 1 < f.surface.nodes.length);
+  const nextWave = selectContinuationWave(f.session, {
+    endSeq: f.surface.nodes[waveEndIdx + 1],
+    policy: f.engine.config,
+    maxPages: DEFAULT_CONFIG.maxSummaryChunks,
+    capacity,
+  });
+  assert.equal(nextWave.end, wave.end);
+  assert.equal(nextWave.limited, true);
+
+  // Non-monotonic exact-fit predicate (6Astra counterexample): ends 0-2 fail capacity
+  // due to large earlier workReport, end 3 shrinks workReport & fits maxPages:3, end 4 exceeds maxPages
+  const fMono = fixture({ auto: false, continuationMemoryBytes: 2048 });
+  fMono.session.append('turn/start', { turn: 1 });
+  fMono.add('system', 'Sys.');
+  const longWorkReport = `Verified step zero. ${'details '.repeat(360)}`; // ~2.9KB <= MAX_REPORT_BYTES
+  fMono.add('assistant', longWorkReport);
+  fMono.add('assistant', 'note '.repeat(300));
+  const seqA2 = fMono.add('assistant', 'note '.repeat(300)).seq;
+  const seqA3 = fMono.add('assistant', 'Done.').seq;
+  fMono.add('assistant', 'Payload '.repeat(600));
+  fMono.add('assistant', 'Trailing item.');
+  const monoCapacity = {
+    targets: [{
+      provider: 'p',
+      model: 'm',
+      key: '["p","m"]',
+      window: 200000,
+      output: 8192,
+      margin: 12000,
+      inputRatio: 0.85,
+      maxInputBytes: 14500,
+      scale: 1,
+      source: 'test',
+    }],
+    shrinkLimit: Infinity,
+    shrinkTokenLimit: Infinity,
+    observedOverflows: 0,
+    cjkTokensPerChar: 0.75,
+  };
+  assert.throws(
+    () => selectContinuationWave(fMono.session, {
+      endSeq: seqA2,
+      policy: fMono.engine.config,
+      maxPages: 3,
+      capacity: monoCapacity,
+    }),
+    (err) => err?.code === 'CONTINUATION_CAPACITY',
+  );
+  const monoWave = selectContinuationWave(fMono.session, {
+    endSeq: fMono.surface.nodes.at(-1),
+    policy: fMono.engine.config,
+    maxPages: 3,
+    capacity: monoCapacity,
+  });
+  assert.equal(monoWave.end, seqA3, `expected non-monotonic max fit at seq ${seqA3}, got ${monoWave.end}`);
+  assert.equal(monoWave.limited, true);
+  assert.ok(monoWave.pages <= 3);
+
+  // Unconstrained revision supersedes constrained rule ("不要删除缓存。" -> "改为删除缓存。")
+  const cacheRev = selectMemoryMessages([
+    { seq: 1, role: 'user', text: '不要删除缓存。' },
+    { seq: 2, role: 'user', text: '改为删除缓存。' },
+  ]);
+  assert.equal(cacheRev.active.length, 1);
+  assert.equal(cacheRev.active[0].seq, 2);
+  assert.equal(cacheRev.decisions.some((d) => d.reason === 'superseded' && d.seq === 1), true);
+
+  // 16/17-entry bucket boundary without FIFO eviction loss: seq 1 and all 16 intermediate plugin entries retire
+  const bucketMsgs = [
+    { seq: 1, role: 'user', text: 'Must retain at least 100 backup snapshots.' },
+  ];
+  for (let i = 0; i < 16; i += 1) {
+    bucketMsgs.push({
+      seq: i + 2,
+      role: 'user',
+      sourceKind: 'plugin:x',
+      text: `Must retain at least ${101 + i} backup snapshots.`,
+    });
+  }
+  bucketMsgs.push({ seq: 18, role: 'user', text: 'Must retain at least 5 backup snapshots.' });
+  const bucketRes = selectMemoryMessages(bucketMsgs);
+  assert.equal(bucketRes.active.length, 1);
+  assert.equal(bucketRes.active[0].seq, 18);
+  assert.equal(bucketRes.decisions.some((d) => d.reason === 'superseded' && d.seq === 1), true);
+
+  // Non-superseding same-shape bare-digit items (320 items) stay O(N) AND retain accurate supersession
+  const bareDigitMsgs = [];
+  for (let i = 0; i < 320; i += 1) {
+    bareDigitMsgs.push({
+      seq: i + 1,
+      role: 'user',
+      text: `Must check item ${i + 10} before release.`,
+    });
+  }
+  const tShape0 = performance.now();
+  const resShape = selectMemoryMessages(bareDigitMsgs);
+  const shapeMs = performance.now() - tShape0;
+  assert.equal(resShape.active.length, 320);
+  assert.ok(shapeMs < 300, `same-shape bare-digit selectMemoryMessages took ${shapeMs.toFixed(1)}ms`);
+
+  const resRevisedDigit = selectMemoryMessages([
+    ...bareDigitMsgs,
+    { seq: 321, role: 'user', text: 'Never check item 50 before release.' },
+  ]);
+  assert.equal(resRevisedDigit.active.length, 320);
+  assert.equal(resRevisedDigit.decisions.some((d) => d.reason === 'superseded' && d.seq === 41), true);
+
+  const shortRev = selectMemoryMessages([
+    { seq: 1, role: 'user', text: 'Must keep retry delay at least 10 seconds.' },
+    { seq: 2, role: 'user', text: 'Must keep retry delay at least 25 seconds.' },
+  ]);
+  assert.equal(shortRev.decisions.some((d) => d.reason === 'superseded' && d.seq === 1), true);
+  assert.equal(shortRev.active.length, 1);
+
+  // Mixed calendar-year/duration and leading-zero quantity equivalents must evaluate individually
+  const calDur = selectMemoryMessages([
+    { seq: 1, role: 'user', text: '必须在2026年之前完成。' },
+    { seq: 2, role: 'user', text: '必须在20年之前完成。' },
+    { seq: 3, role: 'user', text: '必须在30年之前完成。' },
+  ]);
+  assert.deepEqual(calDur.active.map((m) => m.seq), [1, 3]);
+  assert.equal(calDur.decisions.some((d) => d.reason === 'superseded' && d.seq === 2 && d.by === 3), true);
+
+  const leadingZero = selectMemoryMessages([
+    { seq: 1, role: 'user', text: 'Must retain 05 backup snapshots.' },
+    { seq: 2, role: 'user', text: 'Must retain 5 backup snapshots.' },
+  ]);
+  assert.deepEqual(leadingZero.active.map((m) => m.seq), [1, 2]);
+
+  // Pagination & wave equivalence across UTF-8 multibyte, empty content, repeated references/reminders,
+  // multipart part=9->10 splitting, and hasLargePrefix (>256-byte prefix)
+  const fEq = fixture({ auto: false, continuationMemoryBytes: 2048 });
+  fEq.session.append('turn/start', { turn: 1 });
+  fEq.add('system', 'Sys.');
+  fEq.add('user', '');
+  const repeatedRef = 'Shared runtime note across steps.';
+  fEq.session.append('user/message', {
+    id: randomUUID(),
+    role: 'user',
+    source: { kind: 'session-reference' },
+    content: [{ type: 'text', text: repeatedRef }],
+  }, { surfaceOp: 'append' });
+  fEq.session.append('user/message', {
+    id: randomUUID(),
+    role: 'user',
+    source: { kind: 'session-reference' },
+    content: [{ type: 'text', text: repeatedRef }],
+  }, { surfaceOp: 'append' });
+  const reminder = '<system-reminder>Keep local check fast.</system-reminder>';
+  fEq.add('user', `${reminder}\n执行中文边界校验：${'测试字节边界'.repeat(1600)}`);
+  fEq.add('user', `${reminder}\nFollow up.`);
+  const largeKind = `custom_${'x'.repeat(260)}`;
+  fEq.session.append('user/message', {
+    id: randomUUID(),
+    role: 'user',
+    source: { kind: largeKind },
+    content: [{ type: 'text', text: 'Large prefix item '.repeat(20) }],
+  }, { surfaceOp: 'append' });
+  const eqCap = {
+    targets: [{
+      provider: 'p',
+      model: 'm',
+      key: '["p","m"]',
+      window: 200000,
+      output: 8192,
+      margin: 12000,
+      inputRatio: 0.85,
+      maxInputBytes: 15000,
+      scale: 1,
+      source: 'test',
+    }],
+    shrinkLimit: Infinity,
+    shrinkTokenLimit: Infinity,
+    observedOverflows: 0,
+    cjkTokensPerChar: 0.75,
+  };
+  const eqWave = selectContinuationWave(fEq.session, {
+    endSeq: fEq.surface.nodes.at(-1),
+    policy: fEq.engine.config,
+    maxPages: 32,
+    capacity: eqCap,
+  });
+  fEq.ctx.llm.stream = async function* (request) {
+    fEq.calls.push(request);
+    yield { type: 'text-delta', text: notes };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  await prepareContinuation({
+    ctx: fEq.ctx,
+    agent: fEq.agent,
+    session: fEq.session,
+    seqs: eqWave.seqs,
+    policy: fEq.engine.config,
+    capacity: eqCap,
+    chain: { targets: [{ provider: 'p', model: 'm' }] },
+    compactionId: 'cmp-eq',
+    signal: signal(),
+    archiveRoot: join(fEq.root, 'archive'),
+  });
+  assert.equal(fEq.calls.length, eqWave.pages);
+  assert.ok(eqWave.pages >= 11, `expected >= 11 pages to cross part=9->10, got ${eqWave.pages}`);
+});
+
+await test('goal-round1-P1-3-codeSpanRanges-linear-on-interleaved-tags-and-fences', () => {
+  const interleaved = Array.from(
+    { length: 1500 },
+    (_, i) => `<blockquote>\n\`\`\`\nconst v${i} = ${i};\n\`\`\`\n</blockquote>\nKeep constraint ${i}.`,
+  ).join('\n');
+  const t0 = performance.now();
+  const extracted = instructionText({ role: 'user', blocks: [{ type: 'text', text: interleaved }] });
+  const elapsedInterleaved = performance.now() - t0;
+  assert.ok(elapsedInterleaved < 250, `interleaved took ${elapsedInterleaved.toFixed(1)}ms`);
+  assert.match(extracted, /Keep constraint 1499/);
+  assert.doesNotMatch(extracted, /const v1499/);
+
+  const pureFences = Array.from({ length: 4000 }, (_, i) => `\`\`\`\nx=${i}\n\`\`\`\nRule ${i}.`).join('\n');
+  const t1 = performance.now();
+  const rangesPure = instructionRanges({ role: 'user', blocks: [{ type: 'text', text: pureFences }] });
+  const elapsedPure = performance.now() - t1;
+  assert.ok(elapsedPure < 250, `pure fences took ${elapsedPure.toFixed(1)}ms`);
+  assert.ok(Array.isArray(rangesPure) && rangesPure.length > 0);
+
+  // Exact structural checks: unclosed fence inside container, nested containers,
+  // literal closing tag inside balanced fence, CRLF, and multiline tag crossing fence boundaries
+  const unclosedInQuote = '<blockquote>\n```\nunclosed fence\n</blockquote>\nAlways require HTTPS.';
+  const outQuote = instructionText({ role: 'user', blocks: [{ type: 'text', text: unclosedInQuote }] });
+  assert.match(outQuote, /Always require HTTPS/);
+  assert.doesNotMatch(outQuote, /unclosed fence/);
+  assert.equal(instructionRanges({ role: 'user', blocks: [{ type: 'text', text: unclosedInQuote }] }).length, 1);
+
+  const nestedUnclosed = '<untrusted_reference>\n<blockquote>\n```\nunclosed\n</blockquote>\n</untrusted_reference>\nKeep outer rule.';
+  const outNested = instructionText({ role: 'user', blocks: [{ type: 'text', text: nestedUnclosed }] });
+  assert.equal(outNested.trim(), 'Keep outer rule.');
+  assert.equal(instructionRanges({ role: 'user', blocks: [{ type: 'text', text: nestedUnclosed }] }).length, 1);
+
+  const literalCloseInFence = '<blockquote>\n```\n</blockquote>\n```\nInner quote rule.\n</blockquote>\nKeep outside.';
+  const outLiteral = instructionText({ role: 'user', blocks: [{ type: 'text', text: literalCloseInFence }] });
+  assert.equal(outLiteral.trim(), 'Keep outside.');
+
+  const crlfMixed = '<blockquote>\r\n```\r\nconst crlf = 1;\r\n```\r\n</blockquote>\r\nCRLF rule survives.';
+  const outCrlf = instructionText({ role: 'user', blocks: [{ type: 'text', text: crlfMixed }] });
+  assert.equal(outCrlf.trim(), 'CRLF rule survives.');
+
+  const multilineTag = '<blockquote\ndata-attr="x">\n```\nfence line\n```\nInside.\n</blockquote>\nAfter multiline.';
+  const outMultiline = instructionText({ role: 'user', blocks: [{ type: 'text', text: multilineTag }] });
+  assert.equal(outMultiline.trim(), 'After multiline.');
 });
 
 for (const engine of fixtures) engine.dispose();
