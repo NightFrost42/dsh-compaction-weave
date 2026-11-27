@@ -10,6 +10,40 @@ function fixture(handler){const calls=[];const ctx={llm:{stream(options){calls.p
 await test('timeout-keeps-specific-code-and-stops-before-another-route',async()=>{const f=fixture(async function*(){throw timeout();});await assert.rejects(summarizeWithChain(f.args),e=>e.code==='SUMMARY_TIMEOUT'&&e.recoverable===false&&e.timeoutMs===180000&&e.target==='shep/deepseek-v4.1-flash');assert.equal(f.calls.length,1);assert.equal(f.calls[0].reasoningEffort,'max');assert.equal(f.calls[0].maxTokens,32768);});
 await test('configured-two-attempt-limit-stops-before-queued-correction',async()=>{const f=fixture(async function*(o,n){if(n===2)throw timeout();yield {type:'text-delta',text:'bad'};});f.args.options.retryCount=1;f.args.options.validate=()=>({ok:false,code:'CONSTRAINT_LOST',message:'needs repair'});await assert.rejects(summarizeWithChain(f.args),e=>e.code==='SUMMARY_TIMEOUT');assert.equal(f.calls.length,2);});
 await test('cancellation-remains-cancellation-and-no-fallback',async()=>{const controller=new AbortController();const f=fixture(async function*(){controller.abort(Object.assign(new Error('cancelled'),{code:'ABORTED'}));throw controller.signal.reason;});f.args.signal=controller.signal;await assert.rejects(summarizeWithChain(f.args),e=>e.code==='ABORTED');assert.equal(f.calls.length,1);});
+await test('hung-beforeRequest-is-bounded-by-summaryTimeoutMs-without-unhandled-rejection',async()=>{
+ const f=fixture(async function*(){yield {type:'text-delta',text:'never reached'};});
+ f.args.options.timeoutMs=5000;
+ let afterMeta=null;
+ let unhandled=null;
+ const onUnhandled=(reason)=>{unhandled=reason;};
+ process.once('unhandledRejection',onUnhandled);
+ try{
+  let rejectHung;
+  f.args.options.beforeRequest=()=>new Promise((_,reject)=>{rejectHung=reject;});
+  f.args.options.afterRequest=(meta)=>{afterMeta=meta;};
+  const started=performance.now();
+  await assert.rejects(summarizeWithChain(f.args),e=>e.code==='SUMMARY_TIMEOUT'&&e.timeoutMs===5000);
+  const elapsed=performance.now()-started;
+  assert.ok(elapsed>=4900&&elapsed<12000,`hung beforeRequest should respect summaryTimeoutMs floor, elapsed=${elapsed}ms`);
+  assert.equal(f.calls.length,0,'llm.stream must not be invoked after timed-out beforeRequest');
+  assert.equal(afterMeta?.requestStarted,false);
+  rejectHung?.(new Error('late beforeRequest failure'));
+  await new Promise(r=>setTimeout(r,20));
+  assert.equal(unhandled,null);
+ }finally{
+  process.removeListener('unhandledRejection',onUnhandled);
+ }
+});
+await test('caller-abort-cancels-hung-beforeRequest-without-calling-stream',async()=>{
+ const f=fixture(async function*(){yield {type:'text-delta',text:'never reached'};});
+ const controller=new AbortController();
+ f.args.signal=controller.signal;
+ f.args.options.timeoutMs=5000;
+ f.args.options.beforeRequest=()=>new Promise(()=>{});
+ setTimeout(()=>controller.abort(Object.assign(new Error('cancelled during beforeRequest'),{code:'ABORTED'})),25);
+ await assert.rejects(summarizeWithChain(f.args),e=>e.code==='ABORTED');
+ assert.equal(f.calls.length,0);
+});
 await test('successful-stream-remains-unchanged',async()=>{const f=fixture(async function*(){yield {type:'text-delta',text:'Complete summary.'};yield {type:'finish',kind:'stop'};});const result=await summarizeWithChain(f.args);assert.equal(result.rawText,'Complete summary.');assert.equal(f.calls.length,1);});
 await test('actual-hard-deadline-captures-counts-without-text-and-no-fallback',async()=>{let returned=0;const f=fixture(()=>({[Symbol.asyncIterator](){let n=0;return {next(){n++;if(n===1)return Promise.resolve({done:false,value:{type:'reasoning-delta',text:'SECRET_REASONING'}});if(n===2)return Promise.resolve({done:false,value:{type:'text-delta',text:'SECRET_DRAFT'}});return new Promise(()=>{});},return(){returned++;return Promise.resolve({done:true});}};}}));f.args.options.timeoutMs=5000;const started=performance.now();let error;try{await summarizeWithChain(f.args);}catch(e){error=e;}assert.equal(error?.code,'SUMMARY_TIMEOUT');assert.equal(error.timeoutMs,5000);assert.equal(error.diagnostics.chunks,2);assert.ok(error.diagnostics.reasoningChars>0);assert.match(error.message,/textChars=/);assert.doesNotMatch(JSON.stringify(error)+error.message,/SECRET_/);assert.equal(f.calls.length,1);assert.equal(returned,1);assert.ok(f.calls[0].signal.aborted);const elapsed=performance.now()-started;assert.ok(elapsed>=4900&&elapsed<12000,`monotonic deadline elapsed ${elapsed}ms`);});
 await test('deduplication-does-not-fabricate-a-backup',()=>{const agent={session:{requestHeader:()=>({config:{provider:'shep',model:'m'}})},options:{provider:'shep',model:'m'}};assert.equal(resolveSummaryTargets({config:{summarizationProvider:'shep',summarizationModel:'m'},agent}).targets.length,1);});
