@@ -21,10 +21,10 @@ async function fixture(extra={},response=NOTES){
 const defaults=resolveConfig({}).config;
 await test('normal-budget-preserves-note-and-requirement-allowance',()=>{
  const req=[{seq:1,text:'Do not delete records.'}],before=JSON.stringify(req),plan=planContinuationMemory(req,defaults);
- assert.equal(plan.memoryLimit,defaults.continuationMemoryBytes);assert.equal(JSON.stringify(req),before);assert.match(plan.base,/Do not delete records/);assert.ok(plan.reservedTokens>plan.memoryLimit);
+ assert.equal(plan.memoryLimit,defaults.continuationMemoryBytes);assert.equal(JSON.stringify(req),before);assert.match(plan.base,/Do not delete records/);assert.equal(plan.reservedTokens,approxTokens(plan.base)+Math.ceil(plan.memoryLimit*0.5)+128);
 });
 await test('available-request-budget-bounds-generated-notes',()=>{
- const p=planContinuationMemory([{seq:1,text:'Keep evidence.'}],defaults,{budgetTokens:6000});assert.ok(p.memoryLimit>=2048&&p.memoryLimit<6000);assert.ok(p.reservedTokens<=6000);
+ const p=planContinuationMemory([{seq:1,text:'Keep evidence.'}],defaults,{budgetTokens:6000});assert.ok(p.memoryLimit>6000&&p.memoryLimit<12000);assert.ok(p.reservedTokens<=6000);
 });
 await test('requirements-never-truncated-to-force-fit',()=>{
  const req=[{seq:1,text:'Do not delete records.\n'.repeat(10000)}],before=JSON.stringify(req);assert.throws(()=>planContinuationMemory(req,defaults),e=>e.code==='CONTINUATION_REQUIREMENTS_TOO_LARGE');assert.equal(JSON.stringify(req),before);

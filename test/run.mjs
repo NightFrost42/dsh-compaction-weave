@@ -2103,7 +2103,7 @@ await atest('C07: 第 3 次失败之后不许再发第 4 次摘要请求', async
   assert.equal(calls, 3, '熔断之后不许再发摘要请求');
 });
 
-await atest('C07: 熔断之后连渐进重试也必须停下', async () => {
+await atest('C07: 渐进重试耗尽后才记录一次终止失败并熔断', async () => {
   const engine = makeLiveEngine({ archiveEnabled: false, reactiveStep: 3, failureThreshold: 1 });
   let calls = 0;
   engine.ctx.llm.stream = async function* stream() {
@@ -2121,8 +2121,10 @@ await atest('C07: 熔断之后连渐进重试也必须停下', async () => {
     }, 0)
     .then(() => null, () => null);
 
-  // failureThreshold=1 → 第一次失败就熔断，reactiveStep 再大也不许重试。
-  assert.equal(calls, 1, `熔断后不该重试，实际发了 ${calls} 次`);
+  // 可恢复的缩小重试先使用 reactiveStep；仅终止失败计入 failureThreshold。
+  assert.equal(calls, 4, `应执行初次请求和 3 次缩小重试，实际发了 ${calls} 次`);
+  assert.equal(engine.sessionState.read(session.id).failures, 1);
+  assert.ok(engine._stopped.has(engine._keyOf(session)));
 });
 
 await atest('C07: 持久化失败也要计入熔断，不能一直白试', async () => {

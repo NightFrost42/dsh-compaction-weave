@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import {existsSync} from 'node:fs';import {mkdtemp,readFile,readdir,writeFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join,dirname} from 'node:path';
-import {FailureDiagnostics,diagnosticFor,diagnosticText,failureExplanation,diagnosticContext,noteDiagnosticMeasurement} from '../lib/failure-diagnostics.js';import {summarizeWithChain} from '../lib/summary.js';import {dumpAuditRejection} from '../lib/audit-reject.js';import {decorateCompactCommand} from '../lib/command-compact.js';import {resolveSummaryCapacity,assertSummaryCapacity} from '../lib/summary-budget.js';import {resolveConfig} from '../lib/config.js';import {WeaveCompactionEngine} from '../lib/engine.js';
+import {FailureDiagnostics,diagnosticFor,diagnosticText,failureExplanation,diagnosticContext,noteDiagnosticMeasurement,sanitizeWindowLookupFailure} from '../lib/failure-diagnostics.js';import {summarizeWithChain} from '../lib/summary.js';import {dumpAuditRejection} from '../lib/audit-reject.js';import {decorateCompactCommand} from '../lib/command-compact.js';import {resolveSummaryCapacity,assertSummaryCapacity} from '../lib/summary-budget.js';import {resolveConfig} from '../lib/config.js';import {WeaveCompactionEngine} from '../lib/engine.js';
 const results=[];async function test(name,fn){try{await fn();results.push({name,pass:true});}catch(error){results.push({name,pass:false,error:error.message,stack:error.stack});}}
 const root=await mkdtemp(join(tmpdir(),'weave-failure-reports-'));
 const err=(code,extras={})=>Object.assign(new Error('PRIVATE_TRANSCRIPT sk-'+'x'.repeat(30)),{code,...extras});
@@ -174,5 +174,49 @@ await test('extractPluginStackFrame-captures-lib-subdirectory-frames-and-filters
   const logExt=JSON.parse(await readFile(diagnosticFor(eExt).path,'utf8'));
   assert.equal(logExt.errors[0].pluginFrame,undefined,`external/unknown frame must be omitted: ${extFrame}`);
  }
+});
+await test('sanitizeWindowLookupFailure-allowlists-codes-and-blocks-secret-prefixes',async()=>{
+ for(const code of ['UNKNOWN_MODEL','RESOLVE_MODEL_INFO_TIMEOUT','TIMEOUT','ABORTED','NO_ADAPTER','CORDIS_CONTEXT_ERROR','ETIMEDOUT','ENOTFOUND','EHOSTDOWN']){
+  const sanitized=sanitizeWindowLookupFailure({reason:'lookup-error',code,name:'TimeoutError',provider:'p',model:'m',fallbackWindow:200000,source:'summary-capacity',usedFallback:true});
+  assert.equal(sanitized?.code,code);
+  assert.equal(sanitized?.name,'TimeoutError');
+ }
+ const lower=sanitizeWindowLookupFailure({reason:'lookup-error',code:'timeout',name:'Error'});
+ assert.equal(lower?.code,'TIMEOUT');
+ assert.equal(lower?.name,'Error');
+
+ const custom=sanitizeWindowLookupFailure({reason:'lookup-error',code:'VENDOR_INTERNAL_CODE_99',name:'ThirdPartySecretError'});
+ assert.equal(custom?.code,'OTHER');
+ assert.equal(custom?.name,null);
+
+ const secretSk='sk'+'-'+'live_secret1234567890abcdef';
+ const secretGhp='ghp'+'_'+'1234567890abcdef123456';
+ const secretBearer='Bearer'+' '+'topSecretToken123456';
+ const secretPem=['-----','BEGIN PRIVATE KEY','-----'].join('');
+ for(const leaked of [secretSk,secretGhp,secretBearer,secretPem,'prefix_'+secretSk]){
+  const fromCode=sanitizeWindowLookupFailure({reason:'lookup-error',code:leaked,name:leaked,provider:'p',model:'m'});
+  assert.equal(fromCode?.code,'UNKNOWN',`secret code must collapse: ${leaked}`);
+  assert.equal(fromCode?.name,null,`secret name must collapse: ${leaked}`);
+ }
+
+ const cfg=resolveConfig({windowFallback:200000}).config;
+ const dirtyErr=Object.assign(new Error('lookup failed'),{code:secretSk,name:'VendorCustomFailure'});
+ const cap=await resolveSummaryCapacity({llm:{resolveModelInfo:async()=>{throw dirtyErr;}}},{targets:[{provider:'local',model:'fixture'}]},cfg);
+ assert.equal(cap.windowLookupFailure?.code,'UNKNOWN');
+ assert.equal(cap.windowLookupFailure?.name,null);
+
+ const d=new FailureDiagnostics(join(root,'wlf-allowlist-diag'));
+ const e=await rejected(d.run(session,{trigger:'manual',reportContext:diagnosticContext({session,options:{provider:'local',model:'fixture'}},cfg)},()=>{
+  assertSummaryCapacity({inputUnits:1000000,inputBytes:1000000,inputTokens:300000},cap,{provider:'local',model:'fixture'});
+ }));
+ const raw=await readFile(diagnosticFor(e).path,'utf8');
+ assert.equal(raw.includes(secretSk),false);
+ assert.equal(raw.includes('VendorCustomFailure'),false);
+ const parsed=JSON.parse(raw);
+ assert.equal(parsed.context.windowLookupFailure?.code,'UNKNOWN');
+ assert.equal(parsed.context.windowLookupFailure?.name,null);
+ assert.equal(parsed.errors[0].windowLookupFailure?.code,'UNKNOWN');
+ assert.match(diagnosticFor(e).explanation,/code=UNKNOWN/);
+ assert.equal(diagnosticFor(e).explanation.includes('VendorCustomFailure'),false);
 });
 console.log(JSON.stringify({passed:results.filter(x=>x.pass).length,failed:results.filter(x=>!x.pass).length,results},null,2));if(results.some(x=>!x.pass))process.exitCode=1;

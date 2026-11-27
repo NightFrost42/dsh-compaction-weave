@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile as readFileAsync, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { DEFAULT_CONFIG, resolveConfig } from '../lib/config.js';
+import { FailureDiagnostics, diagnosticContext } from '../lib/failure-diagnostics.js';
 import { approxTokens, blocksToText } from '../lib/meter.js';
 import { buildCompactionInstruction } from '../lib/prompt.js';
 import { isReferenceContextKind, withExtraReferenceSourceKinds, withReferencePolicy } from '../lib/source-provenance.js';
@@ -1231,6 +1232,119 @@ await test('extraReferencePrefixes-isolation-fingerprint-and-auditProvenanceBloc
       })
     ).promise;
     assert.equal(softWarnRes.ok, true);
+  } finally {
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+// ── 11. Background Window Lookup Failure Diagnostics (#23 Polish) ────────────
+
+await test('background-session-memory-surfaces-windowLookupFailure-on-failure-without-noisy-success-files', async () => {
+  const root = await createTempRoot('weave-sm-wlf-');
+  try {
+    // 1. Successful background update after resolveModelInfo failure must write ZERO diagnostic files.
+    const diagOk = new FailureDiagnostics(join(root, 'diag-ok'));
+    const fxOk = makeFakeEngine(root, {
+      configOverrides: { windowFallback: 200000, summaryRetryCount: 0, summaryRetryDelayMs: 0 },
+    });
+    fxOk.engine.diagnostics = diagOk;
+    fxOk.engine._diagnosticContext = (agent) => diagnosticContext(agent, fxOk.engine.config);
+    fxOk.engine.ctx.llm.resolveModelInfo = async () => {
+      throw Object.assign(new Error('lookup timeout'), { code: 'RESOLVE_MODEL_INFO_TIMEOUT' });
+    };
+    const mgrOk = new SessionMemoryManager(fxOk.engine);
+    const sOk = makeSession();
+    sOk.addSystem('System.');
+    sOk.addUser('Keep retry budget below 5 attempts.', 'user');
+    sOk.addAssistant('Observation. '.repeat(600));
+    sOk.addUser('Tail.');
+    const okPolicy = {
+      sessionMemoryEnabled: true,
+      sessionMemoryMinTokens: 200,
+      sessionMemoryCooldownMs: 0,
+      retainTokens: 1,
+      windowFallback: 200000,
+    };
+    const okSched = await mgrOk.maybeSchedule({ session: sOk.session, policy: okPolicy });
+    assert.equal(okSched.scheduled, true);
+    const okOutcome = await okSched.promise;
+    assert.equal(okOutcome.ok, true);
+    assert.equal(existsSync(diagOk.root), false, 'successful background memory refresh must not create diagnostics dir or files');
+
+    // 2. Execution-phase failure during background run after resolveModelInfo failure captures windowLookupFailure.
+    const diagFail = new FailureDiagnostics(join(root, 'diag-fail'));
+    const fxFail = makeFakeEngine(root, {
+      configOverrides: { windowFallback: 200000, summaryRetryCount: 0, summaryRetryDelayMs: 0 },
+      streamHandler: async function* () {
+        throw Object.assign(new Error('exceeded fallback capacity'), {
+          code: 'CONTEXT_WINDOW_EXCEEDED',
+          localCapacityRejection: true,
+        });
+      },
+    });
+    fxFail.engine.archive.root = join(root, 'sessions-fail');
+    fxFail.engine.diagnostics = diagFail;
+    fxFail.engine._diagnosticContext = (agent) => diagnosticContext(agent, fxFail.engine.config);
+    fxFail.engine.ctx.llm.resolveModelInfo = async () => {
+      throw Object.assign(new Error('unknown model'), { code: 'UNKNOWN_MODEL' });
+    };
+    const mgrFail = new SessionMemoryManager(fxFail.engine);
+    const sFail = makeSession();
+    sFail.addSystem('System.');
+    sFail.addUser('Never drop safety checks.', 'user');
+    sFail.addAssistant('Observation. '.repeat(600));
+    sFail.addUser('Tail.');
+    const failSched = await mgrFail.maybeSchedule({ session: sFail.session, policy: okPolicy });
+    assert.equal(failSched.scheduled, true);
+    const failOutcome = await failSched.promise;
+    assert.equal(failOutcome.ok, false);
+    assert.equal(failOutcome.windowLookupFailure?.code, 'UNKNOWN_MODEL');
+    assert.equal(failOutcome.windowLookupFailure?.usedFallback, true);
+    const failFiles = (await readdir(diagFail.root)).filter((f) => f.endsWith('.json'));
+    assert.equal(failFiles.length, 1);
+    const failReport = JSON.parse(await readFileAsync(join(diagFail.root, failFiles[0]), 'utf8'));
+    assert.equal(failReport.trigger, 'session-memory');
+    assert.equal(failReport.context.windowLookupFailure?.code, 'UNKNOWN_MODEL');
+    assert.equal(failReport.context.windowLookupFailure?.usedFallback, true);
+    assert.equal(failReport.errors[0].windowLookupFailure?.code, 'UNKNOWN_MODEL');
+
+    // 3. Planning-phase local capacity rejection (SUMMARY_GROUP_TOO_LARGE) after resolveModelInfo failure also writes diagnostic with windowLookupFailure.
+    const diagPlan = new FailureDiagnostics(join(root, 'diag-plan'));
+    const fxPlan = makeFakeEngine(root, {
+      configOverrides: { windowFallback: 9000, maxTokens: 4096, summaryInputMaxBytes: 1000000 },
+    });
+    fxPlan.engine.archive.root = join(root, 'sessions-plan');
+    fxPlan.engine.diagnostics = diagPlan;
+    fxPlan.engine._diagnosticContext = (agent) => diagnosticContext(agent, fxPlan.engine.config);
+    fxPlan.engine.ctx.llm.resolveModelInfo = async () => {
+      throw Object.assign(new Error('lookup timed out'), { code: 'RESOLVE_MODEL_INFO_TIMEOUT' });
+    };
+    const mgrPlan = new SessionMemoryManager(fxPlan.engine);
+    const sPlan = makeSession();
+    sPlan.addSystem('System.');
+    sPlan.addUser('First huge message '.repeat(500), 'user');
+    sPlan.addUser('Tail.');
+    const planSched = await mgrPlan.maybeSchedule({
+      session: sPlan.session,
+      policy: {
+        sessionMemoryEnabled: true,
+        sessionMemoryMinTokens: 100,
+        sessionMemoryCooldownMs: 0,
+        retainTokens: 1,
+        windowFallback: 9000,
+        maxTokens: 4096,
+        summaryInputMaxBytes: 1000000,
+      },
+    });
+    assert.deepEqual(planSched, { scheduled: false, reason: 'up-to-date' });
+    const planFiles = (await readdir(diagPlan.root)).filter((f) => f.endsWith('.json'));
+    assert.equal(planFiles.length, 1);
+    const planReport = JSON.parse(await readFileAsync(join(diagPlan.root, planFiles[0]), 'utf8'));
+    assert.equal(planReport.trigger, 'session-memory');
+    assert.equal(planReport.errors[0].code, 'SUMMARY_GROUP_TOO_LARGE');
+    assert.equal(planReport.context.windowLookupFailure?.code, 'RESOLVE_MODEL_INFO_TIMEOUT');
+    assert.equal(planReport.context.windowLookupFailure?.fallbackWindow, 9000);
+    assert.equal(planReport.errors[0].windowLookupFailure?.code, 'RESOLVE_MODEL_INFO_TIMEOUT');
   } finally {
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }

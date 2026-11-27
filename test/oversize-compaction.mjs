@@ -1075,7 +1075,8 @@ await test('continuation-audit-parity-keeps-polarity-and-provenance-strict', asy
       });
     };
 
-    // Value mismatch (non-polarity, non-provenance): allowed when auditBlockOnLoss: false
+    // Coverage relaxation never accepts a value mismatch; reconstruction must
+    // restore the source value before these continuation notes can be accepted.
     const valueMismatchNotes =
       '## Goal\nTune service configuration.\n## State\nTimeout must be 55 seconds.\n## Next\nVerify timeout behavior.\n## Uncertain\nProduction load unmeasured.';
     const relaxed = await runWith({
@@ -1084,6 +1085,8 @@ await test('continuation-audit-parity-keeps-polarity-and-provenance-strict', asy
       auditBlockOnLoss: false,
     });
     assert.ok(relaxed.summarized);
+    assert.doesNotMatch(relaxed.summarized.rawText, /55 seconds/);
+    assert.match(relaxed.summarized.rawText, /35 seconds/);
 
     // Polarity flip: STILL rejected even when auditEnabled: false AND auditBlockOnLoss: false
     const polarityFlipNotes =
@@ -1111,7 +1114,8 @@ await test('continuation-audit-parity-keeps-polarity-and-provenance-strict', asy
       (err) => err.code === 'CONSTRAINT_LOST',
     );
   } finally {
-    await rm(root, { recursive: true, force: true });
+    // Best-effort audit dumps may still be retiring after direct helper calls.
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
   }
 });
 

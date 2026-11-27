@@ -125,6 +125,8 @@ function mountClient({
   const timers = new Map();
   const pendingFetches = new Set();
   const requests = [];
+  const requestSignals = [];
+  let stateWrites = 0;
 
   const React = {
     createElement: (type, props, ...children) => ({
@@ -139,6 +141,7 @@ function mountClient({
       return [
         states[i],
         (val) => {
+          stateWrites++;
           states[i] = typeof val === 'function' ? val(states[i]) : val;
         },
       ];
@@ -197,6 +200,7 @@ function mountClient({
     fetch: (_url, options) => {
       const payload = JSON.parse(options.body);
       requests.push(payload);
+      requestSignals.push(options.signal);
       const task = (async () => {
         try {
           const value = await handler(payload);
@@ -278,6 +282,8 @@ function mountClient({
 
   return {
     requests,
+    requestSignals,
+    get stateWrites() { return stateWrites; },
     renderSettings: () => renderSlot('settings'),
     settleSettings: () => settleSlot('settings'),
     renderProgress: (props) => renderSlot('progress', props),
@@ -1374,7 +1380,7 @@ await test('v060-release-gate-p1-1-2-3-and-p2-1-8-security-locks-and-client-regr
       /rb abort/i,
     );
 
-    // P2-3: auto fallback & softenCoverageForFocus reject value/range/condition conflicts while auditBlockOnLoss=false escape works
+    // P2-3: coverage escape hatches retain value/range/condition conflicts.
     const hardValVerdict = diagnoseHeuristicFallbackVerdict({
       ok: false,
       code: 'CONSTRAINT_LOST',
@@ -1392,10 +1398,10 @@ await test('v060-release-gate-p1-1-2-3-and-p2-1-8-security-locks-and-client-regr
     assert.equal(focusSplit.blockingLost.length, 1);
     assert.equal(focusSplit.blockingLost[0].reason, 'range');
     const escapeSplit = classifyBlockingAuditLost(
-      [{ seq: 1, reason: 'value', line: 'a' }, { seq: 2, reason: 'polarity', line: 'b' }],
+      [{ seq: 1, reason: 'value', line: 'a' }, { seq: 2, reason: 'polarity', line: 'b' }, { seq: 3, reason: 'coverage', line: 'c' }],
       { auditBlockOnLoss: false },
     );
-    assert.deepEqual(escapeSplit.blockingLost.map((x) => x.reason), ['polarity']);
+    assert.deepEqual(escapeSplit.blockingLost.map((x) => x.reason), ['polarity', 'value']);
 
     // P2-4: runConcurrentPool waits for started onItemReadyInOrder commit before rejecting
     let commitDone = false;
@@ -2664,7 +2670,7 @@ await test('ee09f93-audit-remediation-all-verified-p1-p2', async () => {
     );
     assert.ok(slice0Spec.input.messages.length > slice1Spec.input.messages.length, 'P1-10: preservePrefixCache=true retains preceding messages in slice 0 input');
     const pfSrc = readFileSync(join(REPO_ROOT, 'lib/engine/parallel-fold.js'), 'utf8');
-    assert.ok(pfSrc.includes('preservePrefixCache: sliceIdx === 0 && Boolean(policy.cachePreservePrefix)'), 'P1-10: compactChunksConcurrent wires sliceIdx === 0 prefix cache preservation');
+    assert.ok(pfSrc.includes('preservePrefixCache: sliceIdx === 0 && preservePrefixCache'), 'P1-10: compactChunksConcurrent restricts eligible prefix cache preservation to slice 0');
 
     // minGrowthTokens window shrink check
     let currentWin = 128000;
@@ -4349,6 +4355,71 @@ await test('1da260d-audit-remediation-all-6-p1-and-3-p2-guards', async () => {
     else process.env.DSH_HOME = priorHome;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+await test('577e0de-P2-5-settings-save-and-archive-actions-ignore-unmounted-completions', async () => {
+  for (const action of ['save', 'compress', 'cleanup']) {
+    for (const reject of [false, true]) {
+      let finish;
+      const pending = new Promise((resolve, fail) => { finish = reject ? () => fail(new Error('controlled RPC failure')) : () => resolve({ config: {}, storage: {}, compressedCount: 1 }); });
+      const method = action === 'save' ? 'set' : action === 'compress' ? 'archive-compress-legacy' : 'archive-cleanup-orphans';
+      const client = mountClient({
+        language: 'en',
+        handler: payload => {
+          if (payload.method === method) return pending;
+          if (payload.method === 'models') return { providers: [] };
+          return { config: {}, archiveStorage: { legacySpanCount: 2, orphanProbeAvailable: true, orphanSessionCount: 1 } };
+        },
+      });
+      try {
+        let tree = await client.settleSettings();
+        if (action === 'save') {
+          client.button(tree, 'Save').props.onClick();
+        } else if (action === 'compress') {
+          findNode(tree, node => node.props?.['data-action'] === 'archive-compress-legacy').props.onClick();
+        } else {
+          findNode(tree, node => node.props?.['data-action'] === 'archive-cleanup-orphans').props.onClick();
+          tree = client.renderSettings();
+          findNode(tree, node => node.props?.['data-action'] === 'archive-cleanup-confirm').props.onClick();
+        }
+        assert.ok(client.requests.some(request => request.method === method), `${action} RPC must be pending`);
+        client.unmount();
+        const writes = client.stateWrites;
+        finish();
+        await new Promise(resolve => setImmediate(resolve));
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(client.stateWrites, writes, `${action}, reject=${reject}: no state writes after unmount`);
+      } finally { client.unmount(); }
+    }
+  }
+});
+
+await test('577e0de-P2-5-settings-reload-aborts-prior-and-current-controller-on-unmount', async () => {
+  let first = true, release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const client = mountClient({
+    language: 'en',
+    handler: payload => {
+      if (payload.method === 'models') return { providers: [] };
+      if (first) { first = false; throw new Error('controlled load failure'); }
+      return pending;
+    },
+  });
+  try {
+    const tree = await client.settleSettings();
+    const retry = client.button(tree, 'Reload settings');
+    assert.ok(retry);
+    retry.props.onClick();
+    assert.equal(client.requestSignals[0].aborted, true);
+    const current = client.requestSignals.at(-1);
+    assert.equal(current.aborted, false);
+    client.unmount();
+    assert.equal(current.aborted, true);
+    const writes = client.stateWrites;
+    release({ config: {} });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(client.stateWrites, writes);
+  } finally { client.unmount(); }
 });
 
 console.log(JSON.stringify({
