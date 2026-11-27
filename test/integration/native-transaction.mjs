@@ -1413,5 +1413,58 @@ await test('native-transaction-phase-d-snip-v4-zstd-reopen-and-archive',async()=
   }
 });
 
+await test('native-transaction-zstd-commitSnip-compaction-end-double-failure-reopen-recovers',async()=>{
+  const f=await fixture({compression:'zstd',seedDefaultTurn:false});
+  try{
+    f.session.append('turn/start',{turn:1});
+    f.session.append('step/start',{turn:1,step:1});
+    f.add('system','Stable system prefix.',1,1);
+    f.add('user','Keep retry timeout <= 30 seconds.',1,1);
+    const oldAssistant=f.add('assistant','Old tool notes '.repeat(1400),1,1);
+    f.add('user','Continue after snip.',1,1);
+    f.add('assistant','Recent answer.',1,1);
+    await f.store.flush(f.session);
+
+    const plan={
+      spans:[{
+        compactionId:'weave-snip-host-double-fail',
+        startSeq:oldAssistant.seq,
+        endSeq:oldAssistant.seq,
+        seqs:[oldAssistant.seq],
+        savedTokens:1400,
+        stubText:'[Host snipped stub]',
+      }],
+    };
+    const origAppend=f.session.append.bind(f.session);
+    f.session.append=(type,data,options)=>{
+      if(type==='compaction/end')throw new Error('simulated compaction/end write failure');
+      return origAppend(type,data,options);
+    };
+    await assert.rejects(
+      commitSnip({session:f.session,plan,archive:f.engine.archive,log(){}}),
+      err=>err?.code==='commit'&&err?.surfaceMutated===true,
+    );
+    f.session.append=origAppend;
+
+    // Persist events with open weave-snip-* + replaced stub to disk and reopen through real StockTransactionAdapter
+    await f.store.flush(f.session);
+    const expectedNodes=[...f.session.surface.nodes];
+    f.detach();
+    await f.closeHandle();
+
+    const reopened=await f.backend.open(f.session.id,'write');
+    try{
+      const stored=await reopened.read();
+      const closer=stored.events.find(e=>e.type==='compaction/end'&&e.data?.compactionId==='weave-snip-host-double-fail');
+      assert.ok(closer,'StockTransactionAdapter must close orphan weave-snip-* on cold reopen');
+      assert.equal(closer.data?.error,undefined);
+      const replay=Session.fromRestore(f.session.id,stored.events,reopened.header,reopened.inheritedEventCount,'detached',f.store.messageProjections);
+      assert.deepEqual(replay.surface.nodes,expectedNodes);
+    }finally{await reopened.close();}
+  }finally{
+    await f.close();
+  }
+});
+
 console.log(JSON.stringify({passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,results},null,2));
 if(results.some(r=>!r.pass))process.exitCode=1;

@@ -6,4 +6,4 @@ Why archived:
 - They were coupled to domain-specific regex dictionaries (`报告 / 图表 / 扫描 / 离线包 / 打包`, `reportGenerated / chartGenerated / scanCompleted / packageCompleted`, `review.35`, `绘制地图`, `任务甲乙丙丁`, `顺手写库`) and natural-language quotation/adoption guessing rules.
 - Route B replaces those heuristics with host event provenance (`sourceKind` / `role`), explicit `<verified_user_message>` vs `<untrusted_reference>` XML channels, structured `key: value` progress checks, and deterministic source-hash/structure/coverage/polarity guards.
 
-Active tests remain in `test/*.mjs` (42 suites) plus `test/integration/*.mjs`.
+Active tests remain in `test/*.mjs` (`104` offline unit suites total) plus `test/integration/*.mjs` (`8` DSH host integration suites).

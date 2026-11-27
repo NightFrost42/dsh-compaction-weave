@@ -22,11 +22,11 @@
 | 摘要并发数 | `summaryConcurrency` | 2 | 1–6 整数（多块并行生成，严格按顺序提交；遇到 HTTP 429 自动降为 1） |
 | 摘要推理力度 | `summaryReasoningEffort` | `auto` | `auto`（默认按路由自适应：仅 Anthropic 同路由继承，非 Anthropic 路由有思考时压到 `low`，主会话未开思考时不强行开启）/ `low` / `none`（关闭）/ `minimal` / `medium` / `high` / `xhigh` / `max` / `inherit`（跟随会话）；不支持时自动逐级向下回退 |
 | CJK 预算保守权重 | `summaryCjkTokensPerChar` | `0.75` | `0.5–1.5`（默认 `0.75`，使 128k 中文会话正常保留前部 KV 缓存；需要兼容较碎分词器时可调到 `1.0`） |
-| 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭（用户紧急逃生阀：关闭后仅放行普通覆盖缺失及非极性冲突，**极性反转与硬来源冲突 `untrusted-source`/`revoked` 仍严格拦截**） |
+| 要求保留审计拦截 | `auditBlockOnLoss` | `true`（开启） | 开启 / 关闭（用户紧急逃生阀：关闭后仅放行纯 `coverage` 覆盖缺失，**极性反转、数值/单位/条件/区间等硬语义冲突与硬来源冲突 `untrusted-source`/`revoked` 仍严格拦截**） |
 | 覆盖率审计窗口范围 | `auditCoverageScope` | `'recent'` | `'recent'`（默认：覆盖近期原话保留窗口及本跨度新增近期原始用户消息，按至少 `32` 条 / `4096` token 封顶；窗外旧跨度/超大规模迁移原话普通遗漏记软警告不阻塞；`/compact <focus>` 仅柔化纯 `coverage` 缺口）/ `'span-new'`（仅对本跨度新增原始用户消息强制覆盖率）/ `'all'`（全跨度严格覆盖）；**所有冲突红线（`polarity`/`value`/`unit`/`condition`/`range`/`relation`/`exception`/`reference`/`provenance`）在三档下始终全局强制执行** |
 | 启发式审计耗尽兜底策略 | `auditExhaustionPolicy` | `'fallback'` | `'fallback'`（默认：当前摘要目标与至少 1 次纠偏重试耗尽后，**严格仅对 `<= 3` 处纯 `coverage` 或软 `missing-source` 缺口**外挂经核验纯用户原话放行；极性反转、数值/单位/条件/区间/关系/例外/引用硬冲突、`summaryRetryCount === 0` 及 `untrusted-source`/`revoked` 永不兜底）/ `'block'`（严格拦截，禁用兜底） |
 | 自动压缩熔断后策略 | `pressureBreakerAction` | `'confirm'` | `'confirm'`（默认：暂停自动发送并在输入框卡片提供重试与两步确认放行）/ `'degrade'`（未超硬预算时告警并暂跳过自动压缩）/ `'block'`（严格阻断） |
-| 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；最多重读 5 个本地工作区文件，总预算 24KB；对含缩进/引号/未闭合/错标签 PEM 与 `PGP PRIVATE KEY BLOCK`、`github_pat_`、裸 JWT、`scheme://user:pass@` URL 及显式键名右侧 40 位 AWS Secret 脱敏且保留 40 位 SHA-1；自动跳过 `.env`/`.envrc`、`*.tfvars`/`*.tfvars.json`、`auth.json`、`service-account*.json`、`.aws/config`、`*.p8`、`*.ppk` 等敏感文件与 `AGENTS.md`/`CLAUDE.md`）/ 关闭 |
+| 压缩后工作区文件重注入 | `postCompactReinjectEnabled` | `true`（开启） | 开启（0 额外摘要模型调用；最多重读 5 个本地工作区文件，默认值 `24576 B` 在较紧窗口如 `64k` 下按 `retainTokens × 2.0` 自适应收紧，显式非默认值直接生效；对含 `1→` 行号/缩进/引号/未闭合/错标签 PEM 与 `PGP PRIVATE KEY BLOCK`、`Authorization: Basic/Token/Bearer`、`x-api-key`、`db_password`/`refresh_token`、显式密钥键下 40 位 hex 及未闭合引号凭据、`github_pat_`、裸 JWT、`scheme://user:pass@` URL 与 `*_AWS_SECRET` 脱敏且保留非密钥字段 40 位 SHA-1；自动跳过 `.env`/`..env`/`...env*`/`.envrc`、`.ssh/` 私钥及 `.ssh/config`（保留 `.ssh/authorized_keys`/`known_hosts`/`*.pub`）、`terraform.tfstate`、`.gnupg/secring.gpg`、`.vault-token`、`.s3cfg`/`.boto`/`.htpasswd`、`*.tfvars`/`*.tfvars.json`、`auth.json`、`service-account*.json`/`serviceAccountKey.json`、`appsettings.*.json`、`.aws/config`、`*.p8`/`*.ppk` 与 `AGENTS.md`/`CLAUDE.md`，属有界正则/路径防线）/ 关闭 |
 | 本地归档占用警告阈值 | `archiveWarnBytes` | `536870912`（512 MiB） | `0`（关闭提醒）– `107374182400`（100 GiB / 102400 MiB）整数，超出阈值仅温和提示并附设置页无损压缩与孤儿清理入口 |
 | 可见图片字节高水位 | `maxVisibleAttachmentBytes` | `16777216`（16 MiB） | `0`（关闭）– `1073741824`（1 GiB）整数；超水位单批卸载较早图片并保留最新 6 张热点图片 |
 | 可见图片张数高水位 | `maxVisibleImages` | `24` | `0`（关闭）或 `1–500` 整数（另含长边 `>2000px` 超 `20` 张护栏） |
@@ -208,14 +208,14 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `archiveEnabled` | `true` | 替换选区历史前归档原文与附件（默认使用无损 `zstd` 压缩并以 `0o700` / `0o600` 权限落盘——适用于 POSIX 的 macOS/Linux，Windows 下受 Node.js 文件权限语义限制；绝不自动删除） |
+| `archiveEnabled` | `true` | 替换选区历史前归档原文与附件（默认使用无损 `zstd` 压缩，写入前执行凭据脱敏与 `32 MiB` 未压缩字节预检，检索超过 `8 MiB` 时采用带全局统计的候选流式归约并保留跨 span 最新更新锚点与 2-hop 关联，目录/文件按 `0o700`/`0o600` 权限落盘——适用于 POSIX 的 macOS/Linux，Windows 下受 Node.js 文件权限语义限制；绝不自动删除） |
 | `archiveDir` | 自动 | 自定义历史归档目录 |
 | `archiveWarnBytes` | `536870912`（512 MiB） | 本地归档（`sessions/`）占用超过阈值时仅触发卡片温和提醒（`0` 关闭提醒；`0–102400 MiB` 对应字节范围，提供设置页手动无损压缩旧段与确认清理孤儿归档入口） |
 | `maxVisibleAttachmentBytes` | `16777216`（16 MiB） | 可见表面未卸载图片字节高水位阈值（`0` 关闭字节触发；超过阈值时采用高低双水位迟滞策略，单批原生 `image/offload` 卸载较早图片并保留最新 6 张热点图片以维持 KV 缓存稳定，不重置周期会话记忆计数） |
 | `maxVisibleImages` | `24` | 可见表面未卸载图片张数高水位阈值（`0` 关闭张数触发，允许 `1–500`；另设长边 `>2000px` 超过 `20` 张护栏；触线时单批卸载至低水位，且严格不改写 `user/message` 原文） |
 | `auditEnabled` | `true` | 检查要求是否保留 |
 | `auditCoverageThreshold` | `0.6` | 启发式要求覆盖率审计通过门槛（`0–1`）；仅控制词面覆盖率判定，语义冲突与授权溯源红线不受此阈值放行 |
-| `auditBlockOnLoss` | `true` | 要求丢失或矛盾时重试并阻止不合格摘要提交；显式设为 `false` 作为用户紧急逃生阀时，可放行普通覆盖缺失及非极性冲突，但**极性反转（`polarity`）与硬来源冲突（`untrusted-source`/`revoked`）在关闭时仍严格拦截** |
+| `auditBlockOnLoss` | `true` | 要求丢失或矛盾时重试并阻止不合格摘要提交；显式设为 `false` 作为用户紧急逃生阀时，仅可放行纯 `coverage` 覆盖缺失，**全部硬语义冲突（`polarity`/`value`/`unit`/`condition`/`range`/`relation`/`exception`/`reference`）与硬来源冲突（`untrusted-source`/`revoked`）在关闭时仍严格拦截** |
 | `auditCoverageScope` | `'recent'` | 控制启发式普通覆盖率（`coverage`）的强制窗口范围（支持设置页热生效）：`'recent'`（默认：同时覆盖 `preserveRecentMessages` / `preserveRecentUserTokens` 近期保留窗口与本跨度新增近期原始用户消息——上限至少取 `32` 条 / `4096` token，即使缩小第 6 节逐字原话预算也不会屏蔽当前跨度新指令的摘要覆盖审计，同时避免多代历史或超大规模迁移死锁；窗外普通覆盖遗漏仅记录告警并计入 `softCoverageCount`，不阻断且不消耗兜底名额；`/compact <focus>` 显式聚焦模式下仅柔化纯 `coverage` 缺口、不放行数值/区间/条件矛盾）、`'span-new'`（仅对本跨度直接新增、非旧检查点携带的原始 `user/message` 强制覆盖率）或 `'all'`（对全跨度所有保留原话强制覆盖率）。所有全局冲突红线（`polarity`、`value`、`unit`、`condition`、`range`、`relation`、`exception`、`reference`、`provenance`）及最近原话第 6 节逐字保存始终全局强制执行 |
 | `auditProvenanceBlock` | `true` | 授权/指令来源未匹配用户原文（`provenance`）时阻断提交；设为 `false` 时仅对无依据归纳改为告警放行，但对 `untrusted-source`（外部/注入来源）与 `revoked`（已撤回授权）仍保持强拦截 |
 | `auditExhaustionPolicy` | `'fallback'` | 当前摘要目标与至少 1 次纠偏重试全部耗尽且仅剩 `<= 3` 处纯覆盖率（`coverage`）或软 `missing-source` 缺口时的自动兜底策略（可在设置页热生效）：`'fallback'`（默认：外挂经核验纯用户原话至 `<pinned-source-rules>`、`≤ 2048` 字节并严守缩小与所有强红线后受控放行）或 `'block'`（严格拦截并失败）；`CONSTRAINT_POLARITY_LOST`（极性反转）、任意数值/单位/条件/区间/关系/例外/引用硬冲突（`value`/`unit`/`condition`/`range`/`relation`/`exception`/`reference`）、`summaryRetryCount === 0` 或结构/体积/进度/已撤回/`untrusted-source`/`revoked` 失败**永不走自动兜底** |
@@ -233,7 +233,7 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `windowFallback` | `200000` | 无法从 `windowProviderMap` 或宿主适配器获取模型窗口时的回退窗口大小（tokens） |
+| `windowFallback` | `200000` | 无法从 `windowProviderMap` 或宿主适配器获取模型窗口时的回退窗口大小（tokens）；发生查询失败或缺失 `resolveModelInfo` 时会在诊断 `windowLookupFailure` 及本地容量拒载报错（`CONTEXT_WINDOW_EXCEEDED` / `SUMMARY_GROUP_TOO_LARGE`）中显式透出 |
 | `windowClampMin` | `65536` | 回退窗口的最小钳制下限（仅在命中显式可信小窗口时豁免） |
 | `windowProviderMap` | `{}` | 按 `"provider/model"` 精确覆写主会话或摘要模型上下文窗口（例如 `{ "anthropic/claude": 200000 }`） |
 | `maxOverflowRetries` | `1` | 单轮对话命中宿主/上游上下文溢出后的最大自动接续重试次数 |
@@ -244,9 +244,9 @@ Weave 按缓存友好与零额外计费优先的顺序分层缩减上下文：
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `postCompactReinjectEnabled` | `true` | 压缩后确定性地从本地工作区磁盘重读最近活跃文件（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，受 `postCompactReinjectMaxBytes` 封顶；内置 `+4 KiB` 预读窗口对含缩进/引号/未闭合/错标签 PEM 与 `PGP PRIVATE KEY BLOCK`、`github_pat_`、裸 JWT、`scheme://user:pass@` URL 及显式键名右侧 40 位 AWS Secret 脱敏且保留 40 位 Git SHA-1；自动跳过 `.env`/`.env.*`/`.envrc`、`.npmrc`/`.netrc`/`.pypirc`/`auth.json`、`*.pem`/`*.key`/`*.p12`/`*.pfx`/`*.p8`/`*.ppk`/`*.tfvars`/`*.tfvars.json`、`token*.json`/`service-account*.json`、`.aws/credentials`/`.aws/config`/`.kube/config`/`.docker/config.json`/`.git/config`、`*secret*`/`*credential*`、`AGENTS.md`/`CLAUDE.md`、二进制文件、逃逸软链接与远程/合成会话） |
+| `postCompactReinjectEnabled` | `true` | 压缩后确定性地从本地工作区磁盘重读最近活跃文件（0 额外摘要模型调用；重注入内容作为后续主回合上下文输入，受 `postCompactReinjectMaxBytes` 封顶；内置 `+4 KiB` 预读窗口对含 `1→` 行号/缩进/引号/未闭合/错标签 PEM 与 4 空行内 `PGP PRIVATE KEY BLOCK`、`Authorization: Basic/Token/Bearer`、`x-api-key`、`db_password`/`refresh_token`、显式密钥键下 40 位 hex 及未闭合引号凭据、`github_pat_`、裸 JWT、`scheme://user:pass@` URL 及 `*_AWS_SECRET`/40 位 AWS Secret 脱敏且保留非密钥字段 40 位 Git SHA-1；自动跳过 `.env`/`.env.*`/`..env`/`...env*`/`.envrc`、`.npmrc`/`.netrc`/`.pypirc`/`auth.json`、`.ssh/` 私钥及 `.ssh/config`（保留 `.ssh/authorized_keys`/`known_hosts`/`*.pub`）、`terraform.tfstate`、`.gnupg/secring.gpg`、`.vault-token`/`.s3cfg`/`.boto`/`.htpasswd`、`*.pem`/`*.key`/`*.p12`/`*.pfx`/`*.p8`/`*.ppk`/`*.tfvars`/`*.tfvars.json`、`token*.json`/`service-account*.json`/`serviceAccountKey.json`/`appsettings.*.json`、`.aws/credentials`/`.aws/config`/`.kube/config`/`.docker/config.json`/`.git/config`、`*secret*`/`*credential*`、`AGENTS.md`/`CLAUDE.md`、二进制文件、逃逸软链接与远程/合成会话；属有界正则/路径防线，详见 [代码导航](architecture.md)） |
 | `postCompactReinjectMaxFiles` | `5` | 压缩后重注入的本地工作区文件数量上限（`1–20` 正整数） |
-| `postCompactReinjectMaxBytes` | `24576` | 压缩后重注入文件总字节上限（`1024–262144` 整数，UTF-8 字节） |
+| `postCompactReinjectMaxBytes` | `24576` | 压缩后重注入文件总字节上限（`1024–262144` 整数，UTF-8 字节；保持默认 `24576` 且窗口较紧如 `64k` 时按 `retainTokens × 2.0` 自适应收紧，例如 `64k` 约 `13533 B`，显式设置其他值则直接生效） |
 | `postCompactReinjectMaxFileBytes` | `6144` | 单个重注入文件的最大 UTF-8 读取字节数（`512–65536` 整数） |
 
 Weave 还在插件事件总线（通过顶层安全桥接 `hookBus` 访问 Cordis 事件总线，兼容严格 `ReflectService` Proxy）派发两个同进程 Cordis 插件生命周期钩子，供同一宿主内的其他 DSH 插件监听扩展（不执行本地外部 Shell 命令）：

@@ -269,7 +269,7 @@ function mountProgressCard({ language = 'zh', handler, initialVisibility = 'visi
   };
 }
 
-async function mountSettingsSection({ language = 'zh', initialConfig = null, providers = [{ provider: 'p', name: 'Provider P', models: [{ id: 'm' }] }] } = {}) {
+async function mountSettingsSection({ language = 'zh', initialConfig = null, providers = [{ provider: 'p', name: 'Provider P', models: [{ id: 'm' }] }], rpcHandler = null } = {}) {
   let mod;
   let Section;
   let dictionaries;
@@ -333,6 +333,10 @@ async function mountSettingsSection({ language = 'zh', initialConfig = null, pro
       const payload = JSON.parse(options.body);
       requests.push(payload);
       const task = (async () => {
+        if (typeof rpcHandler === 'function') {
+          const handled = await rpcHandler(payload);
+          if (handled) return handled;
+        }
         if (payload.method === 'get') {
           return { status: 200, text: async () => JSON.stringify({ ok: true, value: { config: savedConfig, cleared: false, restartRequired: false } }) };
         }
@@ -1901,6 +1905,80 @@ await test('session-switch-resets-resumable-confirm-copied-path-and-action-error
   assert.equal(find(tree, n => n.props?.['data-confirm'] === 'discard-resume'), null);
   assert.equal(textOf(h.byAction(tree, 'copy-backup-path')), '复制');
   assert.doesNotMatch(textOf(tree), /Resume failed on s-1/);
+  h.unmount();
+});
+
+await test('p1-1-settings-submit-syncs-server-maxTokens-under-follow-session-model', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'weave-p1-1-ui-'));
+  const file = join(root, 'summary-config.json');
+  const h = await mountSettingsSection({
+    language: 'zh',
+    rpcHandler: async (payload) => {
+      if (payload.method === 'models') return null;
+      try {
+        const value = await handleSummaryConfigRpc(payload, file);
+        if (payload.method === 'set' && value?.config) {
+          // Simulate server-adjusted / canonicalized maxTokens returned in result.config
+          return {
+            status: 200,
+            text: async () => JSON.stringify({ ok: true, value: { ...value, config: { ...value.config, maxTokens: 12288 } } }),
+          };
+        }
+        return { status: 200, text: async () => JSON.stringify({ ok: true, value }) };
+      } catch (error) {
+        return { status: 200, text: async () => JSON.stringify({ ok: false, error: { code: error.code, message: error.message } }) };
+      }
+    },
+  });
+
+  h.change('weave-summary-max-tokens', '16384');
+  await h.click('save');
+  const setReq = h.requests.filter(r => r.method === 'set').at(-1);
+  assert.equal(setReq.params.provider, '');
+  assert.equal(setReq.params.model, '');
+  assert.equal(setReq.params.maxTokens, 16384);
+  assert.equal(readSummaryConfig(file, { strict: true })?.maxTokens, 16384);
+  assert.equal(h.field('weave-summary-max-tokens').props.value, '12288');
+
+  // Clearing resets form.maxTokens cleanly
+  await h.click('clear');
+  assert.equal(h.field('weave-summary-max-tokens').props.value, '');
+  assert.equal(readSummaryConfig(file, { strict: true }), null);
+});
+
+await test('p2-4-progress-card-messageParams-node-fallback-and-stream-timing', async () => {
+  let payload = {
+    active: true,
+    phase: 'summarizing',
+    elapsedMs: 4200,
+    overallProcessedNodes: 8,
+    overallTotalNodes: 20,
+    overallTotalTokens: null,
+    messageKey: 'waveTotalProgress',
+    messageParams: { index: 2, total: 5 },
+    stream: { chunks: 1, textChars: 0, reasoningChars: 0, firstChunkMs: 650, idleMs: 4200 },
+    bili: { detected: false },
+  };
+  const h = mountProgressCard({ language: 'zh', handler: () => payload });
+  h.render({ sessionId: 'sess-p2-4' });
+  let tree = await h.settle();
+  let txt = textOf(tree);
+  assert.match(txt, /波次 2\/5/);
+  assert.match(txt, /已处理 8 \/ 20 节点/);
+  assert.match(txt, /首字 650ms/);
+  assert.match(txt, /静默 4\.2s/);
+
+  // Poll updates changing ONLY messageParams and stream timing must trigger re-render
+  payload = {
+    ...payload,
+    messageParams: { index: 3, total: 5 },
+    stream: { chunks: 1, textChars: 0, reasoningChars: 0, firstChunkMs: 1200, idleMs: 5500 },
+  };
+  tree = await h.fireNextTimer();
+  txt = textOf(tree);
+  assert.match(txt, /波次 3\/5/);
+  assert.match(txt, /首字 1\.2s/);
+  assert.match(txt, /静默 5\.5s/);
   h.unmount();
 });
 

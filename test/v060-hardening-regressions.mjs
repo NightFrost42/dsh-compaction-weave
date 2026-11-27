@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { syncBuiltinESMExports } from 'node:module';
 import { performance } from 'node:perf_hooks';
-import { CompactionArchive } from '../lib/history.js';
+import { CompactionArchive, spanEntries } from '../lib/history.js';
 import { CompactBM25FIndex } from '../lib/history-search.js';
 import { probeDiskLiveness } from '../lib/disk-liveness.js';
 import { extractCliFlags } from '../lib/audit/polarity.js';
@@ -13,12 +13,15 @@ import { instructionText } from '../lib/instruction-source.js';
 import { residentConstraints } from '../lib/continuation.js';
 import { validateProgressFacts } from '../lib/progress-facts.js';
 import { runConcurrentPool } from '../lib/concurrency.js';
-import { resumeCompactionFor } from '../lib/engine/resumable.js';
+import { resumeCompactionFor, retryCompactionFor } from '../lib/engine/resumable.js';
 import { migrateBiliSession } from '../lib/engine/migration.js';
 import { freezeContinuation, bindContinuationProgress } from '../lib/continuation-pending.js';
 import { ContinuationProgressStore } from '../lib/continuation-progress.js';
-import { selectCompactableRange } from '../lib/region.js';
-import { readSummaryConfig, readSummaryConfigAsync, writeSummaryConfig } from '../lib/summary-config.js';
+import { inspectCompactionEntryState, selectCompactableRange } from '../lib/region.js';
+import { handleSummaryConfigRpc, mergeSummaryConfig, readSummaryConfig, readSummaryConfigAsync, writeSummaryConfig } from '../lib/summary-config.js';
+import { projectSummaryMessage } from '../lib/reference-input.js';
+import { commitSnip, planSnip } from '../lib/snip.js';
+import { StockTransactionAdapter } from '../lib/transaction.js';
 import { resolveAdaptiveReinjectLimits } from '../lib/file-reinject.js';
 import { resolveCompactSpec, DEFAULT_CONFIG } from '../lib/config.js';
 import { measureSummaryRange } from '../lib/summary-budget.js';
@@ -844,7 +847,7 @@ await test('fresh-P1-8-units-and-explicit-default-adaptive-cap', () => {
   assert.deepEqual(resolveAdaptiveReinjectLimits({ policy: resolveConfig({ postCompactReinjectMaxBytes: 24576 }).config, spec }), baseline);
   for (const size of [4096, 32768]) assert.equal(resolveAdaptiveReinjectLimits({ policy: resolveConfig({ postCompactReinjectMaxBytes: size }).config, spec }).maxBytes, size);
 });
-await test('fresh-P1-9-settings-only-persist-edited-or-explicit-ratios', () => {
+await test('fresh-P1-9-settings-only-persist-edited-or-explicit-ratios', async () => {
   const source = fs.readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
   const start = source.indexOf('    function buildSettingsRpcParams(');
   const end = source.indexOf('\n    function ', start + 10);
@@ -858,8 +861,16 @@ await test('fresh-P1-9-settings-only-persist-edited-or-explicit-ratios', () => {
     assert.equal(build({ ...form, loadedThresholdRatio: .91 }, {}, clear).thresholdRatio, .91);
   }
   const rpcStart = source.indexOf('    async function rpc('), rpcEnd = source.indexOf('\n    function ', rpcStart);
-  const rpc = vm.runInNewContext(source.slice(rpcStart, rpcEnd) + '\nrpc', { RPC_PATH: '/', buildRpcHeaders: () => ({}), fetch: async () => ({ status: 403 }) });
-  return assert.rejects(rpc('get'), /Reload the DSH window/);
+  for (const status of [401, 403]) {
+    const rpcNoToken = vm.runInNewContext(source.slice(rpcStart, rpcEnd) + '\nrpc', { RPC_PATH: '/', buildRpcHeaders: () => ({}), fetch: async () => ({ status }) });
+    await assert.rejects(rpcNoToken('get'), /Reload the DSH window/);
+  }
+  const rpcWithToken = vm.runInNewContext(source.slice(rpcStart, rpcEnd) + '\nrpc', {
+    RPC_PATH: '/',
+    buildRpcHeaders: () => ({ 'x-weave-rpc-token': 'tok-123' }),
+    fetch: async () => ({ status: 401, text: async () => JSON.stringify({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Invalid token' } }) }),
+  });
+  await assert.rejects(rpcWithToken('get'), { code: 'UNAUTHORIZED', message: 'Invalid token' });
 });
 await test('fresh-P1-10-prestep-cache-uses-async-stat-and-immediate-external-invalidation', async () => {
   const file = join(scratch(), 'summary-config.json');
@@ -1012,6 +1023,965 @@ await test('codex-streaming-search-preserves-latest-update-anchor-and-two-hop', 
   const hopRes = await archive.search('hop-s', 'postgresql archival stalled', { limit: 6 });
   assert.ok(hopRes.hits.some(hit => hit.seq === 50 && hit.secondHop === true), JSON.stringify(hopRes.hits));
   assert.equal(hopRes.hits.some(hit => hit.seq === 51), false);
+});
+
+await test('seal-P1-1-follow-session-model-preserves-explicit-maxTokens', async () => {
+  const file = join(scratch(), 'summary-config.json');
+  const saved = await handleSummaryConfigRpc({
+    method: 'set',
+    params: { provider: '', model: '', maxTokens: 16384 },
+  }, file);
+  assert.equal(saved.cleared, false);
+  assert.equal(saved.config.provider, '');
+  assert.equal(saved.config.model, '');
+  assert.equal(saved.config.maxTokens, 16384);
+  const onDisk = readSummaryConfig(file, { strict: true });
+  assert.equal(onDisk?.maxTokens, 16384);
+  const merged = mergeSummaryConfig({ summarizationProvider: 'host-p', summarizationModel: 'host-m', maxTokens: 4096 }, onDisk);
+  assert.equal(merged.summarizationProvider, 'host-p');
+  assert.equal(merged.summarizationModel, 'host-m');
+  assert.equal(merged.maxTokens, 16384);
+
+  // Explicit null maxTokens, clear:['maxTokens'], or model-only clear without maxTokens still clears
+  const clearedByNull = await handleSummaryConfigRpc({ method: 'set', params: { provider: '', model: '', maxTokens: null } }, file);
+  assert.equal(clearedByNull.cleared, true);
+  assert.equal(clearedByNull.config, null);
+
+  await handleSummaryConfigRpc({ method: 'set', params: { provider: 'p', model: 'm', maxTokens: 16384 } }, file);
+  const clearedByEmptyPair = await handleSummaryConfigRpc({ method: 'set', params: { provider: '', model: '' } }, file);
+  assert.equal(clearedByEmptyPair.cleared, true);
+  assert.equal(clearedByEmptyPair.config, null);
+
+  await handleSummaryConfigRpc({ method: 'set', params: { provider: '', model: '', maxTokens: 16384 } }, file);
+  const clearedByKeyList = await handleSummaryConfigRpc({ method: 'set', params: { provider: '', model: '', maxTokens: 16384, clear: ['maxTokens'] } }, file);
+  assert.equal(clearedByKeyList.cleared, true);
+  assert.equal(clearedByKeyList.config, null);
+});
+
+await test('seal-P1-2-resolveSpec-forwards-preferRequestHeader-and-drives-overflow-snip', async () => {
+  const f = fixture({ auto: true, snipEnabled: true, minimumReductionRatio: 0.1 });
+  f.ctx.llm.resolveModelInfo = async (provider, model) => {
+    if (provider === 'small' && model === 'small-24k') return { contextWindow: 24000, maxTokens: 2048 };
+    return { contextWindow: 200000, maxTokens: 4096 };
+  };
+  f.session.requestHeader = () => ({ config: { provider: 'small', model: 'small-24k' } });
+  f.agent.model = { current: () => ({ provider: 'big', model: 'big-200k' }) };
+
+  await f.engine._preStepCache.run({ measures: new Map(), specs: new Map() }, async () => {
+    const defaultSpec = await f.engine._resolveSpec(f.agent, undefined, signal());
+    assert.equal(defaultSpec.provider, 'big');
+    assert.equal(defaultSpec.model, 'big-200k');
+    assert.equal(defaultSpec.lockedWindow, 200000);
+
+    // Must bypass preferRequestHeader:false pre-step cache entry and use requestHeader target
+    const headerSpec = await f.engine._resolveSpec(f.agent, undefined, signal(), { preferRequestHeader: true });
+    assert.equal(headerSpec.provider, 'small');
+    assert.equal(headerSpec.model, 'small-24k');
+    assert.equal(headerSpec.lockedWindow, 24000);
+
+    const budgetHeaderSpec = await f.engine._resolveSpec(f.agent, undefined, signal(), { budgetOnly: true, preferRequestHeader: true });
+    assert.ok(budgetHeaderSpec.messageBudgetTokens < 24000);
+  });
+
+  // Real agent/request-error overflow path with preferRequestHeader: true
+  const hooks2 = new Map();
+  const root2 = scratch();
+  const events2 = [];
+  const surface2 = { nodes: [], replaceGeneration: 0 };
+  const session2 = {
+    id: randomUUID(),
+    surface: surface2,
+    header: { cwd: root2 },
+    get seq() { return events2.length; },
+    eventAt: s => events2[s],
+    snapshotEvents: () => [...events2],
+    requestHeader: () => ({ config: { provider: 'small', model: 'small-24k' } }),
+    toolHistory: () => [],
+    deriveEventMessage: ev => ev?.type === 'user/message' ? ev.data : ev?.data?.message,
+    append(type, data, options = {}) {
+      const ev = { seq: events2.length, time: Date.now(), type, data, ...options };
+      events2.push(ev);
+      if (options.surfaceOp === 'append') surface2.nodes.push(ev.seq);
+      else if (options.surfaceOp?.op === 'replace') {
+        const a = surface2.nodes.indexOf(options.surfaceOp.startSeq), b = surface2.nodes.indexOf(options.surfaceOp.endSeq);
+        surface2.nodes.splice(a, b - a + 1, ev.seq);
+        surface2.replaceGeneration++;
+      }
+      return ev;
+    },
+  };
+  const ctx2 = {
+    on(name, cb) { hooks2.set(name, cb); return () => {}; },
+    provide() {},
+    logger: { info() {}, warn() {} },
+    sessions: { get: id => id === session2.id ? session2 : null, async flush() { return true; } },
+    tokenMeter: {
+      measure() {
+        const nodes = surface2.nodes.map(s => ({ seq: s, tokens: approxTokens(blocksToText(session2.deriveEventMessage(events2[s])?.content)) }));
+        return { nodes, totalTokens: nodes.reduce((sum, n) => sum + n.tokens, 0) };
+      },
+    },
+    llm: {
+      async resolveModelInfo(p, m) {
+        if (p === 'small' && m === 'small-24k') return { contextWindow: 24000, maxTokens: 2048 };
+        return { contextWindow: 200000, maxTokens: 4096 };
+      },
+      async *stream() {
+        yield { type: 'text-delta', text: summary() };
+        yield { type: 'finish', kind: 'stop' };
+      },
+    },
+  };
+  const eng2 = new WeaveCompactionEngine(ctx2, resolveConfig({
+    archiveDir: join(root2, 'archive'),
+    language: 'en',
+    summaryRetryCount: 0,
+    summaryRetryDelayMs: 0,
+    sessionMemoryEnabled: false,
+    auto: true,
+    snipEnabled: true,
+    retainTokens: 512,
+    keepRecent: 2,
+    snipKeepRecentTokens: 512,
+    snipKeepRecentTurns: 1,
+    snipMinSavingsTokens: 1000,
+  }).config);
+  eng2.historyToolsAvailable = true;
+  fixtures.push(eng2);
+  const push2 = (role, text) => session2.append(`${role}/message`, role === 'user' ? { id: randomUUID(), role, content: [{ type: 'text', text }], source: { kind: 'user' } } : { message: { id: randomUUID(), role, content: [{ type: 'text', text }], source: role === 'system' ? { kind: 'system-prompt' } : { kind: 'model', provider: 'big', model: 'big-200k' } } }, { surfaceOp: 'append' });
+  session2.append('turn/start', { turn: 1 });
+  session2.append('step/start', { turn: 1, step: 1 });
+  push2('system', 'Keep deployment gates.');
+  for (let i = 1; i <= 5; i += 1) {
+    if (i > 1) {
+      session2.append('turn/start', { turn: i });
+      session2.append('step/start', { turn: i, step: 1 });
+    }
+    push2('user', `Requirement batch ${i}: retain gate ${i}.`);
+    push2('assistant', `Verbose build output segment ${i}. `.repeat(450));
+    if (i < 5) {
+      session2.append('step/end', { turn: i, step: 1 });
+      session2.append('turn/end', { turn: i });
+    }
+  }
+  const agent2 = { session: session2, options: { provider: 'big', model: 'big-200k' }, model: { current: () => ({ provider: 'big', model: 'big-200k' }) }, runMaintenance: fn => fn(signal()) };
+  // Fail compaction summary so agent/request-error must resolve overflowSpec (24k, not 200k) and trigger emergency snip
+  eng2.ctx.llm.stream = async function* () { throw Object.assign(new Error('overflow summary fail'), { code: 'CONTEXT_WINDOW_EXCEEDED' }); };
+  const hook = hooks2.get('agent/request-error');
+  assert.equal(typeof hook, 'function');
+  const outcome = await hook({ agent: agent2, failure: Object.assign(new Error('maximum context length exceeded'), { status: 400 }), signal: signal() }, async () => ({ kind: 'abort' }));
+  assert.deepEqual(outcome, { kind: 'retry' });
+  assert.ok(events2.some(ev => ev.type === 'compaction/start' && String(ev.data?.compactionId ?? '').startsWith('weave-snip-')), 'smaller requestHeader window should drive emergency snip');
+});
+
+await test('seal-P1-3-sanitizeArchiveEntry-deep-redacts-object-arguments-and-content', async () => {
+  const archive = new CompactionArchive({ root: join(scratch(), 'archive') });
+  const skSecret = ['sk', 'testSecretValue1234567890abcd'].join('-');
+  const ghpSecret = ['ghp', '1234567890abcdefghijklmnop'].join('_');
+  const dsn = 'postgres://admin:TopSecretDbPass99@db.example.internal:5432/prod';
+  const entry = {
+    seq: 1,
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool-call',
+        callId: 'call-obj-1',
+        name: 'deploy_service',
+        arguments: {
+          apiKey: skSecret,
+          dbUrl: dsn,
+          name: skSecret,
+          headers: { Authorization: `Bearer ${skSecret}` },
+          tokens: [ghpSecret],
+        },
+      },
+      {
+        type: 'tool-result',
+        callId: 'call-obj-1',
+        name: 'deploy_service',
+        content: {
+          status: 'ok',
+          type: 'json',
+          credential: skSecret,
+          dbUrl: dsn,
+        },
+      },
+    ],
+  };
+
+  await archive.writeSpan({ sessionId: 'p1-3', compactionId: 'c1', entries: [entry] });
+  // Must NOT mutate original in-memory object
+  assert.equal(entry.content[0].arguments.apiKey, skSecret);
+  assert.equal(entry.content[0].arguments.headers.Authorization, `Bearer ${skSecret}`);
+
+  const read = await archive.readSpan('p1-3', 'c1');
+  assert.equal(read.ok, true);
+  const storedCall = read.entries[0].content[0];
+  assert.equal(storedCall.type, 'tool-call');
+  assert.equal(storedCall.callId, 'call-obj-1');
+  assert.equal(storedCall.name, 'deploy_service');
+  assert.doesNotMatch(JSON.stringify(storedCall.arguments), new RegExp(skSecret));
+  assert.doesNotMatch(JSON.stringify(storedCall.arguments), new RegExp(ghpSecret));
+  assert.doesNotMatch(JSON.stringify(storedCall.arguments), /TopSecretDbPass99/);
+
+  const storedResult = read.entries[0].content[1];
+  assert.equal(storedResult.type, 'tool-result');
+  assert.equal(storedResult.content.type, 'json');
+  assert.doesNotMatch(JSON.stringify(storedResult.content), new RegExp(skSecret));
+  assert.doesNotMatch(JSON.stringify(storedResult.content), /TopSecretDbPass99/);
+});
+
+await test('seal-P2-2-retryCompactionFor-holds-busy-across-recovery-and-asyncRollingWave', async () => {
+  const f = fixture({ auto: false });
+  history(f);
+
+  // 1. Observe _busy held synchronously during recoverPending AND across asyncRollingWave until stream completes
+  const origRecover = f.engine.recoverPending.bind(f.engine);
+  let busyInsideRecover = false;
+  f.engine.recoverPending = async (sess, ...rest) => {
+    busyInsideRecover = f.engine._busy.has(sess);
+    return origRecover(sess, ...rest);
+  };
+  const gate1 = deferred();
+  f.ctx.llm.stream = async function* () {
+    await gate1.promise;
+    yield { type: 'text-delta', text: summary('Keep retry timeout <= 30 seconds.') };
+    yield { type: 'finish', kind: 'stop' };
+  };
+
+  const accepted1 = await retryCompactionFor(f.engine, f.session, { agent: f.agent, asyncRollingWave: true });
+  assert.equal(accepted1.accepted, true);
+  assert.equal(accepted1.completed, false);
+  assert.equal(busyInsideRecover, true);
+  assert.equal(f.engine._busy.has(f.session), true);
+  await assert.rejects(retryCompactionFor(f.engine, f.session, { agent: f.agent }), { code: 'busy' });
+
+  gate1.resolve();
+  for (let i = 0; i < 50 && f.engine._busy.has(f.session); i += 1) await delay(10);
+  assert.equal(f.engine._busy.has(f.session), false);
+
+  // 2. Resumable handoff path does not self-reject as busy and holds _busy until wave completes
+  const f2 = fixture({ auto: false });
+  const seqs2 = history(f2);
+  const nowIso = new Date().toISOString();
+  writeResumableCompaction(f2.engine.sessionState, f2.session.id, {
+    version: 1,
+    jobId: 'job-p2-2',
+    trigger: 'manual',
+    status: 'interrupted',
+    interruptReason: 'crash',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    remainingSeqs: seqs2,
+    remainingSourceSha256: null,
+    initialTotalNodes: seqs2.length,
+    completedNodes: 0,
+    completedChunks: 0,
+    waveCount: 0,
+    consecutiveFailures: 1,
+    initialTotalTokens: 4000,
+    completedTokens: 0,
+    batchCheckpointSeqs: [],
+    allowForeignFallback: false,
+    checkpointMeta: null,
+    originalBackupId: null,
+  });
+  const gate2 = deferred();
+  f2.ctx.llm.stream = async function* () {
+    await gate2.promise;
+    yield { type: 'text-delta', text: summary('Keep retry timeout <= 30 seconds.') };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  const accepted2 = await retryCompactionFor(f2.engine, f2.session, { agent: f2.agent, asyncRollingWave: true });
+  assert.equal(accepted2.accepted, true);
+  assert.equal(accepted2.completed, false);
+  assert.equal(f2.engine._busy.has(f2.session), true);
+  gate2.resolve();
+  for (let i = 0; i < 50 && f2.engine._busy.has(f2.session); i += 1) await delay(10);
+  assert.equal(f2.engine._busy.has(f2.session), false);
+});
+
+await test('seal-P2-3-commitSnip-compaction-end-double-failure-recovers-without-deadlock', async () => {
+  const f = fixture({ auto: false });
+  f.session.append('turn/start', { turn: 1 });
+  f.session.append('step/start', { turn: 1, step: 1 });
+  f.add('system', 'System prefix.');
+  f.add('user', 'Req A.');
+  const a1 = f.add('assistant', 'Old output '.repeat(1200));
+  const u2 = f.add('user', 'Latest question.');
+  f.add('assistant', 'Recent reply.');
+  assert.ok(u2.seq > a1.seq);
+
+  const plan = {
+    spans: [
+      {
+        compactionId: 'weave-snip-double-fail',
+        startSeq: a1.seq,
+        endSeq: a1.seq,
+        seqs: [a1.seq],
+        savedTokens: 1200,
+        stubText: '[Snipped archive stub]',
+      },
+    ],
+  };
+
+  const origAppend = f.session.append.bind(f.session);
+  f.session.append = (type, data, opts) => {
+    if (type === 'compaction/end') throw new Error('simulated flush failure');
+    return origAppend(type, data, opts);
+  };
+  await assert.rejects(
+    commitSnip({ session: f.session, plan, archive: f.engine.archive, log() {} }),
+    err => err?.code === 'commit' && err?.surfaceMutated === true,
+  );
+  f.session.append = origAppend;
+
+  const beforeState = inspectCompactionEntryState(f.session);
+  assert.notEqual(beforeState.unmatchedCompactionStart, null);
+
+  // In-memory recovery closes weave-snip-* cleanly without RECOVERY_REQUIRED
+  const rec = await f.engine.recoverPending(f.session);
+  assert.ok(rec.recovered >= 1);
+  assert.equal(inspectCompactionEntryState(f.session).unmatchedCompactionStart, null);
+  assert.equal(f.engine._recoveryBlocked.has(f.engine._keyOf(f.session)), false);
+
+  // Also test reopen path via StockTransactionAdapter.prototype.recoverBeforeOpen
+  const snipEvents = f.events.filter(e => e.type !== 'compaction/end');
+  const persistedClosers = [];
+  const fakeAdapter = {
+    roots: new Map(),
+    backupStores: new Map(),
+    blocked: new Set(['s-snip']),
+    sessions: new Map(),
+    logger: { warn() {} },
+    backend: {
+      tracker: {
+        writers: new Map(),
+        claimWrite() {},
+        releaseClaim() {},
+      },
+      coldLogMemo: new Map(),
+      async findLog() { return { currentPath: join(f.root, 'fake.v4.jsonl') }; },
+      async acquireLease() { return { async release() {} }; },
+      async readStoredLog() { return { meta: {}, events: snipEvents, inheritedEventCount: 0 }; },
+      async persistBatch(_meta, batch) { persistedClosers.push(...batch); },
+    },
+  };
+  await StockTransactionAdapter.prototype.recoverBeforeOpen.call(fakeAdapter, 's-snip', signal());
+  assert.equal(persistedClosers.length, 1);
+  assert.equal(persistedClosers[0].type, 'compaction/end');
+  assert.equal(persistedClosers[0].data.compactionId, 'weave-snip-double-fail');
+  assert.equal(persistedClosers[0].data.error, undefined);
+  assert.equal(fakeAdapter.blocked.has('s-snip'), false);
+
+  // Non-snip weave-* compaction with surface replacement MUST NOT be closed silently
+  const nonSnipClosers = [];
+  const nonSnipEvents = snipEvents.map(ev => {
+    if (ev.data?.compactionId === 'weave-snip-double-fail') {
+      return { ...ev, data: { ...ev.data, compactionId: 'weave-manual-danger' } };
+    }
+    if (ev.data?.source?.compactionId === 'weave-snip-double-fail') {
+      return { ...ev, data: { ...ev.data, source: { ...ev.data.source, compactionId: 'weave-manual-danger' } } };
+    }
+    return ev;
+  });
+  fakeAdapter.backend.readStoredLog = async () => ({ meta: {}, events: nonSnipEvents, inheritedEventCount: 0 });
+  fakeAdapter.backend.persistBatch = async (_meta, batch) => { nonSnipClosers.push(...batch); };
+  await StockTransactionAdapter.prototype.recoverBeforeOpen.call(fakeAdapter, 's-nonsnip', signal());
+  assert.equal(nonSnipClosers.length, 0);
+});
+
+await test('seal-P2-5-continuation-reports-reinject-telemetry', async () => {
+  const f = fixture({
+    auto: false,
+    archiveDir: join(scratch(), 'archive'),
+    postCompactReinjectEnabled: true,
+    postCompactReinjectMaxBytes: 16384,
+  });
+  const activeFile = join(f.root, 'src-note.js');
+  writeFileSync(activeFile, 'export const BUILD_FLAG = 42;\n', 'utf8');
+  f.session.append('turn/start', { turn: 1 });
+  f.session.append('step/start', { turn: 1, step: 1 });
+  f.add('system', 'Stable system prompt.');
+  f.add('user', 'Keep BUILD_FLAG = 42.');
+  const callEvent = f.session.append('assistant/message', {
+    message: {
+      id: randomUUID(),
+      role: 'assistant',
+      content: [
+        { type: 'tool-call', callId: 'read-1', name: 'read_file', arguments: { path: activeFile } },
+      ],
+      source: { kind: 'model', provider: 'p', model: 'm' },
+    },
+  }, { surfaceOp: 'append' });
+  const resultEvent = f.session.append('tool/result', {
+    callId: 'read-1',
+    message: {
+      id: randomUUID(),
+      role: 'tool',
+      toolCallId: 'read-1',
+      content: [{ type: 'text', text: 'export const BUILD_FLAG = 42;\n' + 'context line '.repeat(400) }],
+      source: { kind: 'tool', callId: 'read-1' },
+    },
+  }, { surfaceOp: 'append' });
+  const padEvent = f.add('assistant', 'Detailed analysis filler. '.repeat(400));
+  f.session.append('step/end', { turn: 1, step: 1 });
+  f.session.append('turn/end', { turn: 1 });
+  const seqs = [callEvent.seq, resultEvent.seq, padEvent.seq];
+  f.ctx.llm.stream = async function* () {
+    yield { type: 'text-delta', text: '## Goal\nKeep BUILD_FLAG = 42.\n\n## State\nInspected src-note.js.\n\n## Next\nContinue verification.\n\n## Uncertain\nNone.' };
+    yield { type: 'finish', kind: 'stop', usage: { inputTokens: 120, outputTokens: 40 } };
+  };
+  await f.engine._trackRun(f.session, { trigger: 'manual' }, () =>
+    f.engine._compactRegionCore(seqs[0], seqs.at(-1), f.agent, signal(), {
+      manual: true,
+      policy: f.engine.config,
+      continuation: true,
+    }),
+  );
+  const snap = f.engine.progressTracker.snapshot(f.session.id);
+  assert.ok(snap);
+  assert.ok(snap.reinjectFiles >= 1, JSON.stringify(snap));
+  assert.ok(snap.reinjectBytes > 0, JSON.stringify(snap));
+  assert.ok(snap.effectiveReinjectMaxBytes > 0, JSON.stringify(snap));
+});
+
+await test('seal-P2-6-projectSummaryMessage-strips-stale-aux-blocks-on-continuation', () => {
+  const continuationSource = {
+    kind: 'compact-checkpoint',
+    compactionId: 'c-old',
+    continuation: { version: 1, pages: [] },
+    memorySources: [{ seq: 1 }],
+    memoryRequirements: ['Keep WAL enabled'],
+  };
+  const event = {
+    seq: 10,
+    type: 'user/message',
+    data: {
+      id: 'm-10',
+      role: 'user',
+      source: continuationSource,
+      content: [{
+        type: 'text',
+        text: [
+          '## Goal\nKeep WAL enabled.',
+          '<pinned-source-rules count="1">\n- old pinned rule\n</pinned-source-rules>',
+          '<disk-state-check checked-at="2026-11-27T00:00:00Z" scope="local-workspace">\n- stale disk status\n</disk-state-check>',
+          '<active-workspace-files count="1" total-bytes="32" scope="local-workspace">\n<file path="old.js" bytes="32" truncated="false">\nconst old = 1;\n</file>\n</active-workspace-files>',
+        ].join('\n\n'),
+      }],
+    },
+  };
+  const fakeSession = {
+    eventAt: s => (s === event.seq ? event : undefined),
+    deriveEventMessage: ev => ev?.data,
+  };
+  const projected = projectSummaryMessage(fakeSession, event, event.data);
+  const text = blocksToText(projected.content);
+  assert.match(text, /Keep WAL enabled\./);
+  assert.doesNotMatch(text, /<pinned-source-rules/);
+  assert.doesNotMatch(text, /<disk-state-check/);
+  assert.doesNotMatch(text, /<active-workspace-files/);
+  assert.deepEqual(event.data.source.memorySources, [{ seq: 1 }]);
+  assert.deepEqual(event.data.source.memoryRequirements, ['Keep WAL enabled']);
+});
+
+await test('codex-P1-P2-route-cache-budget-switch-keyaware-redact-stale-running-retry-and-reinject', async () => {
+  // 1. Alternating full(false) -> budgetOnly(true) -> full(true) must NOT return stale 200k fullSpec
+  const f1 = fixture({ auto: true });
+  f1.ctx.llm.resolveModelInfo = async (provider, model) => {
+    if (provider === 'small' && model === 'small-24k') return { contextWindow: 24000, maxTokens: 2048 };
+    return { contextWindow: 200000, maxTokens: 4096 };
+  };
+  f1.session.requestHeader = () => ({ config: { provider: 'small', model: 'small-24k' } });
+  f1.agent.model = { current: () => ({ provider: 'big', model: 'big-200k' }) };
+  await f1.engine._preStepCache.run({ measures: new Map(), specs: new Map() }, async () => {
+    const s1 = await f1.engine._resolveSpec(f1.agent, undefined, signal());
+    assert.equal(s1.lockedWindow, 200000);
+    const sBudget = await f1.engine._resolveSpec(f1.agent, undefined, signal(), { budgetOnly: true, preferRequestHeader: true });
+    assert.ok(sBudget.messageBudgetTokens < 24000);
+    const sFullTrue = await f1.engine._resolveSpec(f1.agent, undefined, signal(), { preferRequestHeader: true });
+    assert.equal(sFullTrue.provider, 'small');
+    assert.equal(sFullTrue.model, 'small-24k');
+    assert.equal(sFullTrue.lockedWindow, 24000);
+  });
+
+  // 2. Object redaction: unprefixed password, hex apiKey, Authorization: Basic ..., and payload records[0].name
+  const archive = new CompactionArchive({ root: join(scratch(), 'archive') });
+  const hex40 = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+  const basicVal = 'Basic dXNlcjpzZWNyZXRwYXNz';
+  const ghpSecret = ['ghp', 'payloadSecretName12345678'].join('_');
+  const plainPass = 'myUnprefixedDbSecret99';
+  const envelopeCallId = ['sk', 'envelopeCallId1234567890'].join('-');
+  const objEntry = {
+    seq: 2,
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool-call',
+        callId: envelopeCallId,
+        name: 'http_call',
+        arguments: {
+          password: plainPass,
+          apiKey: hex40,
+          headers: { Authorization: basicVal },
+        },
+      },
+      {
+        type: 'tool-result',
+        callId: envelopeCallId,
+        name: 'http_call',
+        content: {
+          records: [{ name: ghpSecret }],
+        },
+      },
+    ],
+  };
+  await archive.writeSpan({ sessionId: 'codex-obj', compactionId: 'c1', entries: [objEntry] });
+  assert.equal(objEntry.content[0].arguments.password, plainPass);
+  const loaded = await archive.readSpan('codex-obj', 'c1');
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.entries[0].content[0].callId, envelopeCallId);
+  assert.equal(loaded.entries[0].content[0].name, 'http_call');
+  assert.doesNotMatch(JSON.stringify(loaded.entries[0].content[0].arguments), /myUnprefixedDbSecret99/);
+  assert.doesNotMatch(JSON.stringify(loaded.entries[0].content[0].arguments), new RegExp(hex40));
+  assert.doesNotMatch(JSON.stringify(loaded.entries[0].content[0].arguments), /dXNlcjpzZWNyZXRwYXNz/);
+  assert.doesNotMatch(JSON.stringify(loaded.entries[0].content[1].content), new RegExp(ghpSecret));
+
+  // 3a. retryCompactionFor reconciles stale 'running' resumable checkpoint while holding _busy and resumes it
+  const f3 = fixture({ auto: false, failureThreshold: 3 });
+  const seqs3 = history(f3);
+  const nowIso = new Date().toISOString();
+  writeResumableCompaction(f3.engine.sessionState, f3.session.id, {
+    version: 1,
+    jobId: 'job-stale-run',
+    trigger: 'manual',
+    status: 'running',
+    interruptReason: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    remainingSeqs: seqs3,
+    remainingSourceSha256: null,
+    initialTotalNodes: seqs3.length,
+    completedNodes: 0,
+    completedChunks: 0,
+    waveCount: 0,
+    consecutiveFailures: 0,
+    initialTotalTokens: 4000,
+    completedTokens: 0,
+    batchCheckpointSeqs: [],
+    allowForeignFallback: false,
+    checkpointMeta: null,
+    originalBackupId: null,
+  });
+  let compactCalls3 = 0;
+  f3.ctx.llm.stream = async function* () {
+    compactCalls3 += 1;
+    yield { type: 'text-delta', text: summary('Keep retry timeout <= 30 seconds.') };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  const ret3 = await retryCompactionFor(f3.engine, f3.session, { agent: f3.agent });
+  assert.equal(compactCalls3, 1);
+  assert.equal(f3.engine._busy.has(f3.session), false);
+  assert.ok(ret3?.compactionId);
+
+  // 3b. When resumeCompactionFor transfers lock and returns null, retryCompactionFor must NOT fall through to a duplicate run
+  const f4 = fixture({ auto: false });
+  history(f4);
+  const origResume = f4.engine.resumeCompactionFor.bind(f4.engine);
+  let fallbackCalls = 0;
+  f4.engine._compactManual = async () => { fallbackCalls += 1; return { status: 'unexpected' }; };
+  f4.engine.resumeCompactionFor = async (sess, opts) => {
+    const p = Promise.resolve(null);
+    opts._onLockTransferred?.(p);
+    f4.engine._busy.delete(sess);
+    return null;
+  };
+  writeResumableCompaction(f4.engine.sessionState, f4.session.id, {
+    version: 1,
+    jobId: 'job-null-handoff',
+    trigger: 'manual',
+    status: 'interrupted',
+    interruptReason: 'crash',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    remainingSeqs: f4.session.surface.nodes.slice(1),
+    remainingSourceSha256: null,
+    initialTotalNodes: f4.session.surface.nodes.length,
+    completedNodes: 0,
+    completedChunks: 0,
+    waveCount: 0,
+    consecutiveFailures: 1,
+    initialTotalTokens: 4000,
+    completedTokens: 0,
+    batchCheckpointSeqs: [],
+    allowForeignFallback: false,
+    checkpointMeta: null,
+    originalBackupId: null,
+  });
+  const nullHandoff = await retryCompactionFor(f4.engine, f4.session, { agent: f4.agent });
+  assert.equal(nullHandoff, null);
+  assert.equal(fallbackCalls, 0);
+  f4.engine.resumeCompactionFor = origResume;
+
+  // 4. prepareContinuationForSpan reports reduced / omitted / disabled reinjection telemetry
+  for (const enabled of [true, false]) {
+    const f5 = fixture({
+      auto: false,
+      archiveDir: join(scratch(), 'archive'),
+      postCompactReinjectEnabled: enabled,
+      postCompactReinjectMaxBytes: 4096,
+    });
+    const bigFile = join(f5.root, 'large-note.js');
+    writeFileSync(bigFile, '// line\n'.repeat(300), 'utf8'); // ~2400B -> fits under 4096 or disabled = 0
+    f5.session.append('turn/start', { turn: 1 });
+    f5.session.append('step/start', { turn: 1, step: 1 });
+    f5.add('system', 'Stable system prompt.');
+    f5.add('user', 'Keep large-note guardrails.');
+    const cEv = f5.session.append('assistant/message', {
+      message: {
+        id: randomUUID(),
+        role: 'assistant',
+        content: [{ type: 'tool-call', callId: 'r-1', name: 'read_file', arguments: { path: bigFile } }],
+        source: { kind: 'model', provider: 'p', model: 'm' },
+      },
+    }, { surfaceOp: 'append' });
+    const rEv = f5.session.append('tool/result', {
+      callId: 'r-1',
+      message: {
+        id: randomUUID(),
+        role: 'tool',
+        toolCallId: 'r-1',
+        content: [{ type: 'text', text: '// filler '.repeat(600) }],
+        source: { kind: 'tool', callId: 'r-1' },
+      },
+    }, { surfaceOp: 'append' });
+    f5.session.append('step/end', { turn: 1, step: 1 });
+    f5.session.append('turn/end', { turn: 1 });
+    f5.ctx.llm.stream = async function* () {
+      yield { type: 'text-delta', text: '## Goal\nKeep large-note guardrails.\n\n## State\nRead file.\n\n## Next\nDone.\n\n## Uncertain\nNone.' };
+      yield { type: 'finish', kind: 'stop', usage: { inputTokens: 80, outputTokens: 20 } };
+    };
+    await f5.engine._trackRun(f5.session, { trigger: 'manual' }, () =>
+      f5.engine._compactRegionCore(cEv.seq, rEv.seq, f5.agent, signal(), {
+        manual: true,
+        policy: f5.engine.config,
+        continuation: true,
+      }),
+    );
+    const snap5 = f5.engine.progressTracker.snapshot(f5.session.id);
+    assert.equal(snap5.reinjectFiles, enabled ? 1 : 0);
+    if (enabled) assert.ok(snap5.reinjectBytes > 0 && snap5.effectiveReinjectMaxBytes === 4096);
+    else assert.equal(snap5.reinjectBytes, 0);
+  }
+});
+
+await test('codex-round2-redact-suffix-array-blocks-cache-identity-abort-flush-and-shrunk-reinject', async () => {
+  // 1. Space/comma/newline/quote credentials, array-valued credentials, and real spanEntries blocks copy
+  const archive = new CompactionArchive({ root: join(scratch(), 'archive-r2') });
+  const ghpSecret = ['ghp', 'blocksPayloadSecret123456'].join('_');
+  const envelopeCallId = ['sk', 'envelopeCallIdRoundTwo12'].join('-');
+  const eventsR = [
+    {
+      seq: 0,
+      type: 'assistant/message',
+      data: {
+        message: {
+          id: 'm-call',
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool-call',
+              callId: envelopeCallId,
+              name: 'fetch_records',
+              arguments: {
+                password: 'correct horse battery staple',
+                apiKey: 'key,with,commas',
+                api_key: 'line1\nline2"quote',
+                nested: { password: ['plainSecretOne', 'plainSecretTwo'] },
+                headers: { Authorization: ['Basic dXNlcjpwYXNz'] },
+              },
+            },
+          ],
+        },
+      },
+    },
+    {
+      seq: 1,
+      type: 'tool/result',
+      data: {
+        callId: envelopeCallId,
+        name: 'fetch_records',
+        message: {
+          id: 'm-res',
+          role: 'tool',
+          toolCallId: envelopeCallId,
+          content: [{ type: 'record', name: ghpSecret }],
+        },
+      },
+    },
+  ];
+  const sessR = {
+    seq: eventsR.length,
+    eventAt: s => eventsR[s],
+    deriveEventMessage: ev => ev?.data?.message ?? ev?.data,
+  };
+  const builtEntries = spanEntries(sessR, [0, 1]);
+  await archive.writeSpan({ sessionId: 'r2-span', compactionId: 'c1', entries: builtEntries });
+  const loadedR = await archive.readSpan('r2-span', 'c1');
+  assert.equal(loadedR.ok, true);
+  const serializedAll = JSON.stringify(loadedR.entries);
+  for (const leaked of ['correct', 'horse', 'battery', 'staple', 'with,commas', 'line1', 'line2', 'plainSecretOne', 'dXNlcjpwYXNz', ghpSecret]) {
+    assert.equal(serializedAll.includes(leaked), false, `Must not leak ${leaked}`);
+  }
+  assert.equal(loadedR.entries[0].blocks[0].callId, envelopeCallId);
+  assert.equal(loadedR.entries[0].blocks[0].name, 'fetch_records');
+
+  // 2. Cache identity separation for budgetOnly(true) -> full(true) across header/config/resolver changes
+  const fCache = fixture({ auto: true });
+  fCache.ctx.llm.resolveModelInfo = async (_p, m) =>
+    m === 'hdr-30k' ? { contextWindow: 30000, maxTokens: 2048 } : { contextWindow: 200000, maxTokens: 4096 };
+  let headerModel = 'hdr-200k';
+  fCache.session.requestHeader = () => ({ config: { provider: 'p', model: headerModel } });
+  await fCache.engine._preStepCache.run({ measures: new Map(), specs: new Map() }, async () => {
+    const full1 = await fCache.engine._resolveSpec(fCache.agent, undefined, signal());
+    assert.equal(full1.lockedWindow, 200000);
+    // Header change before budgetOnly + full must invalidate prev.fullSpec
+    headerModel = 'hdr-30k';
+    const b1 = await fCache.engine._resolveSpec(fCache.agent, undefined, signal(), { budgetOnly: true, preferRequestHeader: true });
+    assert.ok(b1.messageBudgetTokens < 30000);
+    const full2 = await fCache.engine._resolveSpec(fCache.agent, undefined, signal(), { preferRequestHeader: true });
+    assert.equal(full2.lockedWindow, 30000);
+    // Resolver identity change must invalidate _preStepCache entry even at same route/headers
+    let infoCalls = 0;
+    fCache.ctx.llm.resolveModelInfo = async () => { infoCalls += 1; return { contextWindow: 30000, maxTokens: 4096 }; };
+    await fCache.engine._resolveSpec(fCache.agent, undefined, signal(), { budgetOnly: true, preferRequestHeader: true });
+    assert.equal(infoCalls, 1);
+    const full3 = await fCache.engine._resolveSpec(fCache.agent, undefined, signal(), { preferRequestHeader: true });
+    assert.equal(full3.lockedWindow, 30000);
+    assert.equal(infoCalls, 2);
+    // Config object replacement must invalidate _preStepCache entry even at same route/headers/resolver
+    fCache.engine.config = resolveConfig({ ...fCache.engine.config, windowFallback: 64000, maxTokens: 8192 }).config;
+    await fCache.engine._resolveSpec(fCache.agent, undefined, signal(), { preferRequestHeader: true });
+    assert.equal(infoCalls, 3);
+  });
+
+  // 3. Real async retryCompactionFor handoff retains caller abort signal until resumed wave stops
+  const fAbort = fixture({ auto: false });
+  const seqsA = history(fAbort);
+  const nowIso = new Date().toISOString();
+  writeResumableCompaction(fAbort.engine.sessionState, fAbort.session.id, {
+    version: 1,
+    jobId: 'job-r2-abort',
+    trigger: 'manual',
+    status: 'interrupted',
+    interruptReason: 'crash',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    remainingSeqs: seqsA,
+    remainingSourceSha256: null,
+    initialTotalNodes: seqsA.length,
+    completedNodes: 0,
+    completedChunks: 0,
+    waveCount: 0,
+    consecutiveFailures: 1,
+    initialTotalTokens: 4000,
+    completedTokens: 0,
+    batchCheckpointSeqs: [],
+    allowForeignFallback: false,
+    checkpointMeta: null,
+    originalBackupId: null,
+  });
+  const enteredAbort = deferred();
+  const stoppedAbort = deferred();
+  fAbort.engine._compactManual = async (_ag, activeSignal) => {
+    enteredAbort.resolve(activeSignal);
+    await new Promise((_res, rej) =>
+      activeSignal.addEventListener('abort', () => { stoppedAbort.resolve(); rej(activeSignal.reason); }, { once: true }),
+    );
+  };
+  const callerCtrl = new AbortController();
+  const retAbort = await retryCompactionFor(fAbort.engine, fAbort.session, {
+    agent: fAbort.agent,
+    signal: callerCtrl.signal,
+    asyncRollingWave: true,
+  });
+  assert.equal(retAbort.accepted, true);
+  assert.equal(fAbort.engine._busy.has(fAbort.session), true);
+  const innerSig = await enteredAbort.promise;
+  callerCtrl.abort(Object.assign(new Error('abort retry'), { name: 'AbortError' }));
+  await stoppedAbort.promise;
+  assert.equal(innerSig.aborted, true);
+  for (let i = 0; i < 40 && fAbort.engine._busy.has(fAbort.session); i += 1) await delay(10);
+  assert.equal(fAbort.engine._busy.has(fAbort.session), false);
+
+  // 4. Failing flush on weave-snip-* recovery retains pending durability marker and retries flush
+  const fFlush = fixture({ auto: false });
+  fFlush.session.append('turn/start', { turn: 1 });
+  fFlush.session.append('step/start', { turn: 1, step: 1 });
+  fFlush.add('system', 'System.');
+  fFlush.add('user', 'Req.');
+  const oldMsg = fFlush.add('assistant', 'Verbose output '.repeat(1200));
+  fFlush.add('user', 'Latest.');
+  fFlush.add('assistant', 'Reply.');
+  const origApp = fFlush.session.append.bind(fFlush.session);
+  fFlush.session.append = (type, data, opts) => {
+    if (type === 'compaction/end') throw new Error('double end fail');
+    return origApp(type, data, opts);
+  };
+  await assert.rejects(
+    commitSnip({
+      session: fFlush.session,
+      plan: { spans: [{ compactionId: 'weave-snip-flush-retry', startSeq: oldMsg.seq, endSeq: oldMsg.seq, seqs: [oldMsg.seq], savedTokens: 1200, stubText: '[Snipped]' }] },
+      archive: fFlush.engine.archive,
+      log() {},
+    }),
+  );
+  fFlush.session.append = origApp;
+  let flushAttempts = 0;
+  fFlush.ctx.sessions.flush = async () => {
+    flushAttempts += 1;
+    if (flushAttempts === 1) throw new Error('transient flush error');
+    return true;
+  };
+  await assert.rejects(fFlush.engine.recoverPending(fFlush.session), /transient flush error/);
+  assert.equal(flushAttempts, 1);
+  const rec2 = await fFlush.engine.recoverPending(fFlush.session);
+  assert.equal(flushAttempts, 2);
+  assert.ok(rec2.recovered >= 1);
+
+  // 5. Continuation reinjection reports reduced shrunk count (< 3 files) when full 3 files exceed tight continuation budget
+  const fShrunk = fixture({
+    auto: false,
+    archiveDir: join(scratch(), 'archive'),
+    postCompactReinjectEnabled: true,
+    postCompactReinjectMaxBytes: 15000,
+    maxSummaryChars: 6500,
+  });
+  fShrunk.ctx.llm.resolveModelInfo = async () => ({ contextWindow: 64000, maxTokens: 2048 });
+  fShrunk.session.append('turn/start', { turn: 1 });
+  fShrunk.session.append('step/start', { turn: 1, step: 1 });
+  fShrunk.add('system', 'Sys.');
+  fShrunk.add('user', 'Keep shrunken files check.');
+  const toolCalls = [];
+  for (let i = 0; i < 3; i += 1) {
+    const fileP = join(fShrunk.root, `shrunk-${i}.js`);
+    writeFileSync(fileP, `// file ${i}\n`.repeat(300), 'utf8'); // ~3000B each => 3 files = ~9000B (>6500 maxSummaryChars), shrunk = ~1-2 files (<5000B)
+    const ce = fShrunk.session.append('assistant/message', {
+      message: {
+        id: randomUUID(),
+        role: 'assistant',
+        content: [{ type: 'tool-call', callId: `c-${i}`, name: 'read_file', arguments: { path: fileP } }],
+        source: { kind: 'model', provider: 'p', model: 'm' },
+      },
+    }, { surfaceOp: 'append' });
+    const re = fShrunk.session.append('tool/result', {
+      callId: `c-${i}`,
+      message: { id: randomUUID(), role: 'tool', toolCallId: `c-${i}`, content: [{ type: 'text', text: '// out '.repeat(500) }], source: { kind: 'tool', callId: `c-${i}` } },
+    }, { surfaceOp: 'append' });
+    toolCalls.push(ce.seq, re.seq);
+  }
+  fShrunk.session.append('step/end', { turn: 1, step: 1 });
+  fShrunk.session.append('turn/end', { turn: 1 });
+  fShrunk.ctx.llm.stream = async function* () {
+    yield { type: 'text-delta', text: '## Goal\nKeep shrunken files check.\n\n## State\nInspected files.\n\n## Next\nDone.\n\n## Uncertain\nNone.' };
+    yield { type: 'finish', kind: 'stop', usage: { inputTokens: 80, outputTokens: 20 } };
+  };
+  await fShrunk.engine._trackRun(fShrunk.session, { trigger: 'manual' }, () =>
+    fShrunk.engine._compactRegionCore(toolCalls[0], toolCalls.at(-1), fShrunk.agent, signal(), {
+      manual: true,
+      policy: fShrunk.engine.config,
+      continuation: true,
+    }),
+  );
+  const snapS = fShrunk.engine.progressTracker.snapshot(fShrunk.session.id);
+  assert.ok(snapS.reinjectFiles >= 1 && snapS.reinjectFiles < 3, JSON.stringify(snapS));
+  assert.ok(snapS.reinjectBytes > 0 && snapS.reinjectBytes <= snapS.effectiveReinjectMaxBytes, JSON.stringify(snapS));
+});
+
+await test('codex-round3-redact-braces-auth-separators-and-snip-flush-blocker-retention', async () => {
+  // 1. Leading/embedded braces on scalar assignments redact completely while JSON array brackets are preserved
+  assert.equal(redactCredentials('password=alpha{tailSecret99}'), 'password=[redacted]}');
+  assert.equal(redactCredentials('password={tailSecret99}'), 'password=[redacted]}');
+  assert.doesNotMatch(redactCredentials('password=alpha{tailSecret99}'), /tailSecret99/);
+  assert.doesNotMatch(redactCredentials('password={tailSecret99}'), /tailSecret99/);
+
+  // 2. Archive leaf Authorization values (scalar & array) with commas/spaces/newlines/quotes leave zero suffix
+  const archive = new CompactionArchive({ root: join(scratch(), 'archive-r3') });
+  const authCases = [
+    { Authorization: 'Token prefixValue,suffixSecret99' },
+    { Authorization: ['Token prefixValue,suffixSecret99', 'Bearer tok alpha\nsuffixTwo"end'] },
+    { headers: { Authorization: 'Basic dXNlcjpwYXNz,extraTail' } },
+  ];
+  await archive.writeSpan({
+    sessionId: 'r3-auth',
+    compactionId: 'c1',
+    entries: [{
+      seq: 0,
+      role: 'assistant',
+      content: authCases.map((args, idx) => ({
+        type: 'tool-call',
+        callId: `c-${idx}`,
+        name: 'req',
+        arguments: args,
+      })),
+    }],
+  });
+  const readAuth = await archive.readSpan('r3-auth', 'c1');
+  const dumpedAuth = JSON.stringify(readAuth.entries);
+  for (const leaked of ['prefixValue', 'suffixSecret99', 'suffixTwo', 'dXNlcjpwYXNz', 'extraTail']) {
+    assert.equal(dumpedAuth.includes(leaked), false, `Authorization leak: ${leaked}`);
+  }
+
+  // 3. Failed snip flush retains _pendingSnipFlushSessions & _recoveryBlocked across flush(false), missing flush, and consecutive failures
+  const f = fixture({ auto: false });
+  f.session.append('turn/start', { turn: 1 });
+  f.session.append('step/start', { turn: 1, step: 1 });
+  f.add('system', 'Sys.');
+  f.add('user', 'Req.');
+  const old = f.add('assistant', 'Old output '.repeat(1200));
+  f.add('user', 'Next.');
+  f.add('assistant', 'Ans.');
+  const origApp = f.session.append.bind(f.session);
+  f.session.append = (type, data, opts) => {
+    if (type === 'compaction/end') throw new Error('end fail');
+    return origApp(type, data, opts);
+  };
+  await assert.rejects(
+    commitSnip({
+      session: f.session,
+      plan: { spans: [{ compactionId: 'weave-snip-r3-flush', startSeq: old.seq, endSeq: old.seq, seqs: [old.seq], savedTokens: 1200, stubText: '[Snipped]' }] },
+      archive: f.engine.archive,
+      log() {},
+    }),
+  );
+  f.session.append = origApp;
+
+  const key = f.engine._keyOf(f.session);
+  // Attempt 1: flush rejects
+  f.ctx.sessions.flush = async () => { throw new Error('disk offline'); };
+  await assert.rejects(f.engine.recoverPending(f.session), /disk offline/);
+  assert.equal(f.engine._pendingSnipFlushSessions.has(f.session), true);
+  assert.equal(f.engine._recoveryBlocked.has(key), true);
+
+  // Attempt 2: flush returns false -> persistence failure, blocker & marker retained
+  f.ctx.sessions.flush = async () => false;
+  await assert.rejects(f.engine.recoverPending(f.session), { code: 'persistence' });
+  assert.equal(f.engine._pendingSnipFlushSessions.has(f.session), true);
+  assert.equal(f.engine._recoveryBlocked.has(key), true);
+
+  // Attempt 3: flush becomes unavailable -> RECOVERY_REQUIRED, blocker & marker retained
+  f.ctx.sessions.flush = undefined;
+  await assert.rejects(f.engine.recoverPending(f.session), { code: 'RECOVERY_REQUIRED' });
+  assert.equal(f.engine._pendingSnipFlushSessions.has(f.session), true);
+  assert.equal(f.engine._recoveryBlocked.has(key), true);
+
+  // Attempt 4: flush recovers -> succeeds and clears both marker & blocker
+  f.ctx.sessions.flush = async () => true;
+  const ok = await f.engine.recoverPending(f.session);
+  assert.ok(ok.recovered >= 1);
+  assert.equal(f.engine._pendingSnipFlushSessions.has(f.session), false);
+  assert.equal(f.engine._recoveryBlocked.has(key), false);
 });
 
 for (const engine of fixtures) engine.dispose();

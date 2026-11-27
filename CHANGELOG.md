@@ -7,7 +7,7 @@
 - **覆盖率范围开关、`audit-reject` 可观测性与冲突提示（Track A，回应 Issue #11 后续）**：
   - 新增可热配置 `auditCoverageScope`（默认 `'recent'`，可选 `'span-new'` / `'all'`），将纯词面覆盖率检查收敛在近期原话保留窗口与本跨度新增原始 `user/message`（避免超长旧会话迁移因数百条早期历史导致数学死锁），同时所有硬冲突红线（`polarity` / `value` / `unit` / `condition` / `range` / `relation` / `exception` / `reference` / `provenance`）在三档下始终全局强制执行；
   - [audit-reject.js](lib/audit-reject.js) 落盘记录新增 `summaryChars`、`trigger`、`audit.coverageThreshold`、`audit.softCoverageCount`、`audit.auditFallbackSkippedReason`、`audit.lostCount` 与 `audit.lost` 诊断字段；
-  - 设置页顶部新增 `engineActive` 接管冲突横幅与 `ReactDOM.createPortal` 兼容转换/接管确认弹窗。
+  - 设置页与对话 Dock 新增 `engineActive` 接管冲突横幅与 `ReactDOM.createPortal` 兼容转换/接管确认弹窗。
 - **纯 JS BM25F 归档检索、相对日期锚定与 Tier-4 预览（Phase 2–3 & Track B）**：
   - 新增零外部依赖 BM25F 多字段检索引擎 [history-search.js](lib/history-search.js)（CJK 双字切分 + 英文词干提取、子模 Top-K 去冗余排序、2-hop 工具调用关联与按 span 局部失效及单会话字节封顶的有界 LRU 缓存）；
   - 新增 [date-grounding.js](lib/date-grounding.js) 确定性相对日期日历锚定（跳过 `tool/result`、`runtime-context` 与 `<system-reminder>`/`<untrusted_reference>` 并限幅 `tzOffsetMinutes`）、[tool-preview.js](lib/tool-preview.js) Tier-4 关键散文与显式失败绕过预览，以及摘要输入非对称助手消息瘦身；
@@ -39,7 +39,10 @@
 - **工程可靠性收尾、流式归档检索与有界防线契约（`ed90719` 复核收口）**：
   - [engine/resumable.js](lib/engine/resumable.js)、[engine/fallback-guards.js](lib/engine/fallback-guards.js)、[engine/routing-budget.js](lib/engine/routing-budget.js)、[engine/parallel-fold.js](lib/engine/parallel-fold.js)、[proactive.js](lib/proactive.js)、[transaction.js](lib/transaction.js)、[summary-config.js](lib/summary-config.js)、[history.js](lib/history.js) 与 [history-search.js](lib/history-search.js) 修复溢出裁剪重选预算校验、续传 `remainingSeqs` 尾部节点保留、异步滚波 signal/锁隔离、`busy` 免计熔断、`proactive` 损坏状态与 `modelPolicies` 保护、共享框架 $O(N^2)$ 审计索引、字节/Token 口径分离与自适应默认 `24576` 重注入上限、RPC `admission.rejection != null` 与异步 stat 配置缓存，以及超 `8 MiB` 流式归档检索保留跨 span 最新更新锚点与 2-hop 召回；
   - [redact.js](lib/redact.js)、[instruction-source.js](lib/instruction-source.js)、[audit/](lib/audit/compaction.js) 与 [file-reinject.js](lib/file-reinject.js) 补齐 `1→` 行号 PEM、4 空行 PGP、`Basic`/`Token`/`x-api-key`/`db_password`/显式密钥 40 位 hex 及未闭合引号凭据、`1.2.3.` 版本号切分、`<reference>` 内闭合代码块隔离及 `to avoid` 禁令极性边界，并在 [README](README.md)、[README.en.md](README.en.md) 与中英文架构文档明确正则与启发式防线的有界防御契约。
-- **发布验证与对比基准**：全量通过 `npm run check`（`289` 发布源文件、`91` 模块 `0` 环 DAG）、`npm test`（`104` 套 / `1,565` 项用例，`0` 失败）与 DSH `0.2.2-rc.1` / `0.2.2-rc.3` 双宿主集成测试（各 `112` 套 / `1,696` 项用例，`0` 失败），并在最新实盘网关完成 `Weave 0.6.0` vs `dsh-basic` vs `billion-context@0.0.1328-master.ced22b1` 三方对照评测（详见 [docs/benchmarks/v0.6.0-live-three-way.json](docs/benchmarks/v0.6.0-live-three-way.json)）。
+- **工程红线与 UI/遥测闭环加固（`504e01a` 后 3 P1 + 7 P2 + 6Astra 复核封板）**：
+  - [summary-config.js](lib/summary-config.js) 与 [client.js](lib/client.js) 修复跟随会话模型时单独保存 `maxTokens` 被误清并在前端同步回填服务端返回值；[routing-budget.js](lib/engine/routing-budget.js) 透传 `preferRequestHeader` 并纳入 `_preStepCache` 全键校验；[history.js](lib/history.js) 与 [redact.js](lib/redact.js) 补齐 `arguments` / `tool-result` / `spanEntries` 深层对象子树与结构化标量凭据完整脱敏；
+  - 同步对齐 [client.js](lib/client.js) `401`/`403` 缺 Token 提示与 `messageParams`/节点/流式计时遥测、[engine/resumable.js](lib/engine/resumable.js) `retryCompactionFor` 同步 `_busy` 锁边界、[transaction.js](lib/transaction.js) & [engine/recovery.js](lib/engine/recovery.js) `weave-snip-*` 孤立起始恢复及 `flush` 失败阻断保留、[continuation.js](lib/continuation.js) 重注入遥测与 [reference-input.js](lib/reference-input.js) 二次投影陈旧辅助标签剥离。
+- **发布验证与对比基准**：全量通过 `npm run check`（`289` 发布源文件、`91` 模块 `0` 环 DAG）、`npm test`（`104` 套 / `1,577` 项用例，`0` 失败）与 DSH `0.2.2-rc.1` / `0.2.2-rc.3` 双宿主集成测试（各 `112` 套 / `1,709` 项用例，`0` 失败），并在最新实盘网关完成 `Weave 0.6.0` vs `dsh-basic` vs `billion-context@0.0.1328-master.ced22b1` 三方对照评测（详见 [docs/benchmarks/v0.6.0-live-three-way.json](docs/benchmarks/v0.6.0-live-three-way.json)）。
 
 ## [0.5.3-hotfix.1] - 2026-11-25
 
