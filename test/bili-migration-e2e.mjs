@@ -287,7 +287,7 @@ function makeFullHostFixture({
   services.set('llm', llm);
   services.set('tokenMeter', tokenMeter);
   services.set('webServer', webServer);
-  services.set('connection', { requestRejection: () => undefined });
+  services.set('connection', { admit: () => ({ peer: { principal: { kind: 'owner' } } }) });
 
   const tryDeliverInjects = () => {
     for (let i = pendingInjects.length - 1; i >= 0; i -= 1) {

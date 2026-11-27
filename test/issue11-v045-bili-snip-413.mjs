@@ -143,7 +143,7 @@ async function createIsolatedSessionFixture({
       provided.set(name, val);
     },
     get(name) {
-      return name === 'connection' ? { requestRejection: () => undefined } : provided.get(name);
+      return name === 'connection' ? { admit: () => ({ peer: { principal: { kind: 'owner' } } }) } : provided.get(name);
     },
     inject(deps, fn) {
       if (Array.isArray(deps) && deps.includes('llm')) {

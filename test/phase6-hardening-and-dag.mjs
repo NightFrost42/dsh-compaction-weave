@@ -427,7 +427,7 @@ await test('phase6-engine-dispose-session-disposed-hooks-and-bounded-caches', as
           gateHooks.get(name).push(fn);
         },
         provide() {},
-        get(name) { return name === 'connection' ? { requestRejection: () => undefined } : null; },
+        get(name) { return name === 'connection' ? { admit: () => ({ peer: { principal: { kind: 'owner' } } }) } : null; },
         inject(deps, fn) {
           if (Array.isArray(deps) && deps.includes('webServer')) {
             return fn({

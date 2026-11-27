@@ -1294,7 +1294,7 @@ await test('rpc-status-exposes-sanitized-sessionMemory-without-leaking-prose-or-
         return () => {};
       },
       get(name) {
-        return name === 'connection' ? { requestRejection: () => undefined } : null;
+        return name === 'connection' ? { admit: () => ({ peer: { principal: { kind: 'owner' } } }) } : null;
       },
       provide(name, value) {
         if (name === 'compactionWeaveRuntime') runtimeProvided = value;

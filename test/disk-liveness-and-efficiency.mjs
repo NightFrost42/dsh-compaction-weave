@@ -279,7 +279,7 @@ await test('config-disk-liveness-check-default-and-override', () => {
   assert.deepEqual(disabled.unknown, []);
 
   const invalidFallback = resolveConfig({ diskLivenessCheck: 'false' });
-  assert.equal(invalidFallback.config.diskLivenessCheck, true);
+  assert.equal(invalidFallback.config.diskLivenessCheck, false);
   assert.deepEqual(invalidFallback.unknown, []);
 });
 

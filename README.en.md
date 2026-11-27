@@ -119,6 +119,8 @@ Adjust common options under **Settings → Context Compaction (Weave)** (or on t
 
 Compaction produces a lossy summary backed by on-demand archive lookup, and input token reduction differs from actual billing changes depending on cache hits, retries, pricing basis (both Magpie billed USD and list-normalized Norm USD are shown above), and `null` pre-warm telemetry samples. See [Testing](docs/en/testing.md) for full experimental conditions, real-host runtime evaluations, and module navigation.
 
+> **Bounded scope of regex & heuristic guards**: Credential/PEM redaction (`lib/redact.js`), workspace sensitive-path denylisting (`lib/file-reinject.js`), and deterministic requirement/provenance auditing (`lib/audit/*`) are bounded defenses tuned for common real-world formats and native DSH tool outputs; they do not claim exhaustive coverage of arbitrary custom encodings or arbitrary open-world natural-language paraphrases. See [Architecture](docs/en/architecture.md).
+
 ## Diagnostics and feedback
 
 If you encounter an error, an unexpected summary rejection, or missing context after compaction:

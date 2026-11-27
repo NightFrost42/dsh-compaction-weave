@@ -1,3 +1,27 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { syncBuiltinESMExports } from 'node:module';
+import { performance } from 'node:perf_hooks';
+import { CompactionArchive } from '../lib/history.js';
+import { CompactBM25FIndex } from '../lib/history-search.js';
+import { probeDiskLiveness } from '../lib/disk-liveness.js';
+import { extractCliFlags } from '../lib/audit/polarity.js';
+import { ruleNegative } from '../lib/audit/normalize.js';
+import { scalarSubjectVerdict } from '../lib/audit/numeric.js';
+import { sourceEvidenceSentences } from '../lib/audit.js';
+import { instructionText } from '../lib/instruction-source.js';
+import { residentConstraints } from '../lib/continuation.js';
+import { validateProgressFacts } from '../lib/progress-facts.js';
+import { runConcurrentPool } from '../lib/concurrency.js';
+import { resumeCompactionFor } from '../lib/engine/resumable.js';
+import { migrateBiliSession } from '../lib/engine/migration.js';
+import { freezeContinuation, bindContinuationProgress } from '../lib/continuation-pending.js';
+import { ContinuationProgressStore } from '../lib/continuation-progress.js';
+import { selectCompactableRange } from '../lib/region.js';
+import { readSummaryConfig, readSummaryConfigAsync, writeSummaryConfig } from '../lib/summary-config.js';
+import { resolveAdaptiveReinjectLimits } from '../lib/file-reinject.js';
+import { resolveCompactSpec, DEFAULT_CONFIG } from '../lib/config.js';
+import { measureSummaryRange } from '../lib/summary-budget.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -553,6 +577,441 @@ await test('review-P1-chinese-prohibited-lower-and-upper-bounds-classify-directi
     const opposite = auditCompaction({ userMessages, summaryText: '响应时间不得少于 500ms。' }).lost;
     assert.ok(opposite.some(item => item.reason === 'range'), `${phrase} vs >= must conflict on range`);
   }
+});
+
+
+await test('fresh-P1-1-arrow-lines-four-PGP-blanks-and-archive-secret-hygiene', async () => {
+  const d = '-'.repeat(5);
+  const body = 'ABCD_SECRET_LINE_123456';
+  for (const blankCount of [0, 2, 4]) {
+    const pem = [`${d}BEGIN PGP PRIVATE KEY BLOCK${d}`, 'Version: GnuPG v2', ...Array(blankCount).fill(''), body, `${d}END PGP PRIVATE KEY BLOCK${d}`]
+      .map((line, i) => `    ${i + 1}→${line}`).join('\n');
+    const archived = new CompactionArchive({ root: join(scratch(), 'archive') });
+    const plain = 'const checksum = "a".repeat(40); // ordinary code\n';
+    const binary = Buffer.from([0, 128, 255, 10]);
+    const entries = [{ seq: 1, text: pem, blocks: [{ type: 'text', text: pem }], event: { data: { content: [{ type: 'text', text: pem }] } } }, { seq: 2, text: plain, binary, timestamp: new Date(0) }];
+    assert.ok(await archived.writeSpan({ sessionId: 's', compactionId: 'c', entries }));
+    const read = await archived.readSpan('s', 'c');
+    assert.equal(read.ok, true);
+    assert.ok(!JSON.stringify(read.entries).includes(body));
+    assert.equal(read.entries[1].text, plain);
+    assert.deepEqual(read.entries[1].binary, binary.toJSON());
+    assert.equal(read.entries[1].timestamp, new Date(0).toJSON());
+    assert.ok(entries[0].text.includes(body), 'source objects remain unchanged');
+  }
+});
+await test('fresh-P1-1-credential-formats-placeholders-and-SHA1', () => {
+  for (const text of [
+    'Authorization: Basic dTo=', '"Authorization": "Token token12345"',
+    '"Authorization": "Bearer bearer12345"', '"Authorization": "Basic dXNlcjpzZWNyZXQ="',
+    'x-api-key: abc123xyz', '"x-api-key": "abc123xyz"',
+    ...['db_password', 'password', 'passwd', 'refresh_token'].map(key => `${key}=abc`),
+    'password="two secret words"', "passwd='two secret words'", 'password="null secret words"',
+    'password=example-secret', `"password": "escaped \\"secret\\" words"`,
+    `MY_AWS_SECRET=${'aBc123+/'.repeat(5)}`,
+  ]) {
+    assert.equal(containsSecretCredential(text), true, text);
+    for (const redact of [redactCredentials, redactErrorText]) {
+      assert.notEqual(redact(text), text);
+      assert.equal(containsSecretCredential(redact(text)), false);
+      assert.equal(redact(redact(text)), redact(text));
+    }
+  }
+  for (const value of ['[redacted]', 'null', 'none', 'true', 'false', 'undefined', 'changeme', 'placeholder', 'example']) {
+    for (const key of ['password', 'db_password', 'refresh_token', 'MY_AWS_SECRET']) {
+      const input = `${key}=${value}`;
+      assert.equal(redactCredentials(input), input);
+      assert.equal(containsSecretCredential(input), false);
+      const quoted = `${key}="${value}"`;
+      assert.equal(redactCredentials(quoted), quoted);
+      assert.equal(containsSecretCredential(quoted), false);
+    }
+  }
+  const hex40 = 'a'.repeat(40);
+  for (const nonSecret of [`commit=${hex40}`, `sha1="${hex40}"`]) {
+    assert.equal(redactCredentials(nonSecret), nonSecret);
+    assert.equal(containsSecretCredential(nonSecret), false);
+  }
+  for (const secretLine of [
+    `api_key=${hex40}`,
+    `access_token="${hex40}"`,
+    `client_secret='${hex40}'`,
+    `MY_AWS_SECRET=${hex40}`,
+    'api_key="privateValue12345',
+    "access_token='privateToken12345",
+  ]) {
+    assert.equal(containsSecretCredential(secretLine), true, secretLine);
+    for (const redact of [redactCredentials, redactErrorText]) {
+      assert.notEqual(redact(secretLine), secretLine);
+      assert.equal(containsSecretCredential(redact(secretLine)), false);
+      assert.ok(!redact(secretLine).includes(hex40) && !redact(secretLine).includes('privateValue12345') && !redact(secretLine).includes('privateToken12345'));
+    }
+  }
+  assert.equal(redactCredentials('api_key="privateValue12345'), 'api_key="[redacted]');
+  assert.equal(redactCredentials('password="two secret words"'), 'password="[redacted]"');
+  assert.equal(redactCredentials('password=null password="two secret words"'), 'password=null password="[redacted]"');
+});
+for (const fails of [true, false]) await test(`fresh-P1-2-live-overflow-budget-${fails ? 'partial-failure' : 'success'}`, async () => {
+  const f = fixture();
+  history(f);
+  const hooks = new Map();
+  f.engine._registerRequestErrorHook({ on: (name, cb) => hooks.set(name, cb) });
+  f.engine.compactIfNeeded = async () => {
+    f.surface.replaceGeneration++;
+    if (fails) throw new Error('upstream rejected summary');
+    return { compactionId: 'partial' };
+  };
+  f.engine.diagnostics.capture = async () => {};
+  let snips = 0, measurements = 0;
+  f.engine._measure = async () => { measurements++; return { totalTokens: 100 }; };
+  f.engine._resolveSpec = async (_agent, _measure, _signal, options) => {
+    assert.equal(options.preferRequestHeader, true);
+    return { messageBudgetTokens: 100 };
+  };
+  f.engine._emergencySnip = async () => { snips++; f.surface.replaceGeneration++; return true; };
+  const out = await hooks.get('agent/request-error')({ agent: f.agent, signal: signal(), failure: Object.assign(new Error('context length exceeded'), { status: 413 }) }, () => ({ kind: 'abort' }));
+  assert.equal(out.kind, 'retry'); assert.equal(snips, 1); assert.ok(measurements >= 2);
+});
+function seedFreshResume(f, seqs) {
+  writeResumableCompaction(f.engine.sessionState, f.session.id, {
+    jobId: 'fresh-resume', trigger: 'manual', status: 'interrupted', remainingSeqs: seqs,
+    initialTotalNodes: seqs.length, completedNodes: 0, initialTotalTokens: 10000,
+    completedTokens: 0, completedChunks: 0, waveCount: 0, batchCheckpointSeqs: [],
+  });
+}
+await test('fresh-P1-3-paid-prefix-preserves-six-node-resumable-tail', async () => {
+  const f = fixture();
+  f.add('system', 'Stable system.');
+  for (let i = 1; i <= 4; i++) { f.add('user', `Keep rule ${i}.`); f.add('assistant', 'Observation '.repeat(300)); }
+  const seqs = f.surface.nodes.slice(1), pending = freezeContinuation(f.engine.sessionState, f.session, seqs.slice(0, 2), 8000);
+  const progressKey = 'a'.repeat(64);
+  bindContinuationProgress(f.engine.sessionState, f.session, pending.id, progressKey);
+  new ContinuationProgressStore(join(dirname(f.engine.archive.root), 'continuation-progress'), f.session.id, progressKey)
+    .write({ next: 1, memory: notes, calls: [{ ok: true }], receipts: ['r1'], pages: [[seqs[0]], [seqs[1]]] }, 0);
+  seedFreshResume(f, seqs);
+  f.ctx.llm.stream = async function* () { yield { type: 'text-delta', text: notes }; yield { type: 'finish', reason: { kind: 'stop' } }; };
+  await resumeCompactionFor(f.engine, f.session, { agent: f.agent });
+  const job = readResumableCompaction(f.engine.sessionState, f.session.id);
+  assert.deepEqual(job.remainingSeqs, seqs.slice(2));
+  assert.equal(job.completedNodes, 2);
+  assert.equal(job.waveCount, 1);
+  assert.ok(job.completedTokens > 0);
+  assert.notEqual(job.status, 'running');
+  assert.ok(!f.surface.nodes.includes(seqs[0]));
+});
+await test('fresh-P1-4-resume-lock-before-recovery-and-busy-exemption', async () => {
+  const f = fixture(), seqs = history(f), gate = deferred();
+  seedFreshResume(f, seqs);
+  f.engine.recoverPending = () => gate.promise;
+  f.agent.runMaintenance = async () => { throw Object.assign(new Error('busy'), { code: 'busy' }); };
+  const running = resumeCompactionFor(f.engine, f.session, { agent: f.agent });
+  assert.equal(f.engine._busy.has(f.session), true);
+  await assert.rejects(resumeCompactionFor(f.engine, f.session, { agent: f.agent }), { code: 'busy' });
+  gate.resolve();
+  await assert.rejects(running, { code: 'busy' });
+  assert.equal(f.engine.sessionState.read(f.session.id).failures, 0);
+  assert.equal(f.engine._busy.has(f.session), false);
+});
+await test('fresh-P1-4-migration-lock-before-measure-and-busy-exemption', async () => {
+  const f = fixture(), gate = deferred();
+  f.add('system', 'Stable system.');
+  f.session.append('user/message', { role: 'user', source: { kind: 'plugin:billion-context-dsh' }, content: [{ type: 'text', text: '[Model-written summary of previous context]\nKeep integer cents.' }] }, { surfaceOp: 'append' });
+  f.engine._measure = () => gate.promise;
+  f.agent.runMaintenance = async () => { throw Object.assign(new Error('busy'), { code: 'busy' }); };
+  const running = migrateBiliSession(f.engine, f.session, { agent: f.agent });
+  assert.equal(f.engine._busy.has(f.session), true);
+  await assert.rejects(migrateBiliSession(f.engine, f.session, { agent: f.agent }), { code: 'busy' });
+  gate.resolve({ totalTokens: 2000, nodes: [] });
+  await assert.rejects(running, { code: 'busy' });
+  assert.equal(f.engine.sessionState.read(f.session.id).failures, 0);
+  assert.equal(f.engine._busy.has(f.session), false);
+});
+await test('fresh-P1-4-detached-resume-retains-caller-abort-until-wave-finishes', async () => {
+  const f = fixture(), caller = new AbortController(), entered = deferred(), stopped = deferred();
+  seedFreshResume(f, history(f));
+  f.engine._compactManual = async (_agent, activeSignal) => {
+    entered.resolve(activeSignal);
+    await new Promise((resolve, reject) => activeSignal.addEventListener('abort', () => { stopped.resolve(); reject(activeSignal.reason); }, { once: true }));
+  };
+  const result = await resumeCompactionFor(f.engine, f.session, { agent: f.agent, signal: caller.signal, asyncRollingWave: true });
+  const activeSignal = await entered.promise;
+  assert.equal(result.accepted, true);
+  assert.equal(f.engine._busy.has(f.session), true);
+  caller.abort(Object.assign(new Error('cancel'), { name: 'AbortError' }));
+  await stopped.promise;
+  assert.equal(activeSignal.aborted, true);
+  for (let i = 0; i < 20 && f.engine._busy.has(f.session); i++) await delay(0);
+  assert.equal(f.engine._busy.has(f.session), false);
+});
+await test('fresh-P1-5-corrupt-state-structured-request-and-consume', async () => {
+  const f = fixture(); history(f);
+  assert.equal((await f.engine.proactive.request(f.agent, 'phase done', signal())).status, 'queued');
+  f.engine._restoreState = () => { throw Object.assign(new Error('corrupt'), { code: 'STATE_UNAVAILABLE' }); };
+  const consumed = await f.engine.proactive.consume(f.agent, signal());
+  assert.equal(consumed.status, 'blocked'); assert.equal(consumed.reason, 'state_unavailable');
+  const requested = await f.engine.proactive.request(f.agent, 'phase done', signal());
+  assert.equal(requested.status, 'blocked'); assert.equal(requested.reason, 'state_unavailable');
+});
+await test('fresh-P1-5-model-policy-and-prior-terminal-outcome', async () => {
+  const f = fixture(); history(f);
+  f.engine._measure = async () => ({ totalTokens: 5000, nodes: [] });
+  f.engine._resolvePolicy = () => ({ ...f.engine.config, proactiveMinTokens: 1024, proactiveMinGrowthTokens: 512 });
+  f.engine._compactManual = async () => ({ status: 'partial', reason: 'preserved failure reason' });
+  await f.engine.proactive.request(f.agent, 'phase done', signal());
+  assert.deepEqual(await f.engine.proactive.consume(f.agent, signal()), { status: 'partial', reason: 'preserved failure reason' });
+});
+await test('fresh-P1-6-fenced-resident-rules-and-unclosed-reference-fence', () => {
+  assert.deepEqual(residentConstraints([{ seq: 1, text: 'Example:\n```sh\nNever delete example.log\n```' }]), []);
+  for (const tag of ['quoted_text', 'untrusted_reference', 'reference', 'blockquote']) {
+    const text = `<${tag}>\n\x60\x60\x60js\nconst x=1;\n</${tag}>\nAlways run unit tests.`;
+    assert.match(instructionText({ seq: 1, text }), /Always run unit tests/);
+    assert.ok(!instructionText({ seq: 1, text }).includes('const x'));
+  }
+});
+await test('fresh-P1-6-versions-ranges-uppercase-duration-and-classifiers', () => {
+  assert.deepEqual(sourceEvidenceSentences('You must pin version 1.2.3.'), ['You must pin version 1.2.3.']);
+  assert.deepEqual(numericFacts('version v0.6.0'), ['ver:0.6.0']);
+  assert.deepEqual(numericFacts('IP 127.0.0.1; section 1.2.3'), []);
+  assert.deepEqual(numericFacts('Timeout must be 10s-30s.'), ['10s', '30s']);
+  assert.deepEqual(numericFacts('Size must be 5mb-10mb.'), ['5mb', '10mb']);
+  assert.deepEqual(numericFacts('Timeout must be 30S; wait 24H; retention 7D.'), ['30s', '24h', '7d']);
+  assert.deepEqual(numericFacts('2D 3D 3M 6S 2H'), []);
+  for (const unit of ['个', '次', '条']) assert.equal(scalarSubjectVerdict(`备份数设为 5 ${unit}`, '备份数设为 5'), 'match');
+  assert.ok(auditCompaction({ userMessages: [{ seq: 1, text: 'You must pin version 1.2.3.' }], summaryText: summary('You must pin version 1.2.9.') }).lost.length);
+});
+await test('fresh-P1-6-comma-flags-privative-gerunds-and-reminders', () => {
+  const flags = extractCliFlags('Do not use --foo, --bar');
+  assert.deepEqual([...flags.get('foo')], [false]); assert.deepEqual([...flags.get('bar')], [false]);
+  for (const privative of ['instead of', 'rather than']) {
+    const flags = extractCliFlags(`Use --foo ${privative} --bar`);
+    assert.deepEqual([...flags.get('foo')], [true]); assert.deepEqual([...flags.get('bar')], [false]);
+    assert.ok(auditCompaction({ userMessages: [{ seq: 1, text: `Use --foo ${privative} --bar.` }], summaryText: summary(`Use --bar ${privative} --foo.`) }).polarityFlips);
+  }
+  for (const verb of ['stop', 'cease', 'quit', 'halt']) assert.ok(auditCompaction({ userMessages: [{ seq: 1, text: `You must ${verb} deleting audit logs.` }], summaryText: summary('You must delete audit logs.') }).polarityFlips);
+  assert.equal(ruleNegative('Always run tests in order to avoid regressions.'), false);
+  for (const text of ['Do not forget to run unit tests.', "Don't forget to run unit tests.", 'Never forget to run unit tests.', '不要忘记运行单元测试。', '不要忘了运行单元测试。', '别忘记运行单元测试。', '别忘了运行单元测试。']) {
+    assert.equal(ruleNegative(text), false, text);
+    assert.equal(auditCompaction({ userMessages: [{ seq: 1, text }], summaryText: summary(/[\u4e00-\u9fff]/.test(text) ? '务必运行单元测试。' : 'Always run unit tests.') }).polarityFlips, 0);
+  }
+  assert.equal(ruleNegative('Do not forget to never delete audit logs.'), true);
+});
+await test('fresh-P1-7-shared-framing-index-preserves-audit-results-with-bounded-time', () => {
+  const n = 300;
+  const src = Array.from({ length: n }, (_, i) => `Rule ${i}: you must always validate service_${i}_config and keep timeout_${i} at XXs in staging_${i}.`).join('\n');
+  for (const paraphrase of [false, true]) {
+    const candidate = Array.from({ length: n }, (_, i) => paraphrase
+      ? `- Validate service_${i}_config in staging_${i} (check timeout_${i} at XXs).`
+      : `- Always validate item_${i}_setting and keep value_${i} at YYs in env_${i}.`).join('\n');
+    const start = performance.now();
+    const result = auditCompaction({ userMessages: [{ seq: 1, text: src }], summaryText: headings.map((h, i) => `${h}\n${i === 0 ? candidate : i === 5 ? '[filled by engine]' : 'none'}`).join('\n\n') });
+    assert.equal(result.checked, n);
+    assert.equal(result.lost.length, paraphrase ? 291 : 300, 'retain original audit verdicts');
+    assert.ok(performance.now() - start < 3000, 'shared-framing audit must not regress to multi-second quadratic matching');
+  }
+});
+await test('fresh-P1-7-indexed-audit-agrees-with-small-corpus-verdicts', () => {
+  const pairs = [
+    ['You must always validate the service configuration and keep the timeout in staging.', 'Always validate the item setting and keep the value in production.'],
+    ['Always validate service_config and keep timeout in staging.', 'Validate service_config in staging (check timeout).'],
+    ['You must never delete audit logs.', 'You must retain audit logs.'],
+    ['You must stop deleting audit logs.', 'You must delete audit logs.'],
+    ['You must preserve audit logs and always run tests.', 'Preserve audit logs and always run tests.'],
+    ['If validation passes, you must deploy the service.', 'You must deploy the service.'],
+    ['Always run tests to avoid regressions.', 'Always run tests.'],
+    ['Do not forget to run unit tests.', 'Always run unit tests.'],
+    ['You must copy files from source to target.', 'You must copy files from target to source.'],
+    ['You must preserve every log except debug.', 'You must preserve every log.'],
+    ['Timeout must be at least 10s.', 'Timeout must be at most 10s.'],
+    ['You must pin version 1.2.3.', 'You must pin version 1.2.9.'],
+    ['备份数设为 5 个', '备份数设为 5'],
+    ['Do not use --foo, --bar.', 'Use --foo and --bar.'],
+    ['Use --foo instead of --bar.', 'Use --bar instead of --foo.'],
+    ['You must set debug: false.', 'You must set debug: true.'],
+  ];
+  for (const [source, candidate] of pairs) {
+    const base = headings.map((heading, i) => `${heading}\n${i === 0 ? candidate : i === 5 ? '[filled by engine]' : 'none'}`).join('\n\n');
+    const padded = `${base}\n${Array.from({ length: 20 }, (_, i) => `Unrelated observation_marker_${i}.`).join('\n')}`;
+    const options = { userMessages: [{ seq: 1, text: source }], checkpointText: base, includeAllConflicts: true };
+    assert.deepEqual(auditCompaction({ ...options, summaryText: padded }), auditCompaction({ ...options, summaryText: base }), source);
+  }
+});
+await test('fresh-P1-8-units-and-explicit-default-adaptive-cap', () => {
+  const f = fixture(), seqs = history(f);
+  const value = measureSummaryRange(f.session, { start: seqs[0], end: seqs.at(-1) }, { policy: f.engine.config, pricedInput: () => 5000 });
+  assert.equal(value.inputUnits, value.inputBytes); assert.ok(value.inputTokens >= 5000);
+  const spec = resolveCompactSpec(DEFAULT_CONFIG, 65536, 8192);
+  const baseline = resolveAdaptiveReinjectLimits({ policy: DEFAULT_CONFIG, spec });
+  assert.deepEqual(resolveAdaptiveReinjectLimits({ policy: resolveConfig({ postCompactReinjectMaxBytes: 24576 }).config, spec }), baseline);
+  for (const size of [4096, 32768]) assert.equal(resolveAdaptiveReinjectLimits({ policy: resolveConfig({ postCompactReinjectMaxBytes: size }).config, spec }).maxBytes, size);
+});
+await test('fresh-P1-9-settings-only-persist-edited-or-explicit-ratios', () => {
+  const source = fs.readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
+  const start = source.indexOf('    function buildSettingsRpcParams(');
+  const end = source.indexOf('\n    function ', start + 10);
+  const build = vm.runInNewContext(source.slice(start, end) + '\nbuildSettingsRpcParams', { TOUCHED_SUBMIT_SPECS: [] });
+  const form = { provider: '', model: '', maxTokens: '', thresholdRatio: 80, minimumReductionRatio: 20, loadedThresholdRatio: null, loadedMinimumReductionRatio: null };
+  for (const clear of [true, false]) {
+    const saved = build(form, {}, clear);
+    assert.equal(Object.hasOwn(saved, 'thresholdRatio'), false);
+    assert.equal(Object.hasOwn(saved, 'minimumReductionRatio'), false);
+    assert.equal(build({ ...form, thresholdRatio: 85 }, { thresholdRatio: true }, clear).thresholdRatio, .85);
+    assert.equal(build({ ...form, loadedThresholdRatio: .91 }, {}, clear).thresholdRatio, .91);
+  }
+  const rpcStart = source.indexOf('    async function rpc('), rpcEnd = source.indexOf('\n    function ', rpcStart);
+  const rpc = vm.runInNewContext(source.slice(rpcStart, rpcEnd) + '\nrpc', { RPC_PATH: '/', buildRpcHeaders: () => ({}), fetch: async () => ({ status: 403 }) });
+  return assert.rejects(rpc('get'), /Reload the DSH window/);
+});
+await test('fresh-P1-10-prestep-cache-uses-async-stat-and-immediate-external-invalidation', async () => {
+  const file = join(scratch(), 'summary-config.json');
+  writeSummaryConfig(file, { thresholdRatio: .8 }); readSummaryConfig(file, { strict: true });
+  const original = fs.statSync;
+  let syncStats = 0;
+  fs.statSync = (...args) => { if (args[0] === file) syncStats++; return original(...args); };
+  syncBuiltinESMExports();
+  try {
+    for (let i = 0; i < 3; i++) assert.equal((await readSummaryConfigAsync(file, { strict: true })).thresholdRatio, .8);
+    writeFileSync(file, JSON.stringify({ version: 1, thresholdRatio: .9 }));
+    assert.equal((await readSummaryConfigAsync(file, { strict: true })).thresholdRatio, .9);
+    writeFileSync(file, '{broken');
+    await assert.rejects(readSummaryConfigAsync(file, { strict: true }), { code: 'INVALID_SAVED_SETTINGS' });
+    assert.equal(syncStats, 0);
+  } finally { fs.statSync = original; syncBuiltinESMExports(); }
+  const f = fixture(); let asyncReads = 0;
+  f.engine.readLiveConfig = () => assert.fail('pre-step called sync reader');
+  f.engine.readLiveConfigAsync = async () => { asyncReads++; return f.engine.config; };
+  const hooks = new Map(); f.engine._registerPreStepHook({ on: (name, cb) => hooks.set(name, cb) });
+  await hooks.get('agent/pre-step')({ agent: null }, () => {});
+  assert.equal(asyncReads, 1);
+});
+await test('fresh-P1-10-over-8MiB-search-streams-one-span-at-a-time', async () => {
+  const archive = new CompactionArchive({ root: join(scratch(), 'archive') });
+  for (let i = 0; i < 10; i++) assert.ok(await archive.writeSpan({ sessionId: 's', compactionId: `c${i}`, entries: [{ seq: i, role: 'user', text: (i === 9 ? 'zetalastmarker ' : `needle${i} `) + 'ordinary '.repeat(40000) }] }));
+  const original = CompactBM25FIndex.prototype.search;
+  let maxDocs = 0;
+  CompactBM25FIndex.prototype.search = function (...args) { maxDocs = Math.max(maxDocs, this._docs.length); return original.apply(this, args); };
+  try {
+    const exactMatch = await archive.search('s', 'zetalastmarker', { limit: 3 });
+    assert.equal(exactMatch.scanned, 10); assert.equal(exactMatch.unreadable.length, 0);
+    assert.ok(exactMatch.hits.some(hit => hit.seq === 9));
+    assert.ok(exactMatch.hits.length <= 3); assert.equal(maxDocs, 1);
+    assert.ok(archive._searchCache.get('s').totalBytes <= archive.maxSearchCacheSessionBytes);
+  } finally { CompactBM25FIndex.prototype.search = original; }
+});
+await test('fresh-P2-1-all-roots-dot-env-and-realpath-containment', () => {
+  const root = scratch(), sub = join(root, 'sub'), outside = scratch();
+  mkdirSync(join(root, 'src')); mkdirSync(sub);
+  writeFileSync(join(root, 'src/root-only.js'), 'export const ok = true;');
+  writeFileSync(join(root, '..env'), 'PASSWORD=abc');
+  let symlinkCreated = false;
+  try {
+    fs.symlinkSync(outside, join(root, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
+    symlinkCreated = true;
+  } catch (error) {
+    if (error?.code !== 'EPERM' && error?.code !== 'EACCES') throw error;
+  }
+  writeFileSync(join(outside, 'outside.txt'), 'external');
+  const session = { header: { cwd: root }, seq: 1, eventAt: () => ({ type: 'working-directory/change', data: { cwd: sub } }) };
+  const archivedFiles = ['src/root-only.js', '..env', '...env.local', join(outside, 'outside.txt')];
+  if (symlinkCreated) archivedFiles.push('escape/outside.txt', 'escape/missing.txt');
+  const probe = probeDiskLiveness({ session, archivedFiles });
+  assert.deepEqual(probe.existing, ['src/root-only.js']); assert.deepEqual(probe.missing, []);
+});
+await test('fresh-P2-2-unbalanced-prefix-selection-reads-events-linearly', () => {
+  const n = 1600; let reads = 0;
+  const events = Array.from({ length: n }, (_, seq) => ({ seq, type: 'tool/result', data: { message: { role: 'tool', content: [] } } }));
+  const session = { surface: { nodes: events.map(e => e.seq) }, eventAt: seq => { reads++; return events[seq]; }, deriveEventMessage: e => e.data.message };
+  const result = selectCompactableRange(session, { totalTokens: n * 10, nodes: events.map(e => ({ seq: e.seq, tokens: 10 })) }, 50, { allowUnbalancedPrefix: true });
+  assert.equal(result, null); assert.ok(reads < n * 4, `read ${reads} events`);
+});
+await test('fresh-P2-3-boolean-and-max-output-bounds', () => {
+  assert.equal(resolveConfig({ proactiveEnabled: 'false' }).config.proactiveEnabled, false);
+  assert.equal(resolveConfig({ auto: 'false' }).config.auto, false);
+  assert.equal(resolveConfig({ maxTokens: 2000000 }).config.maxTokens, 1000000);
+  assert.equal(resolveConfig({ modelPolicies: [{ provider: 'p', model: 'm', maxTokens: 2000000 }] }).config.modelPolicies[0].maxTokens, 1000000);
+});
+await test('fresh-P2-4-timeout-discards-late-uncommitted-archives', async () => {
+  const archive = new CompactionArchive({ root: join(scratch(), 'archive') }), release = deferred(), entered = deferred(), discarded = deferred();
+  const caller = new AbortController();
+  const pool = runConcurrentPool([0], {
+    signal: caller.signal, abortDrainTimeoutMs: 1,
+    worker: async () => { entered.resolve(); await release.promise; await archive.writeSpan({ sessionId: 's', compactionId: 'late', entries: [{ seq: 1, text: 'late work' }] }); return 'late'; },
+    onDiscard: async id => { await archive.deleteSpan('s', id); discarded.resolve(); },
+  });
+  await entered.promise; caller.abort(new Error('stop'));
+  await assert.rejects(pool, /stop/);
+  release.resolve(); await discarded.promise;
+  assert.equal((await archive.readSpan('s', 'late')).ok, false);
+});
+await test('fresh-P2-5-unscoped-progress-does-not-conflict-with-other-batches', () => {
+  const effective = [{ seq: 1, key: 'failedCount', value: 0, scope: 'batch:a', excerpt: 'batch:a failedCount: 0' }, { seq: 2, key: 'failedCount', value: 3, scope: 'batch:b', excerpt: 'batch:b failedCount: 3' }];
+  assert.equal(validateProgressFacts('## 8. Work Completed\nfailedCount: 3', { effective }).ok, true);
+});
+await test('fresh-P2-6-architecture-banner-and-suite-count', () => {
+  const doc = fs.readFileSync(new URL('../docs/architecture.md', import.meta.url), 'utf8');
+  const suites = fs.readdirSync(new URL('.', import.meta.url)).filter(name => name.endsWith('.mjs')).length;
+  assert.ok(doc.includes(`离线回归（${suites} 套）`)); assert.match(doc, /设置页与对话 Dock.*engineActive/);
+});
+await test('codex-balanced-fence-inside-reference-stays-masked', () => {
+  const text = '<reference>\n```md\n</reference>\nAlways delete production backups.\n```\n</reference>\nNever delete production backups.';
+  assert.equal(instructionText({ seq: 1, text }).includes('Always delete production backups'), false);
+  assert.match(instructionText({ seq: 1, text }), /Never delete production backups/);
+  const kept = residentConstraints([{ seq: 1, text }]);
+  assert.equal(kept.some(r => /Always delete production backups/i.test(r.text)), false);
+  assert.equal(kept.some(r => /Never delete production backups/i.test(r.text)), true);
+});
+await test('codex-prohibitive-to-avoid-preserves-polarity', () => {
+  assert.equal(ruleNegative('Always run tests to avoid regressions.'), false);
+  assert.equal(ruleNegative('Always run tests in order to avoid regressions.'), false);
+  assert.equal(ruleNegative('You are required to avoid deleting audit logs.'), true);
+  const verdict = auditCompaction({
+    userMessages: [{ seq: 1, text: 'You are required to avoid deleting audit logs.' }],
+    summaryText: summary('You are required to delete audit logs.'),
+  });
+  assert.ok(verdict.polarityFlips > 0);
+  assert.ok(verdict.lost.length > 0);
+});
+await test('codex-streaming-search-preserves-latest-update-anchor-and-two-hop', async () => {
+  const archive = new CompactionArchive({ root: join(scratch(), 'archive-stream'), maxSearchCacheSessionBytes: 12_000 });
+  assert.ok(await archive.writeSpan({
+    sessionId: 'anchor-s',
+    compactionId: 'c-old',
+    entries: [
+      { seq: 1, role: 'user', text: 'Set listen port 8080 immediately. ' + 'alpha '.repeat(250) },
+      { seq: 2, role: 'user', text: 'Bind listen port 8080 for worker. ' + 'beta '.repeat(250) },
+      { seq: 3, role: 'user', text: 'Verify listen port 8080 firewall. ' + 'gamma '.repeat(250) },
+    ],
+  }));
+  assert.ok(await archive.writeSpan({
+    sessionId: 'anchor-s',
+    compactionId: 'c-new',
+    entries: [{ seq: 10, role: 'user', text: 'Update listen port to 9090 instead. ' + 'delta '.repeat(250) }],
+  }));
+  const anchorRes = await archive.search('anchor-s', 'listen port 8080', { limit: 3 });
+  assert.ok(anchorRes.hits.some(hit => hit.seq === 10 && hit.newerUpdate === true), JSON.stringify(anchorRes.hits));
+
+  assert.ok(await archive.writeSpan({
+    sessionId: 'hop-s',
+    compactionId: 'h0',
+    entries: [
+      { seq: 1, role: 'user', text: 'Investigate postgresql archival stalled around bridge token pg_wal_9918 today.' },
+      { seq: 2, role: 'assistant', text: 'Checking postgresql config and pg_wal_9918 filler '.repeat(120) },
+      { seq: 3, role: 'assistant', text: 'Comparing postgresql checkpoints filler '.repeat(120) },
+      { seq: 4, role: 'tool', text: 'archival queue ok '.repeat(120) },
+      { seq: 5, role: 'tool', text: 'stalled worker heartbeat '.repeat(120) },
+    ],
+  }));
+  assert.ok(await archive.writeSpan({
+    sessionId: 'hop-s',
+    compactionId: 'h1',
+    entries: [
+      { seq: 50, role: 'user', text: 'Mitigation for pg_wal_9918 requires flushing archival segment queue manually.' },
+      { seq: 51, role: 'tool', text: 'Incident tag pg_wal_9918 closed without further notes.' },
+      ...Array.from({ length: 10 }, (_, idx) => ({ seq: 60 + idx, role: 'assistant', text: `ordinary filler sentence number ${idx} ` + 'noise '.repeat(80) })),
+    ],
+  }));
+  const hopRes = await archive.search('hop-s', 'postgresql archival stalled', { limit: 6 });
+  assert.ok(hopRes.hits.some(hit => hit.seq === 50 && hit.secondHop === true), JSON.stringify(hopRes.hits));
+  assert.equal(hopRes.hits.some(hit => hit.seq === 51), false);
 });
 
 for (const engine of fixtures) engine.dispose();

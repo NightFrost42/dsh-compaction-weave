@@ -815,14 +815,14 @@ await test('adaptive-reinject-limits-scale-on-64k-and-honor-explicit-overrides',
   assert.ok(res64kTight.maxFiles >= 1 && res64kTight.maxFiles <= 2);
   assert.equal(res64kTight.maxFileBytes, res64kTight.maxBytes);
 
-  // Explicit override matching default value (24576) MUST still disable adaptive scaling
+  // Explicit default value retains small-window adaptive scaling
   const explicitDefaultCfg = resolveConfig({ postCompactReinjectMaxBytes: 24576 }).config;
   assert.equal(explicitDefaultCfg[EXPLICIT_CONFIG_KEYS].has('postCompactReinjectMaxBytes'), true);
   const resExplicit24k = resolveAdaptiveReinjectLimits({
     policy: explicitDefaultCfg,
     spec: { headroomTokens: 33000, retainTokens: 9175, thresholdTokens: 19475 },
   });
-  assert.deepEqual(resExplicit24k, { maxFiles: 5, maxBytes: 24576, maxFileBytes: 6144, adaptiveApplied: false });
+  assert.deepEqual(resExplicit24k, res64kTight);
 
   // Explicit override 16384
   const explicit16kCfg = resolveConfig({ postCompactReinjectMaxBytes: 16384 }).config;
@@ -842,7 +842,7 @@ await test('adaptive-reinject-limits-scale-on-64k-and-honor-explicit-overrides',
     policy: mergedPolicy,
     spec: { headroomTokens: 33000, retainTokens: 9175, thresholdTokens: 19475 },
   });
-  assert.deepEqual(resModelPolicy, { maxFiles: 5, maxBytes: 24576, maxFileBytes: 6144, adaptiveApplied: false });
+  assert.deepEqual(resModelPolicy, res64kTight);
 });
 
 await test('e2e-64k-engine-compaction-bounds-reinject-and-records-telemetry', async () => {

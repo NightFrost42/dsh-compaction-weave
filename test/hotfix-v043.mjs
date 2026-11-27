@@ -1039,7 +1039,7 @@ await test('breaker-rpcs-status-retry-and-bypass-with-gate', async () => {
     const sessionsMap = new Map();
     const hooks = new Map();
     let runtimeRef = null;
-    const connMock = { requestRejection: () => undefined };
+    const connMock = { admit: () => ({ peer: { principal: { kind: 'owner' } } }) };
     const gateCtx = {
       logger: { info() {}, warn() {}, error() {} },
       effect: (fn) => fn(),

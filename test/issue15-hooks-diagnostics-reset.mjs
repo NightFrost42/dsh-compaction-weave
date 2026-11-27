@@ -848,7 +848,7 @@ await test('C3-compact-reset-guards-active-lock-and-pending-journal-plus-reset-b
     services.set('sessions', sessions);
     services.set('llm', llm);
     services.set('tokenMeter', tokenMeter);
-    services.set('connection', { requestRejection: () => undefined });
+    services.set('connection', { admit: () => ({ peer: { principal: { kind: 'owner' } } }) });
     services.set('webServer', {
       register(spec) {
         if (spec.path === SUMMARY_RPC_PATH) registeredRoute = spec.handler;

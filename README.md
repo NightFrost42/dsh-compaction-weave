@@ -119,6 +119,8 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.6.0.tgz
 
 上下文压缩属于有损摘要加按需归档回查，实际输入缩减与账单变化受缓存命中、重生成、模型计费（上表同时列示 Magpie 账单 USD 与标价归一化 Norm USD）及未达计数锚点（`null` 样本）影响；完整多模型明细与复现方法见 [测试记录](docs/testing.md)。
 
+> **启发式与正则防线有界边界说明**：`lib/redact.js` 的凭据/私钥脱敏、`lib/file-reinject.js` 的工作区敏感路径黑名单与 `lib/audit/*` 的确定性约束/溯源审计均为面向常见真实格式与 DSH 原生输出的有界规则防线，不承诺穷尽所有非标准编码或开放域自然语言变体；详见 [代码导航](docs/architecture.md)。
+
 ## 诊断与反馈
 
 遇到报错、摘要被拒或压缩后遗漏信息时，可按以下步骤排查与反馈：

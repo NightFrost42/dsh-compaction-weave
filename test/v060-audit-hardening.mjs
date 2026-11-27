@@ -1770,6 +1770,19 @@ await test('4da2472-audit-remediation-p1-1-p1-2-p2-1-p2-2-and-conflict', async (
       });
       assert.equal(dualViewerDenied.status, 403, 'P1-2 dual-method host must reject share-viewer with 403');
 
+      // Fresh P1-9: optional rejection fields cannot override a valid owner.
+      const localHeaders = { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' };
+      for (const rejection of [undefined, null]) {
+        rpcConn = { admit: () => ({ rejection, peer: { principal: { kind: 'owner' } } }) };
+        assert.equal((await sendRpc(localHeaders)).status, 200);
+      }
+      rpcConn = { requestRejection: () => undefined };
+      assert.equal((await sendRpc(localHeaders)).status, 401);
+      assert.equal((await sendRpc({ ...localHeaders, 'x-weave-rpc-token': validTok }, '192.168.1.99')).status, 403);
+      assert.equal((await sendRpc({ ...localHeaders, authorization: ['Bearer valid', 'Bearer other'] })).status, 401);
+      rpcConn = { requestRejection: () => undefined, principal: { kind: 'share-viewer' } };
+      assert.equal((await sendRpc({ ...localHeaders, authorization: 'Bearer valid' })).status, 403);
+
       for (const badRet of [null, undefined, {}, { peer: null }, []]) {
         rpcConn = { admit: () => badRet };
         const badRes = await sendRpc({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000', 'content-type': 'application/json' });

@@ -31,6 +31,8 @@ Actual cache reuse is measured from service usage reports. [Testing](testing.md)
 
 `lib/audit/` splits the deterministic auditor into a 6-layer acyclic module stack (`normalize.js` → `numeric.js` → `clauses.js` → `polarity.js` / `provenance.js` → `compaction.js`, re-exported via `audit.js`), covering normalization, exact unit conversions, inline ordinal/clause splitting, CLI-flag/boolean/enable-disable polarity symmetry, approval provenance, and `auditCoverageScope`-aware coverage checks.
 
+> **Bounded defense contract**: Regex/pattern-based credential redaction (`lib/redact.js`), workspace sensitive-path denylisting (`lib/file-reinject.js`), and deterministic heuristic NLP constraint/provenance auditing (`lib/audit/*`) are **bounded defenses** targeting common real-world credential formats, native DSH formatting boundaries, and high-frequency constraint phrasing—they do not promise exhaustive coverage of arbitrary non-standard encodings or open-world natural-language paraphrases.
+
 Original event sequence numbers, text fragments, and hashes identify sources. Generated checkpoint prose does not become a new original instruction. Later compactions continue restoring requirements from verified original events.
 
 Standalone “continue” messages may leave the checkpoint. Relative cancellations still use the original user-message sequence to preserve their intended target.
@@ -59,7 +61,7 @@ The transaction adapter checks both raw and comment/whitespace-normalized finger
 
 `cordis.patch.yml` registers the configuration gate and orders four agent presets after it. The gate replaces the preset's basic compaction engine with Weave and merges existing configuration with saved settings.
 
-`index.js` bridges the host RPC endpoint (with `webserver/index-inject` process-level `x-weave-rpc-token`, `timingSafeEqual`, same-origin validation, and non-owner `403` enforcement) and `hookBus`; `client.js` (single-file browser bundle with zero imports and zero `setInterval`) renders the declarative Settings page (`settings-schema.js` SSOT, including the `engineActive` takeover banner rendered exclusively on the Settings page) and the composer-dock live progress card plus `ReactDOM.createPortal` migration/takeover confirmation modals.
+`index.js` bridges the host RPC endpoint (with `webserver/index-inject` process-level `x-weave-rpc-token`, `timingSafeEqual`, same-origin validation, and non-owner `403` enforcement) and `hookBus`; `client.js` (single-file browser bundle with zero imports and zero `setInterval`) renders the declarative Settings page (`settings-schema.js` SSOT, plus the `engineActive` takeover banner rendered on both the Settings page and the conversation composer Dock) and the composer-dock live progress card plus `ReactDOM.createPortal` migration/takeover confirmation modals.
 
 The `lib/` runtime comprises `92` modules (`91` non-client ESM modules enforced at **0 cycles** by `scripts/check.mjs`):
 
@@ -79,4 +81,4 @@ The `lib/` runtime comprises `92` modules (`91` non-client ESM modules enforced 
 | `transaction*.js`, `journal.js`, `state.js`, `session-backup.js`, `bili-conflict.js` | Transactions, worker-safe locks, full backups, and `billion-context` migration |
 | `failure-diagnostics.js`, `audit-reject.js`, `audit-fallback.js` | Redacted diagnostics, rejection snapshots, and controlled fallback |
 | `settings-schema.js`, `summary-config.js`, `client.js` | Settings SSOT, hot storage, and localized UI |
-| `test/` | Offline regression suites (`103`) and DSH host integration suites (`8`) |
+| `test/` | Offline regression suites (`104`) and DSH host integration suites (`8`) |

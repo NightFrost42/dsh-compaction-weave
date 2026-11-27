@@ -36,6 +36,8 @@ Weave 在 DSH 的会话维护阶段整理上下文。一次压缩按以下顺序
 
 `lib/audit/` 采用 6 层无环子模块组织（`normalize.js` → `numeric.js` → `clauses.js` → `polarity.js` / `provenance.js` → `compaction.js`，由 `audit.js` 聚合重导出），统一覆盖规范化、单位等价换算、句内编号与条件子句切分、CLI/布尔开关与正反词形极性校验、来源溯源，以及 `auditCoverageScope` 范围化的覆盖率检查。
 
+> **有界防御契约**：`lib/redact.js` 的凭据/私钥脱敏正则、`lib/file-reinject.js` 的工作区敏感路径黑名单以及 `lib/audit/*` 的启发式自然语言约束与溯源校验均为**有界确定性防线**——重点覆盖常见密钥格式、DSH 原生行号/代码块边界与常见句式/命令模式，不承诺覆盖所有任意混淆编码或开放域自然语言同义变体。
+
 原始事件号、文本片段和哈希共同标识来源。历史检查点中的生成文字不会成为新的原始要求；下一代压缩仍从经过核验的原始事件恢复依据。
 
 独立的“继续”等低信息原话可以移出检查点。取消上一条时仍按原始用户消息顺序定位，避免因为裁剪改变指代对象。
@@ -64,7 +66,7 @@ Weave 在 DSH 的会话维护阶段整理上下文。一次压缩按以下顺序
 
 `cordis.patch.yml` 注册配置入口，并让四种 preset 在入口就绪后加载。入口将 preset 中的基础压缩引擎替换为 Weave，合并原有配置与插件设置。
 
-`client.js`（单文件无外部 ESM 导入、无 `setInterval`）基于 `settings-schema.js` 的元数据驱动声明式渲染设置页（含仅在设置页顶部展示的 `engineActive` 接管冲突横幅）与对话页按需实时进度卡片及 `ReactDOM.createPortal` 兼容转换/接管确认弹窗；`index.js` 通过 `webserver/index-inject` 注入进程级 `x-weave-rpc-token`（`timingSafeEqual` + 非 `owner` 角色 `403` 拦截 + 同源头校验）；`summary-config.js` 负责读取、校验和保存设置；`command-compact.js` 接入手动命令。
+`client.js`（单文件无外部 ESM 导入、无 `setInterval`）基于 `settings-schema.js` 的元数据驱动声明式渲染设置页（含在设置页与对话 Dock 展示的 `engineActive` 接管冲突横幅）与对话页按需实时进度卡片及 `ReactDOM.createPortal` 兼容转换/接管确认弹窗；`index.js` 通过 `webserver/index-inject` 注入进程级 `x-weave-rpc-token`（`timingSafeEqual` + 非 `owner` 角色 `403` 拦截 + 同源头校验）；`summary-config.js` 负责读取、校验和保存设置；`command-compact.js` 接入手动命令。
 
 ## 代码导航
 
@@ -86,4 +88,4 @@ Run-time 共 `92` 个 `lib/**/*.js` 模块（除独立打包的单文件 `client
 | `lib/transaction*.js`、`journal.js`、`state.js`、`session-backup.js`、`bili-conflict.js` | 事务提交、并发锁、会话完整备份与 `billion-context` 兼容迁移 |
 | `lib/failure-diagnostics.js`、`audit-reject.js`、`audit-fallback.js` | 脱敏失败诊断、拒稿证据落盘与受控耗尽兜底 |
 | `lib/settings-schema.js`、`summary-config.js`、`client.js` | 设置元表 SSOT、热配置存储与单文件 WebUI |
-| `test/` | 离线回归（103 套）与 DSH 宿主集成测试（8 套） |
+| `test/` | 离线回归（104 套）与 DSH 宿主集成测试（8 套） |

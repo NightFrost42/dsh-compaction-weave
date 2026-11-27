@@ -780,6 +780,26 @@ await test('continuation-map-reduce-parallel-pages-reasoning-downgrade-and-429-a
   }
 });
 
+await test('fresh-P2-5-reduce-splits-notes-larger-than-source-page-budget', async () => {
+  const f = await makeContinuationFixture({ continuationMemoryBytes: 10000, continuationMaxExtraCalls: 32, summaryConcurrency: 2 });
+  f.capacity.targets[0].maxInputBytes = 24000;
+  f.session.eventAt(1).data.message.content[0].text = 'Page evidence retained. '.repeat(500) + '\ntasksCompleted: 5\n';
+  const largeNotes = INTERMEDIATE_NOTES.replace('Partial page evidence retained in archive.', '证据。'.repeat(800));
+  let maps = 0, reduces = 0;
+  try {
+    const ctx = { llm: { async *stream(request) {
+      const isMap = JSON.stringify(request.messages).includes('Independent notes for page');
+      if (isMap) maps++; else reduces++;
+      yield { type: 'text-delta', text: isMap ? largeNotes : VALID_NOTES };
+      yield { type: 'finish', kind: 'stop' };
+    } } };
+    const result = await prepareContinuation({ ctx, agent: { session: f.session }, session: f.session, seqs: [0, 1], policy: f.policy, capacity: f.capacity, chain: f.chain,
+      compactionId: 'fresh-reduce', signal: new AbortController().signal, archiveRoot: join(f.root, 'archive'), parallelContinuation: true });
+    assert.ok(maps >= 2); assert.ok(reduces > maps, `expected split reduce groups, got maps=${maps} reduce=${reduces}`);
+    assert.ok(result.summarized.rawText.includes('tasksCompleted: 5'));
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
 await test('continuation-map-reduce-resume-after-reduce-failure-reuses-all-mapped-pages', async () => {
   const f = await makeContinuationFixture({ summaryConcurrency: 3 });
   try {

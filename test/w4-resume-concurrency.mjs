@@ -326,7 +326,7 @@ function createRpcHarness(root, engine, session) {
           tracker: { writers: new Map() },
         };
       }
-      if (name === 'connection') return { requestRejection: () => undefined };
+      if (name === 'connection') return { admit: () => ({ peer: { principal: { kind: 'owner' } } }) };
       return providedServices.get(name);
     },
     inject(deps, cb) {

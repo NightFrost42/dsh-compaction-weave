@@ -347,7 +347,7 @@ await test('ui-default-off-options-and-first-save-match-engine-default', async (
   assert.deepEqual(Array.from(control.children, option => option.props.value), ['0', '5', '10', '30', '60', '720', '1440', '10080', '43200', 'custom']);
   assert.equal(h.field('weave-idle-custom-minutes'), null);
   await h.click('save');
-  assert.equal(Object.hasOwn(readSummaryConfig(h.file), 'idleCompactionMinutes'), false);
+  assert.equal(Object.hasOwn(readSummaryConfig(h.file) ?? {}, 'idleCompactionMinutes'), false);
   const firstSet = h.requests.find(request => request.method === 'set');
   assert.equal(Object.hasOwn(firstSet.params, 'idleCompactionMinutes'), false);
   assert.equal(resolveConfig(mergeSummaryConfig({}, readSummaryConfig(h.file))).config.idleCompactionMinutes, 0);

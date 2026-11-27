@@ -561,7 +561,7 @@ await test('W4-P1-7-activeCompactions-end-race-and-P2-2-lastRunAt-cap-and-HISTOR
     {
       on(name, cb) { listeners.set(name, cb); return () => {}; },
       provide() {},
-      get(name) { return name === 'connection' ? { requestRejection: () => undefined } : null; },
+      get(name) { return name === 'connection' ? { admit: () => ({ peer: { principal: { kind: 'owner' } } }) } : null; },
       inject(deps, cb) {
         if (Array.isArray(deps) && deps.includes('webServer')) {
           return cb({

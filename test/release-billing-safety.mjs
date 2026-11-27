@@ -766,7 +766,7 @@ await test('http-rpc-enforces-same-origin-method-size-and-reactive-never-repeats
       {
         on() {},
         provide() {},
-        get(name) { return name === 'connection' ? { requestRejection: () => undefined } : null; },
+        get(name) { return name === 'connection' ? { admit: () => ({ peer: { principal: { kind: 'owner' } } }) } : null; },
         inject(deps, fn) {
           if (Array.isArray(deps) && deps.includes('webServer')) {
             return fn({

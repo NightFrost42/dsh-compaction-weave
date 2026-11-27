@@ -640,7 +640,7 @@ await test('archiveWarnBytes-config-and-runtime-rpcs-soft-warning-never-auto-del
       },
       on() { return () => {}; },
       provide(k, v) { provided.set(k, v); },
-      get(k) { return k === 'connection' ? { requestRejection: () => undefined } : provided.get(k); },
+      get(k) { return k === 'connection' ? { admit: () => ({ peer: { principal: { kind: 'owner' } } }) } : provided.get(k); },
       inject(deps, fn) {
         if (deps.includes('webServer')) {
           return fn({
