@@ -311,7 +311,7 @@ await test('7A-config-and-summary-config-extraReferencePrefixes-validation-and-p
     assert.deepEqual(resolved.extraReferencePrefixes, ['[Memory]']);
     assert.equal(resolved.auditProvenanceBlock, false);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -428,7 +428,7 @@ await test('7A-mixed-multiblock-section6-and-end-to-end-polarity-isolation', asy
     assert.equal(prov.length, 1);
     assert.equal(prov[0].untrustedSourceMatch, true);
   } finally {
-    await rm(f.root, { recursive: true, force: true });
+    await rm(f.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -710,7 +710,7 @@ await test('8C-auditProvenanceBlock-soft-warn-vs-hard-block-and-diagnostics', as
         (err) => err.message.includes('reason=provenance') && err.message.includes('untrusted-source'),
       );
     } finally {
-      await rm(fHardUntrusted.root, { recursive: true, force: true });
+      await rm(fHardUntrusted.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
 
     // Continuation honors auditProvenanceBlock: false on soft provenance AND hard-blocks revoked
@@ -787,7 +787,7 @@ await test('8C-auditProvenanceBlock-soft-warn-vs-hard-block-and-diagnostics', as
         (err) => JSON.stringify(err.failures ?? []).includes('revoked') || /reason=provenance,\s*kind=revoked/.test(err.message),
       );
     } finally {
-      await rm(contDir, { recursive: true, force: true });
+      await rm(contDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
 
     // Diagnostic explanation surfaces excerpt, kind & config flags cleanly (including inside cause.failures)
@@ -831,7 +831,7 @@ await test('8C-auditProvenanceBlock-soft-warn-vs-hard-block-and-diagnostics', as
     assert.match(expUntrusted, /extraReferenceSourceKinds/);
     assert.match(expUntrusted, /extraReferencePrefixes/);
   } finally {
-    await rm(fSoft.root, { recursive: true, force: true });
+    await rm(fSoft.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -914,7 +914,7 @@ await test('breaker-config-state-normalization-and-backup-restore-clearing', asy
     assert.equal(summary.lastFailureCode, 'SUMMARY_TIMEOUT');
     assert.equal(summary.lastDiagnosticId, 'diag-001');
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -1025,7 +1025,7 @@ await test('breaker-modes-red-lines-root-failure-preservation-and-clearing', asy
     assert.equal(afterRetry.lastDiagnosticId, null);
     assert.equal(afterRetry.lastDiagnosticPath, null);
   } finally {
-    await rm(f.root, { recursive: true, force: true });
+    await rm(f.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -1210,10 +1210,12 @@ await test('breaker-rpcs-status-retry-and-bypass-with-gate', async () => {
     const retryRes = await callRpc('retry-compaction', { sessionId: session.id });
     assert.equal(retryRes.body.ok, true);
     assert.equal(retryRes.body.value.accepted, true);
-    for (let i = 0; i < 40; i += 1) {
-      await new Promise((r) => setTimeout(r, 15));
-      if (!engine.progressTracker.hasActiveRun(session.id)) break;
+    for (let i = 0; i < 400; i += 1) {
+      if (!engine.progressTracker.hasActiveRun(session.id) && !engine._busy.has(session)) break;
+      await new Promise((r) => setTimeout(r, 25));
     }
+    assert.equal(engine.progressTracker.hasActiveRun(session.id), false, 'retry-compaction run should finish before assertions/cleanup');
+    assert.equal(engine._busy.has(session), false, 'engine._busy should release after retry-compaction');
     const postSt = await callRpc('status', { sessionId: session.id });
     assert.equal(postSt.body.value.stopped, false);
     assert.equal(postSt.body.value.breakerBypassed, false);
@@ -1221,7 +1223,7 @@ await test('breaker-rpcs-status-retry-and-bypass-with-gate', async () => {
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
-    await rm(home, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
