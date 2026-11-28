@@ -74,7 +74,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.6.0.tgz
 插件启用后即可正常对话。默认情况下，Weave 跟随当前会话模型生成摘要，并在上下文接近阈值时自动规划压缩（自动模式以释放至少 **20%** 输入空间为规划目标）。
 
 - **手动触发**：在对话框输入 `/compact` 立即尝试压缩，或使用 `/compact <focus>` 传入单次聚焦指令；也可使用 `/compact resume`、`/compact cancel`、`/compact discard` 与 `/compact reset` 控制续压、暂停与重置熔断计数器。
-- **实时进度与中断续压**：压缩或迁移期间，对话输入框上方会显示与输入框等宽的实时进度卡片（含总进度、当前分块与并发度），支持随时点击 **`[暂停]`**；主动暂停或意外崩溃重启后均自动保留断点，打开会话可见 **`[继续压缩]`** / **`[继续转换]`** 与 **`[放弃]`**，继续发送新消息也会自动从断点接续压缩（不重复已提交分块）。
+- **实时进度与中断续压**：压缩或迁移期间，对话输入框上方会显示与输入框等宽的实时进度卡片（含总进度、当前分块与并发度），支持随时点击 **`[暂停]`**；主动暂停或意外崩溃重启后均自动保留断点，打开会话可见 **`[继续压缩]`** / **`[继续转换]`** 与 **`[放弃]`**，继续发送新消息也会自动从断点接续压缩（不重复已提交分块；若期间调整了压缩策略，自动续压会主动暂停等待确认 `CONTINUATION_PENDING_POLICY_CHANGED`，防止静默重跑已付费页面）。
 - **`billion-context` 兼容迁移与完整备份还原**：仅在检测到会话存在 `billion-context` 折叠块时，卡片出现「兼容转换为 Weave」入口；转换前自动拍下不可变 SHA-256 完整会话基线备份并支持多波次滚雪球迁移，后续可随时在卡片内按本地时间选择快照还原。
 - **阶段收尾申请**：可让模型在完成阶段任务后调用 `context_compact` 提交申请。工具返回 `queued` 表示已进入队列，插件会在当前工具批次结束后的安全步骤检查上下文增长与可压缩区间，满足条件时执行压缩并返回 `compacted`、`partial` 或 `failed`，不满足条件或插件已停止时返回 `skipped`、`blocked` 等最终回执；查看后续回执即可确认结果。
 - **回查原文**：需要核对早期报错、路径或代码细节时，可提醒或直接向模型提问，模型可按需调用以下工具检索本地归档：
@@ -108,7 +108,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.6.0.tgz
 
 ## 测试与验证
 
-`0.6.0` 已在本地通过全部静态拓扑检查、全量离线回归及隔离的 **DSH `0.2.2-rc.1` / `0.2.2-rc.3`** 双宿主集成回归（0 失败）。真实模型网关三方无失真对比实盘摘要（`Weave 0.6.0` vs `DSH Basic` vs `billion-context@0.0.1328-master.ced22b1`，原始采样保留于 `2026-11-25` `candidateCommit: 01f6502` 的 [`docs/benchmarks/v0.6.0-live-three-way.json`](docs/benchmarks/v0.6.0-live-three-way.json)）：
+`0.6.0` 已在本地通过全部静态拓扑检查（`289` 源文件 / `91` 模块 `0` 环 DAG）、全量离线回归（**104 套 / 1,603 项用例**）及隔离的 **DSH `0.2.2-rc.1` / `0.2.2-rc.3`** 双宿主集成回归（各 **112 套 / 1,735 项用例**，0 失败）。真实模型网关三方无失真对比实盘摘要（`Weave 0.6.0` vs `DSH Basic` vs `billion-context@0.0.1328-master.ced22b1`，原始采样保留于 `2026-11-25` `candidateCommit: 01f6502` 的 [`docs/benchmarks/v0.6.0-live-three-way.json`](docs/benchmarks/v0.6.0-live-three-way.json)）：
 
 | 对比维度（2026-11-25 实盘） | `Weave 0.6.0` | `DSH Basic` | `billion-context@0.0.1328-master.ced22b1` |
 | --- | :---: | :---: | :---: |

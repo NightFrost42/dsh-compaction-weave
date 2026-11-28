@@ -52,7 +52,7 @@ Weave 在 DSH 的会话维护阶段整理上下文。一次压缩按以下顺序
 
 完整摘要请求包含源消息、规则、近期原话索引、`<channel-provenance>` 通道隔离声明和工作报告。`summary-budget.js` 按完整请求规划容量，`continuation.js` 在需要时分页生成工作笔记。
 
-每个已接受页面保存来源身份和进度。重试或恢复时复用匹配的已完成页面，未完成页面继续请求。调用额度、实际发送与未知用量分别记录。
+每个已接受页面保存来源身份、进度与 `ledgerVersion: 2` 逐页 `callCount` 账本（并发 `summaryConcurrency >= 2` 时启用 Map-Reduce 并行分页、`completedMapPages` 乱序缓冲与多组 Reduce 游标/组哈希持久校验）。重试或恢复时复用匹配的已完成页面，未完成页面继续请求；若断点等待期间策略变更，自动前置续传会以 `CONTINUATION_PENDING_POLICY_CHANGED` 暂停等待显式确认。调用额度、实际发送与未知用量分别记录。
 
 `summary-retry.js` 对超时、断流、空摘要、结构不合格和检查失败进行有限重试。常规和接续请求均使用 `singleTarget: true`，只请求选定的首个摘要目标。用户取消会结束当前操作。`summary-timeout.js` 在发送和读取阶段检查截止时间。
 
@@ -60,7 +60,7 @@ Weave 在 DSH 的会话维护阶段整理上下文。一次压缩按以下顺序
 
 归档以消息区间组织，写入前先对凭据脱敏并执行 `32 MiB` 未压缩字节预检，保存原始事件、消息块和工具关系，默认通过 Node.js 24 原生 `zstd` 无损压缩存储。`history-search.js` 提供纯 JS BM25F 多字段检索（CJK 双字 + 英文词干 + 子模去冗余 Top-K + 2-hop 关联 + 按 span 失效的有界 LRU 缓存；超过 `8 MiB` 时切换为带全局统计的候选流式归约，兼顾内存封顶与跨 span 最新更新锚点 / 2-hop 召回）；附件按 SHA-256 保存并支持元数据优先/按需逐字节读取（`tools.js` 同时兼容严格工具模式下的 `null`/空白可选参数）。
 
-事务适配器对经审查的 DSH `0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.2-rc.3` 宿主方法（含单条与批量 `Session.append` 实现及去除注释/空白后的归一化方法签名）做指纹核验，按“单趟拷贝兼哈希备份、持久化替换、持久化成功决定、发布”的顺序提交。默认 `strictHostFingerprints: false` 时，若确认磁盘无未恢复 `.rollback`/`.tail` 原子日志且仅宿主私有持久化方法随小版本更新变动，会发出一次兼容提示并平顺降级至公开 `Session.append(..., { surfaceOp: { op: 'replace' } })` + `sessions.flush()` 安全提交（仍保留前置归档）；仅在存在未恢复原子日志或显式开启 `strictHostFingerprints: true` 时才在摘要请求与历史修改前硬性拒绝未知方法体并保留恢复材料。成功决定前失败可恢复已核验的备份；决定后发布异常会隔离写入并要求冷重开会话，保留已持久成功的历史。`state.js` 与 `session-memory.js` 的跨进程/工作线程状态锁绑定 `threadId`、文件 `(dev, ino)` 身份与原子 `.reclaim` 门禁。
+事务适配器对经审查的 DSH `0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.2-rc.3` 宿主方法（含单条与批量 `Session.append` 实现及去除注释/空白后的归一化方法签名）做指纹核验，按“单趟拷贝兼哈希备份、持久化替换、持久化成功决定、发布”的顺序提交。默认 `strictHostFingerprints: false` 时，若确认磁盘无未恢复 `.rollback`/`.tail` 原子日志且仅宿主私有持久化方法随小版本更新变动，会发出一次兼容提示并平顺降级至公开 `Session.append(..., { surfaceOp: { op: 'replace' } })` + `sessions.flush()` 安全提交（仍保留前置归档）；仅在存在未恢复原子日志或显式开启 `strictHostFingerprints: true` 时才在摘要请求与历史修改前硬性拒绝未知方法体并保留恢复材料。成功决定前失败可恢复已核验的备份；决定后发布异常会隔离写入并要求冷重开会话，保留已持久成功的历史。`state.js` 与 `session-memory.js` 的跨进程/工作线程状态锁绑定 `threadId`、文件 `(dev, ino)` 身份与原子 `.reclaim` 门禁，`session-backup.js` 备份恢复同步执行活跃事务/`_busy` 互斥并在读写/清理 `weave-state.json` 时持有 `withExclusiveFileLock` 排他锁。
 
 ## 插件入口
 

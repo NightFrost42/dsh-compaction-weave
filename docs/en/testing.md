@@ -2,16 +2,16 @@
 
 # DSH Compaction Weave Testing Record (`0.6.0`)
 
-## 0.6.0 Stable Release Validation & Live Three-Way Comparison (2026-11-25)
+## 0.6.0 Stable Release Validation & Live Three-Way Comparison (Validated 2026-11-28; Live Capture 2026-11-25)
 
 Under Windows / Node.js `v24.19.0`, `0.6.0` completes the 6-layer acyclic `lib/audit/` split, 8-domain `lib/engine/` modularization, pure-JS BM25F multi-field archive search (`history-search.js`), lossless Node.js 24 `zstd` archiving and storage governance, deterministic relative date grounding, Tier-4 salient prose previews, workspace file re-injection credential/unclosed-PEM redaction (`+4 KiB` bounded lookahead), `auditCoverageScope: 'recent'` (with conflict redlines globally enforced), DSH Desktop `0.2.3-alpha.2+` `webserver/index-inject` random token + non-owner `403` enforcement, `threadId` + `(dev, ino)` multi-worker lock reclamation, and `history_read` normalization of `null`/blank optional arguments under strict tool-calling schemas:
 
 | Verification gate | Scope & conditions | Result | Reference |
 | --- | --- | --- | --- |
 | **Static & DAG topology (`npm run check`)** | `289` release files, package `0.6.0`, syntax, links, install examples, secrets, and module DAG | **91 non-client ESM modules, 0 cycles passed** | [../../scripts/check.mjs](../../scripts/check.mjs) |
-| **Offline unit suites (`npm test`)** | Separate child processes + isolated temp `DSH_HOME` | **104 suites, 1,600 checks passed, 0 failures** | [../../test/v060-audit-hardening.mjs](../../test/v060-audit-hardening.mjs) |
-| **DSH `0.2.2-rc.1` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **112 suites, 1,732 checks passed, 0 failures** | — |
-| **DSH `0.2.2-rc.3` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **112 suites, 1,732 checks passed, 0 failures** | — |
+| **Offline unit suites (`npm test`)** | Separate child processes + isolated temp `DSH_HOME` | **104 suites, 1,603 checks passed, 0 failures** | [../../test/v060-audit-hardening.mjs](../../test/v060-audit-hardening.mjs), [../../test/v060-hardening-regressions.mjs](../../test/v060-hardening-regressions.mjs) |
+| **DSH `0.2.2-rc.1` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **112 suites, 1,735 checks passed, 0 failures** | — |
+| **DSH `0.2.2-rc.3` host integration** | Real DSH `Session`, capacity, multi-gen prefix cache, and native `.rollback` transactions | **112 suites, 1,735 checks passed, 0 failures** | — |
 | **Clean release packaging (`npm run pack:release`)** | Generates `dist/dsh-compaction-weave-0.6.0.tgz`, `dsh-compaction-weave.tgz`, source tarball, and `SHA256SUMS.txt` | Payload matches `package.json.files` whitelist cleanly | [../../scripts/release.mjs](../../scripts/release.mjs) |
 
 ---

@@ -1,6 +1,6 @@
 # 更新记录
 
-## [0.6.0] - 2026-11-25
+## [0.6.0] - 2026-11-28
 
 - **6 层无环审计拆分与 8 域引擎模块化（Phase 4–6）**：
   - 将 [audit.js](lib/audit.js) 拆分为 6 层无环子模块（[lib/audit/normalize.js](lib/audit/normalize.js) → [numeric.js](lib/audit/numeric.js) → [clauses.js](lib/audit/clauses.js) → [polarity.js](lib/audit/polarity.js) / [provenance.js](lib/audit/provenance.js) → [compaction.js](lib/audit/compaction.js)），将 [engine.js](lib/engine.js) 拆分为 8 个领域模块（[lib/engine/](lib/engine/shared.js)），并将设置元表抽为单一事实来源 [settings-schema.js](lib/settings-schema.js) 驱动声明式 [client.js](lib/client.js) WebUI；在 [scripts/check.mjs](scripts/check.mjs) 中对全部 `91` 个非客户端 ESM 模块强制执行 **`0` 环 DAG** 拓扑校验。
@@ -55,8 +55,12 @@
 - **工程红线 Round-3 与 6Astra 深度验证加固（`77be6f9` 后 3 项工程 P1 + 多轮 6Astra 二审收口）**：
   - [continuation-budget.js](lib/continuation-budget.js) 与 [continuation.js](lib/continuation.js) 为并行 Map-Reduce 接入实时在途并发数扣减（`inFlightCount` / `inFlightMapCalls`）、乱序完成页即时持久化缓冲（`completedMapPages`）与连续前缀排空校验、退出池后置保护（`poolExited`）、`ledgerVersion: 2` / `receipt.callCount` 唯一页账本校验与 `grant` 前置边界先验校验，并在 `migrateLegacyReceiptCallCounts` 按各页历史接受区间 `[lowerCalls, upperCalls)` 反向匹配终态成功调用以支持旧版顺序与 `HEAD` `map-reduce` 检查点无损升级与防篡改 fail-closed；
   - [redact.js](lib/redact.js) 将显式 key 前缀收敛为零回溯断言 `(?:\b|(?<=_))` 消除点号/下划线前缀二次回溯，新增线性扫描器 `scanExplicitSecretValue` / `replaceExplicitClientSecrets` 以支持 1–3 层 JSON 转义引号（`\"` / `\\"` / `\\\"`）及单引号包裹、不截断多级转义内置引号且扩展 `Authorization` / AWS Secret 脱敏；
-  - [audit/provenance.js](lib/audit/provenance.js) 隔离并列子句授权 `isCompoundPart`（仅继承前置作用域与外层限定词并新增 `pruneGrantsWithCompoundParents` 同组联锁失效）、支持复合/分号撤回拆分与双向精确实体匹配（`revocationNamedEntitiesMatched`），将 `stripNonQualifyingParens` 与 `stripRevocationCommentParens` 彻底改写为零递归迭代 $O(N)$/$O(N\log N)$ 栈与二分裁切以抵御超深嵌套括号栈溢出与指数退化，保留内部点号标识符、`production/checks` / `` `production.checks` `` / `production.checks` 原子边界、`extractLeadingScopePrefix` 嵌套括号前缀继承及 `dev`/`test`/`local` 对称作用域校验（[v060-hardening-regressions.mjs](test/v060-hardening-regressions.mjs) 增至 `101` 项通过）。
-- **发布验证与对比基准**：全量通过 `npm run check`（`289` 发布源文件、`91` 模块 `0` 环 DAG）、`npm test`（`104` 套 / `1,600` 项用例，`0` 失败）与 DSH `0.2.2-rc.1` / `0.2.2-rc.3` 双宿主集成测试（各 `112` 套 / `1,732` 项用例，`0` 失败），并在最新实盘网关完成 `Weave 0.6.0` vs `dsh-basic` vs `billion-context@0.0.1328-master.ced22b1` 三方对照评测（详见 [docs/benchmarks/v0.6.0-live-three-way.json](docs/benchmarks/v0.6.0-live-three-way.json)）。
+  - [audit/provenance.js](lib/audit/provenance.js) 隔离并列子句授权 `isCompoundPart`（仅继承前置作用域与外层限定词并新增 `pruneGrantsWithCompoundParents` 同组联锁失效）、支持复合/分号撤回拆分与双向精确实体匹配（`revocationNamedEntitiesMatched`），将 `stripNonQualifyingParens` 与 `stripRevocationCommentParens` 彻底改写为零递归迭代 $O(N)$/$O(N\log N)$ 栈与二分裁切以抵御超深嵌套括号栈溢出与指数退化，保留内部点号标识符、`production/checks` / `` `production.checks` `` / `production.checks` 原子边界、`extractLeadingScopePrefix` 嵌套括号前缀继承及 `dev`/`test`/`local` 对称作用域校验。
+- **终版 3 项确定性工程 P1 封板修复（`6d369c1` Pro 四路独立复核收口）**：
+  - [engine/recovery.js](lib/engine/recovery.js)、[index.js](lib/index.js) 与 [session-backup.js](lib/session-backup.js) 为 `restoreSessionBackupFor` 与 `backup-restore` RPC 补齐 `activeTransactions`、`progressTracker.hasActiveRun` 及 `_busy` 同步互斥，并对 `syncWeaveAuxStateOnRestore` 的 `weave-state.json` 写/删接入 `withExclusiveFileLock` 排他锁与缓存失效；
+  - [engine.js](lib/engine.js) 与 [engine/resumable.js](lib/engine/resumable.js) 在 `agent/pre-step` 自动续传强制传入 `allowPolicyRestart: false` 并仅对显式手动/授权重启开放策略重算，消除策略变更后自动跳过 `CONTINUATION_PENDING_POLICY_CHANGED` 并重置调用预算的风险；
+  - [image-budget.js](lib/image-budget.js) 与 [engine.js](lib/engine.js) 修复 `commitVisibleImageOffload` 在 `session.append('image/offload', ...)` 修改内存后吞掉 `flushSession` 持久化异常并错误放行 `isMultimodal400` 降级的问题，统一标记 `surfaceMutated = true` 抛出（[v060-hardening-regressions.mjs](test/v060-hardening-regressions.mjs) 增至 `104` 项通过）。
+- **发布验证与对比基准**：全量通过 `npm run check`（`289` 发布源文件、`91` 模块 `0` 环 DAG）、`npm test`（`104` 套 / `1,603` 项用例，`0` 失败）与 DSH `0.2.2-rc.1` / `0.2.2-rc.3` 双宿主集成测试（各 `112` 套 / `1,735` 项用例，`0` 失败），并在最新实盘网关完成 `Weave 0.6.0` vs `dsh-basic` vs `billion-context@0.0.1328-master.ced22b1` 三方对照评测（详见 [docs/benchmarks/v0.6.0-live-three-way.json](docs/benchmarks/v0.6.0-live-three-way.json)）。
 
 ## [0.5.3-hotfix.1] - 2026-11-25
 

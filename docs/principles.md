@@ -21,7 +21,7 @@ DSH Compaction Weave 用来解决长对话“越聊越长、旧要求容易忘�
    - **结构化检查点摘要（可选复用 Session Memory）**：当归档折叠不足以单独达标，或通过 `/compact`、`context_compact`、闲置完整摘要进入 LLM 总结时，若开启了 `sessionMemoryEnabled: true`（默认关闭，Opt-In），前台会短时等待并严格核验回合间隙后台预热的兼容摘要以零额外调用直接复用；否则选出工具调用完整配对的区间，并发受控生成并严格按序提交单条结构化**检查点消息**。被折叠的原文与附件在替换前全部落盘，后续可通过 `history_list`、`history_search` 与 `history_read` 按需检索。
 4. **第四层（逼近硬预算红线 / HTTP 413 兜底）：Snip 0-LLM 急救裁剪（`snipEnabled: true`）**
    - 仅当常规压缩、掩码与分页接续失败或仍无法压低，且会话逼近 `messageBudgetTokens` 硬上限或触发 413 溢出（`CONTEXT_WINDOW_EXCEEDED`）时作为最后一道防线运行（0 LLM 调用）。Snip 优先把最旧的工具调用循环归档并替换为带 `history_read` 指针的存根（单次最多 `4` 段，要求净省至少 `1024` tokens），严格保护系统提示词、最近至少 `2` 个用户回合与 `8192` token 尾部、有效约束及工具配对完整性。
-- **双水位图片卸载（`image/offload`）**：当可见表面未卸载图片累计超过 `maxVisibleAttachmentBytes`（默认 `16 MiB`）或 `maxVisibleImages`（默认 `24` 张，且含长边 `>2000px` 超过 `20` 张护栏）高水位时，单批把较早图片卸载至磁盘附件并保留最新 `6` 张热点图片，严格不改写 `user/message` 原文、不重置会话记忆计数并避免频繁震荡缓存。
+- **双水位图片卸载（`image/offload`）**：当可见表面未卸载图片累计超过 `maxVisibleAttachmentBytes`（默认 `16 MiB`）或 `maxVisibleImages`（默认 `24` 张，且含长边 `>2000px` 超过 `20` 张护栏）高水位时，单批把较早图片卸载至磁盘附件并保留最新 `6` 张热点图片，严格不改写 `user/message` 原文、不重置会话记忆计数并避免频繁震荡缓存；若 `session.append('image/offload', ...)` 改写内存表面后磁盘 `flush` 失败，会向上抛出带 `surfaceMutated = true` 标记的错误而绝不静默吞错。
 
 若显式配置 `archiveEnabled: false` 关闭本地归档：磁盘归档写入、依赖归档的存根折叠/裁剪（`Persisted-Output`、`Observation Masking`、`Microcompact`、`Snip`）、`history_*` 历史检索工具与后台容量分页接续都会停用；`context_compact` 阶段收尾工具虽仍按 `proactiveEnabled` 注册，但在调用申请阶段会因缺少归档支撑直接返回 `blocked`。此外，一旦候选选区需要逐出检查点第 6 节（“全部用户消息”）近期原话预算之外的早期用户引文，引文丢失保护也会阻断压缩，防止未归档的用户原话被丢弃。下文各节均按默认开启归档的常规路径阐述。
 
@@ -50,7 +50,7 @@ DSH Compaction Weave 用来解决长对话“越聊越长、旧要求容易忘�
 
 使用阶段申请、闲置压缩与手动命令时，还有几项关键边界需要了解：
 
-- **`queued` 仅表示申请已入队，需以安全步骤后的最终结果为准**：模型调用 `context_compact` 获得 `queued` 时，当前工具批次尚未结束，压缩还未发生。进入下一个安全步骤消费该申请时，若插件已停止则返回 `blocked`；若期间出现新用户输入、会话繁忙、总上下文未达 `proactiveMinTokens`（默认 `8192`）、新增量未达 `proactiveMinGrowthTokens`（默认 `4096`）或无足够可压缩选区，则返回 `skipped`；若轮次已变化可返回 `cancelled`（若执行中触发 `AbortSignal` 则直接中止抛出，未必写入取消回执）。实际进入压缩后，按提交结果与中途报错返回 `compacted`（完成提交）、`partial`（部分提交后中断）或 `failed`（未提交即因校验、保护或请求错误终止）。
+- **`queued` 仅表示申请已入队，需以安全步骤后的最终结果为准**：模型调用 `context_compact` 获得 `queued` 时，当前工具批次尚未结束，压缩还未发生。进入下一个安全步骤消费该申请时，若插件已停止则返回 `blocked`；若期间出现新用户输入、会话繁忙、总上下文未达 `proactiveMinTokens`（默认 `8192`）、新增量未达 `proactiveMinGrowthTokens`（默认 `4096`）或无足够可压缩选区，则返回 `skipped`；若轮次已变化可返回 `cancelled`（若执行中触发 `AbortSignal` 则直接中止抛出，未必写入取消回执）。实际进入压缩后，按提交结果与中途报错返回 `compacted`（完成提交）、`partial`（部分提交后中断）或 `failed`（未提交即因校验、保护或请求错误终止）；失败类回执（`weave-compaction-status`）采用静态分类错误码白名单，绝不把宿主机路径、诊断正文或凭据透出到模型可见表面。
 - **闲置触发不依赖外部计时器或服务商缓存声明**：插件通过会话日志里的持久化时间戳判断实际闲置时长（未知时间、系统启动事件或活跃工具循环中途都不触发）；若设置页面选择了 `30 分钟`，它仅作为插件何时发起整理的操作门限，不保证或修改上游模型服务商的真实缓存有效期。
 - **统一使用 `/compact` 命令**：无论是手动触发压缩、传入单次聚焦指令（`/compact <focus>`）、中断后恢复（`/compact resume`）、重置熔断器（`/compact reset`）还是兼容转换旧会话（`/compact migrate`），均统一通过 `/compact` 入口控制。
 
@@ -173,7 +173,7 @@ $$D = \min(T - 1,\ \lfloor \text{currentInput} \times 0.8 \rfloor)$$
 | 对比维度 | 受控并发分块压缩（Bounded Chunks） | 后台容量分页接续（Backend Continuation） |
 | :--- | :--- | :--- |
 | **触发条件** | 常规选区按可接受分块推进，上限 `maxSummaryChunks: 32` | 常规压缩遇到容量或体积类拒绝（`SUMMARY_NOT_SMALLER`、`SUMMARY_GROUP_TOO_LARGE`、`SUMMARY_BATCH_LIMIT`、`COMPACTION_CAPACITY_BLOCKED` 或全部子项属于上述代码的 `SUMMARY_ALL_FAILED`），且归档与历史检索工具可用 |
-| **并发、限流与续传** | 受 `summaryConcurrency`（默认 `2`，范围 `1–6`）控制：**先串行试探第 0 块，随后多块在并发池内受控并行生成与校验，最终严格按序号顺序提交**；遇到 HTTP `429` 自动降速至并发 `1` 并冷却重试。开启可恢复断点（`resumableCompaction`）后，若用户点击暂停或进程崩退，已提交分块保留并在磁盘保存安全断点，重开或续发消息时从断点继续而不重做已提交分块 | 分页请求同样受 `summaryConcurrency` 与 HTTP `429` 降速冷却保护；每页通过校验后立即将源文本 SHA-256、工作笔记与账本落盘，中断或耗尽 `continuationMaxExtraCalls` 后可用 `/compact` 从首个未完成页继续 |
+| **并发、限流与续传** | 受 `summaryConcurrency`（默认 `2`，范围 `1–6`）控制：**先串行试探第 0 块，随后多块在并发池内受控并行生成与校验，最终严格按序号顺序提交**；遇到 HTTP `429` 自动降速至并发 `1` 并冷却重试。开启可恢复断点（`resumableCompaction`）后，若用户点击暂停或进程崩退，已提交分块保留并在磁盘保存安全断点，重开或续发消息时从断点继续而不重做已提交分块（若策略变化，自动前置续传会以 `CONTINUATION_PENDING_POLICY_CHANGED` 暂停等待显式 `/compact` 确认，不静默重跑已付费页面） | 分页请求同样受 `summaryConcurrency` 与 HTTP `429` 降速冷却保护（`>= 2` 时启用 Map-Reduce 并行生成与乱序页缓冲 `completedMapPages`，并支持多组 Reduce 游标与组哈希落盘）；每页通过校验后立即将源文本 SHA-256、工作笔记与 `ledgerVersion: 2`（含逐页 `callCount` 回执）账本落盘，中断或耗尽 `continuationMaxExtraCalls` 后可用 `/compact` 从首个未完成页继续 |
 | **输出结构** | 九节完整检查点 + 第六节近期原话 | 四节工作笔记（`Goal`、`State`、`Next`、`Uncertain`）+ 逐字保留的 `## Preserved source requirements` |
 | **体积上限** | 完整检查点严格小于被替换跨度的估算 tokens 与规范化 UTF-8 字节 | 工作笔记上限 `continuationMemoryBytes: 12288` B（12 KiB），整份替换上限 `continuationMaxBytes: 98304` B（96 KiB），最多 32 页 |
 | **提交时机** | **按序逐块提交**：并联等待全部已启动的提交回调（`inFlightCommits`）排空后再处理拒绝或下一步，每块通过校验并归档后按序替换对应跨度 | **全页完成后提交**：分页期间仅落盘已接受页与调用账本，全部页面完成并通过整份校验后才替换主历史 |
@@ -212,8 +212,8 @@ $$D = \min(T - 1,\ \lfloor \text{currentInput} \times 0.8 \rfloor)$$
    - 进入第二级事务提交时，**`phase: 'committed'`（持久成功决定 `decided = true`）就是回滚分界线**：在此之前发生的任何异常或取消，都会触发从 `.rollback` 备份原子恢复原会话文件；若恢复本身失败，则保留恢复材料并隔离该会话的后续写入。
    - 该阶段的准备防护包括两件事：一是先核验是否存在未恢复的 `.rollback`/`.tail` 原子日志（若有则无条件拒绝压缩并保留恢复材料），随后核验 `DSH 0.2.2-rc.1` / `rc.2` / `rc.3` 宿主持久化方法指纹（同时检查原文指纹和忽略常规注释/空白、保留字面量与影响换行语义的归一化指纹）；在默认 `strictHostFingerprints: false` 下，若仅是宿主私有方法体随小版本更新变动，引擎会在首次遇到时记录提示并降级为公开 `Session.append(..., { surfaceOp: { op: 'replace' } })` + `sessions.flush()`，不再因无关小更新被迫罢工；配置 `strictHostFingerprints: true` 时则会直接拒绝对未知方法体执行替换。二是当走原生原子事务路径时，在**单趟流式复制**中同步落盘 `.rollback` 备份并直接算好 SHA-256，写好 `.tail` 与 `phase: 'committing'` 日志后再动手修改主会话文件。
 2. **阶段 B：后台分页接续中断或额外调用预算耗尽**
-   - 后台接续每完成一页校验，都会将该页源文本 SHA-256、最新四节工作笔记及调用耗时与 `usage` 持久化到 `continuation-progress`。
-   - 若中途报错或额外调用预算（默认 `continuationMaxExtraCalls: 4`）耗尽，已接受页保留在磁盘，主会话历史暂不替换。用户随后输入 `/compact` 时，若源消息与关键配置未变，可获批新一轮有限额度并从首个未完成页继续；若源消息已变动则重新计算分页，同时在累计账本中保留历史调用记录。
+   - 后台接续每完成一页校验，都会将该页源文本 SHA-256、最新四节工作笔记及调用耗时与 `usage`（含并行 Map-Reduce 下的 `completedMapPages` 乱序页缓冲、多组 Reduce 游标/组哈希与 `ledgerVersion: 2` 逐页 `callCount` 回执）持久化到 `continuation-progress`。
+   - 若中途报错或额外调用预算（默认 `continuationMaxExtraCalls: 4`）耗尽，已接受页保留在磁盘，主会话历史暂不替换。若断点等待期间配置策略发生改变，自动前置续传会主动停留在 `CONTINUATION_PENDING_POLICY_CHANGED` 等待确认；用户随后显式执行 `/compact` 时，若源消息与关键配置未变，可获批新一轮有限额度并从首个未完成页继续；若源消息已变动或手动确认重算则重新计算分页，同时在累计账本中保留历史调用记录。
 3. **阶段 C：常规多块顺序压缩的后块失败（`partial`）**
    - 常规分块压缩最多推进 `32` 块，逐块完成归档与事务提交。若前几块已成功提交而后续某块失败，已提交分块保留为检查点，失败分块保留原始消息，最终状态返回 `partial`。
 4. **阶段 D：磁盘持久提交成功后内存表面发布失败**

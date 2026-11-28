@@ -2,16 +2,16 @@
 
 # DSH Compaction Weave 测试记录（0.6.0）
 
-## 0.6.0 正式版验证与三方无失真对比评测（2026-11-25）
+## 0.6.0 正式版验证与三方无失真对比评测（2026-11-28 验证；2026-11-25 实盘）
 
 在 Windows / Node.js `v24.19.0` 环境下，正式版 `0.6.0` 完成 `lib/audit/` 6 层无环拆分、`lib/engine/` 8 域模块化、纯 JS BM25F 多字段归档检索（`history-search.js`）、`zstd` 无损归档与存储治理、确定性相对日期锚定、Tier-4 关键散文预览、工作区文件重注入 PEM/凭据脱敏（`+4 KiB` 预读边界）、`auditCoverageScope: 'recent'`（全档保留硬红线校验）、DSH Desktop `0.2.3-alpha.2+` `webserver/index-inject` 随机 Token 与非 `owner` `403` 防护、`threadId` + `(dev, ino)` 跨工作线程锁安全回收，以及 `history_read` 在严格工具模式下的 `null`/空字符串参数规范化：
 
 | 验证维度 | 范围与条件 | 结果 | 数据记录 |
 | --- | --- | --- | --- |
 | **静态与拓扑校验 (`npm run check`)** | `289` 个发布源文件、包清单 `0.6.0`、文档链接、安装示例与敏感内容规则 | **91 个非客户端 ESM 模块 `0` 环 DAG 通过** | [../scripts/check.mjs](../scripts/check.mjs) |
-| **全量离线单元测试 (`npm test`)** | 独立进程 + 隔离临时 `DSH_HOME` | **104 套、1,600 项用例全部通过，0 失败** | [../test/v060-audit-hardening.mjs](../test/v060-audit-hardening.mjs) |
-| **DSH `0.2.2-rc.1` 宿主集成回归** | 真实 DSH `Session`、容量、多代缓存与原生 `.rollback` 事务 | **112 套、1,732 项用例全部通过，0 失败** | — |
-| **DSH `0.2.2-rc.3` 宿主集成回归** | 真实 DSH `Session`、容量、多代缓存与原生 `.rollback` 事务 | **112 套、1,732 项用例全部通过，0 失败** | — |
+| **全量离线单元测试 (`npm test`)** | 独立进程 + 隔离临时 `DSH_HOME` | **104 套、1,603 项用例全部通过，0 失败** | [../test/v060-audit-hardening.mjs](../test/v060-audit-hardening.mjs)、[../test/v060-hardening-regressions.mjs](../test/v060-hardening-regressions.mjs) |
+| **DSH `0.2.2-rc.1` 宿主集成回归** | 真实 DSH `Session`、容量、多代缓存与原生 `.rollback` 事务 | **112 套、1,735 项用例全部通过，0 失败** | — |
+| **DSH `0.2.2-rc.3` 宿主集成回归** | 真实 DSH `Session`、容量、多代缓存与原生 `.rollback` 事务 | **112 套、1,735 项用例全部通过，0 失败** | — |
 | **独立发布打包与解包验收** | `npm run pack:release`（`dist/dsh-compaction-weave-0.6.0.tgz`、`dsh-compaction-weave.tgz`、源码归档与 `SHA256SUMS.txt`） | 白名单校验一致、干净退出 | [../scripts/release.mjs](../scripts/release.mjs) |
 
 ---

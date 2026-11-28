@@ -52,7 +52,10 @@ import { collectActiveWorkspaceFiles } from '../lib/file-reinject.js';
 import { approxTokens, blocksToText } from '../lib/meter.js';
 import { buildCompactionInstruction } from '../lib/prompt.js';
 import { containsSecretCredential, redactCredentials, redactErrorText } from '../lib/redact.js';
-import { readResumableCompaction, writeResumableCompaction } from '../lib/state.js';
+import { spawn } from 'node:child_process';
+import { readResumableCompaction, writeResumableCompaction, withExclusiveFileLock } from '../lib/state.js';
+import { createSessionBackup, restoreSessionBackup } from '../lib/session-backup.js';
+import { commitVisibleImageOffload, planVisibleImageOffload } from '../lib/image-budget.js';
 import { capacityByteLimit, capacityTokenLimit, estimateSummaryRequestTokens, resolveSummaryCapacity } from '../lib/summary-budget.js';
 
 const results = [];
@@ -5340,6 +5343,337 @@ await test('goal-round3-codex-review4-legacy-upgrade-and-provenance', async () =
     assert.equal(upgradedMr.data.ledgerVersion, 2);
     assert.ok(upgradedMr.data.receipts.every((r) => Number.isSafeInteger(r.callCount)));
   }
+});
+
+await test('final-P1-1-backup-restore-concurrency-and-state-lock', async () => {
+  const f = fixture({ archiveEnabled: true });
+  const logPath = join(f.root, 'sessions', f.session.id, 'session.v4.jsonl');
+  mkdirSync(dirname(logPath), { recursive: true });
+  writeFileSync(logPath, '{"seq":0,"type":"turn/start","time":1,"data":{"turn":1}}\n', 'utf8');
+  f.engine.sessionState.update(f.session.id, () => ({ failures: 0, stopped: false }));
+
+  // 1. Live overlapping restoreSessionBackupFor must reject concurrent caller with code 'busy'
+  const slowResolveGate = deferred();
+  const stockAdapter = { quarantine() {} };
+  let calls = 0;
+  const backend = {
+    tracker: { writers: new Map() },
+    async findLog() {
+      calls += 1;
+      if (calls === 1) await slowResolveGate.promise;
+      return { sourcePath: logPath };
+    },
+  };
+  const b1 = await createSessionBackup(f.engine.backupStore, {
+    sessionId: f.session.id,
+    logPath,
+    stateStore: f.engine.sessionState,
+  });
+  const p1 = f.engine.restoreSessionBackupFor(f.session.id, { backupId: b1.backupId, backend, stockAdapter });
+  await delay(10);
+  await assert.rejects(
+    () => f.engine.restoreSessionBackupFor(f.session.id, { backupId: b1.backupId, backend, stockAdapter }),
+    { code: 'busy' },
+  );
+  // 2. Mutual exclusion with activeTransactions (e.g. resetBreakerFor / transaction)
+  const txKey = `${f.engine.sessionState.root}:${JSON.stringify(f.session.id)}`;
+  assert.equal(activeTransactions.has(txKey), true);
+  slowResolveGate.resolve();
+  const r1 = await p1;
+  assert.equal(r1.status, 'armed');
+  assert.equal(activeTransactions.has(txKey), false);
+
+  // 3. Cold restore respects SessionStateStore file lock (throws STATE_LOCKED if lock held by another worker, succeeds when released)
+  const coldSid = randomUUID();
+  const coldLogPath = join(f.root, 'sessions', coldSid, 'session.v4.jsonl');
+  mkdirSync(dirname(coldLogPath), { recursive: true });
+  writeFileSync(coldLogPath, '{"seq":0,"type":"turn/start","time":1,"data":{"turn":1}}\n', 'utf8');
+  f.engine.sessionState.update(coldSid, () => ({ failures: 0, stopped: false }));
+  const sessionsNone = { get: () => null, async flush() { return true; } };
+  const stateLock = `${f.engine.sessionState.file(coldSid)}.lock`;
+  const b2 = await createSessionBackup(f.engine.backupStore, {
+    sessionId: coldSid,
+    logPath: coldLogPath,
+    stateStore: f.engine.sessionState,
+  });
+  const stateHref = new URL('../lib/state.js', import.meta.url).href;
+  const lockChild = spawn(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import { withExclusiveFileLock } from ${JSON.stringify(stateHref)}; withExclusiveFileLock(${JSON.stringify(stateLock)}, () => { console.log('LOCKED'); const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, 10000); });`,
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+  );
+  try {
+    await new Promise((resolveReady, rejectReady) => {
+      let out = '';
+      const timer = setTimeout(() => rejectReady(new Error('lock child timeout')), 5000);
+      lockChild.stdout.on('data', (chunk) => {
+        out += chunk.toString('utf8');
+        if (out.includes('LOCKED')) {
+          clearTimeout(timer);
+          resolveReady();
+        }
+      });
+      lockChild.once('exit', (code) => {
+        clearTimeout(timer);
+        rejectReady(new Error(`lock child exited early: ${code}`));
+      });
+    });
+    await assert.rejects(
+      () => restoreSessionBackup(f.engine.backupStore, {
+        sessionId: coldSid,
+        backupId: b2.backupId,
+        sessions: sessionsNone,
+        backend: { tracker: { writers: new Map() } },
+        stateStore: f.engine.sessionState,
+        journal: f.engine.journal,
+        logPath: coldLogPath,
+      }),
+      { code: 'STATE_LOCKED' },
+    );
+  } finally {
+    lockChild.kill();
+  }
+  await delay(50);
+  fs.rmSync(stateLock, { force: true });
+  const coldOk = await restoreSessionBackup(f.engine.backupStore, {
+    sessionId: coldSid,
+    backupId: b2.backupId,
+    sessions: sessionsNone,
+    backend: { tracker: { writers: new Map() } },
+    stateStore: f.engine.sessionState,
+    journal: f.engine.journal,
+    logPath: coldLogPath,
+  });
+  assert.equal(coldOk.status, 'restored');
+});
+
+await test('final-P1-2-prestep-auto-resume-respects-policy-changed', async () => {
+  const listeners = new Map();
+  const root = scratch();
+  const events = [];
+  const surface = { nodes: [], replaceGeneration: 0 };
+  const session = {
+    id: randomUUID(),
+    surface,
+    header: { cwd: root },
+    get seq() { return events.length; },
+    eventAt: (seq) => events[seq],
+    snapshotEvents: () => [...events],
+    requestHeader: () => ({ config: { provider: 'p', model: 'm' } }),
+    toolHistory: () => [],
+    deriveEventMessage: (e) => (e?.type === 'user/message' ? e.data : e?.data?.message),
+    append(type, data, options = {}) {
+      const ev = { seq: events.length, time: Date.now(), type, data, ...options };
+      events.push(ev);
+      if (options.surfaceOp === 'append') surface.nodes.push(ev.seq);
+      else if (options.surfaceOp?.op === 'replace') {
+        const a = surface.nodes.indexOf(options.surfaceOp.startSeq);
+        const b = surface.nodes.indexOf(options.surfaceOp.endSeq);
+        surface.nodes.splice(a, b - a + 1, ev.seq);
+        surface.replaceGeneration += 1;
+      }
+      return ev;
+    },
+  };
+  const add = (role, text) => {
+    const message = {
+      id: randomUUID(),
+      role,
+      content: [{ type: 'text', text }],
+      source: role === 'assistant' ? { kind: 'model', provider: 'p', model: 'm' } : { kind: 'user' },
+    };
+    return session.append(`${role}/message`, role === 'user' ? message : { message }, { surfaceOp: 'append' });
+  };
+  let calls = 0;
+  let failCall = 2;
+  const ctx = {
+    on(evt, fn) {
+      if (!listeners.has(evt)) listeners.set(evt, []);
+      listeners.get(evt).push(fn);
+    },
+    provide() {},
+    logger: { info() {}, warn() {} },
+    sessions: { get: (id) => (id === session.id ? session : null), async flush() { return true; } },
+    tokenMeter: {
+      measure() {
+        const nodes = surface.nodes.map((seq) => ({ seq, tokens: approxTokens(blocksToText(session.deriveEventMessage(events[seq])?.content)) }));
+        return { nodes, totalTokens: nodes.reduce((s, n) => s + n.tokens, 0) };
+      },
+    },
+    llm: {
+      async resolveModelInfo() { return { contextWindow: 1000000, maxTokens: 1200 }; },
+      async *stream() {
+        calls += 1;
+        if (calls >= failCall) {
+          const err = new Error('HTTP 503 transient');
+          err.status = 503;
+          throw err;
+        }
+        yield { type: 'text-delta', text: notes };
+        yield { type: 'finish', kind: 'stop' };
+      },
+    },
+  };
+  const baseCfg = {
+    archiveDir: join(root, 'archive'),
+    language: 'en',
+    summaryRetryCount: 0,
+    summaryRetryDelayMs: 0,
+    maxTokens: 1200,
+    auditEnabled: true,
+    auditBlockOnLoss: true,
+    continuationEnabled: true,
+    parallelContinuation: false,
+    summaryConcurrency: 1,
+    summaryInputMaxBytes: 18000,
+    continuationMemoryBytes: 4096,
+    maxSummaryChunks: 32,
+    windowFallback: 1000000,
+    continuationMaxExtraCalls: 0,
+    retainTokens: 200,
+    preserveRecentMessages: 1,
+    preserveRecentUserTokens: 200,
+    thresholdRatio: 0.95,
+    auto: true,
+    manualOnly: false,
+    sessionMemoryEnabled: false,
+  };
+  const eng1 = new WeaveCompactionEngine(ctx, resolveConfig(baseCfg).config);
+  eng1.historyToolsAvailable = true;
+  fixtures.push(eng1);
+  add('system', 'Sys.');
+  const uStart = add('user', 'Keep timeout strictly <= 30 seconds.');
+  const huge = Array.from({ length: 1200 }, (_, i) => `Observation entry ${i} retained verbatim for source archive tracking.`).join('\n');
+  add('assistant', huge);
+  add('assistant', 'Trailing context kept live in retained recent tail. '.repeat(25));
+  const aEnd = add('assistant', 'Trailing question.');
+  void uStart; void aEnd;
+  const agent = { session, options: { provider: 'p', model: 'm' }, runMaintenance: (fn) => fn(signal()) };
+
+  await assert.rejects(() => eng1.compactNow(agent, signal(), 'cmd-manual-p12'));
+  const pending1 = readPendingContinuation(eng1.sessionState, session);
+  const resumable1 = readResumableCompaction(eng1.sessionState, session.id);
+  assert.ok(pending1?.progressKey);
+  assert.equal(resumable1?.status, 'interrupted');
+
+  // Hot-update policy (auditCoverageThreshold) -> switch into an open turn -> agent/pre-step MUST NOT auto-restart policy!
+  eng1.config = resolveConfig({ ...baseCfg, auditCoverageThreshold: 0.72 }).config;
+  session.append('turn/start', { turn: 2 });
+  session.append('step/start', { turn: 2, step: 1 });
+  const callsBeforePreStep = calls;
+  for (const hFn of listeners.get('agent/pre-step') ?? []) {
+    await assert.rejects(
+      () => hFn({ agent, messages: [], signal: signal() }, () => undefined),
+      (err) =>
+        err?.failureCode === 'CONTINUATION_PENDING_POLICY_CHANGED' ||
+        err?.code === 'CONTINUATION_PENDING_POLICY_CHANGED' ||
+        err?.cause?.code === 'CONTINUATION_PENDING_POLICY_CHANGED' ||
+        String(err?.message ?? '').includes('CONTINUATION_PENDING_POLICY_CHANGED'),
+    );
+  }
+  assert.equal(calls, callsBeforePreStep, 'auto pre-step must not spend new LLM calls after policy change');
+  assert.equal(readPendingContinuation(eng1.sessionState, session)?.progressKey, pending1.progressKey);
+
+  // Explicit manual /compact outside open turn DOES restart cleanly under the new policy
+  session.append('turn/end', { turn: 2 });
+  failCall = 999;
+  const manualRes = await eng1.compactNow(agent, signal());
+  assert.ok(manualRes && manualRes.compacted !== false);
+});
+
+await test('final-P1-3-image-offload-flush-failure-rethrows-surfaceMutated', async () => {
+  const f = fixture({
+    auto: true,
+    manualOnly: false,
+    archiveEnabled: false,
+    maxVisibleImages: 1,
+    maxVisibleAttachmentBytes: 64,
+  });
+  f.add('system', 'Sys.');
+  const b64 = Buffer.from('x'.repeat(256)).toString('base64');
+  for (let i = 0; i < 8; i += 1) {
+    const msg = {
+      id: randomUUID(),
+      role: 'user',
+      content: [
+        { type: 'text', text: `img ${i}` },
+        { type: 'image', mimeType: 'image/png', data: b64 },
+      ],
+      source: { kind: 'user' },
+    };
+    f.session.append('user/message', msg, { surfaceOp: 'append' });
+  }
+  const origDerive = f.session.deriveEventMessage;
+  const offloadedSeqs = new Set();
+  const origAppend = f.session.append.bind(f.session);
+  f.session.append = (type, data, opts) => {
+    const ev = origAppend(type, data, opts);
+    if (type === 'image/offload') {
+      for (const t of data?.targets ?? []) offloadedSeqs.add(t.seq);
+    }
+    return ev;
+  };
+  f.session.deriveEventMessage = (ev) => {
+    const m = origDerive(ev);
+    if (!m || !offloadedSeqs.has(ev.seq)) return m;
+    return {
+      ...m,
+      content: m.content.map((b) => (b.type === 'image' ? { ...b, offloaded: true } : b)),
+    };
+  };
+
+  // 1. Direct commitVisibleImageOffload: post-append flush error must throw with surfaceMutated === true
+  const plan = planVisibleImageOffload(f.session, {
+    maxVisibleAttachmentBytes: 64,
+    maxVisibleImages: 1,
+    keepHotImages: 1,
+    force: true,
+  });
+  assert.ok(plan && plan.targets.length > 0);
+  await assert.rejects(
+    () => commitVisibleImageOffload({
+      session: f.session,
+      plan,
+      policy: f.engine.config,
+      flushSession: async () => { throw Object.assign(new Error('disk flush EIO'), { code: 'persistence' }); },
+      signal: signal(),
+    }),
+    (err) => err?.surfaceMutated === true && err?.code === 'persistence',
+  );
+
+  // 2. isMultimodal400 retry handler must propagate surfaceMutated rather than returning next-fallback
+  offloadedSeqs.clear();
+  f.ctx.sessions.flush = async () => false;
+  let retryHooks = [];
+  const hooksMap = new Map();
+  const eng = new WeaveCompactionEngine({
+    ...f.ctx,
+    on(name, fn) {
+      if (!hooksMap.has(name)) hooksMap.set(name, []);
+      hooksMap.get(name).push(fn);
+    },
+  }, resolveConfig({
+    archiveDir: join(f.root, 'archive2'),
+    auto: true,
+    manualOnly: false,
+    archiveEnabled: false,
+    sessionMemoryEnabled: false,
+    maxVisibleImages: 1,
+    maxVisibleAttachmentBytes: 64,
+  }).config);
+  eng.historyToolsAvailable = true;
+  fixtures.push(eng);
+  retryHooks = hooksMap.get('agent/request-error') ?? [];
+  assert.ok(retryHooks.length >= 1);
+  const mmErr = Object.assign(new Error('HTTP 400 too many images in request'), { status: 400 });
+  await assert.rejects(
+    () => retryHooks[0]({ agent: { session: f.session, options: { provider: 'p', model: 'm' }, runMaintenance: (fn) => fn(signal()) }, failure: mmErr, signal: signal() }, () => ({ kind: 'next-fallback' })),
+    (err) => err?.surfaceMutated === true && err?.code === 'persistence',
+  );
 });
 
 for (const engine of fixtures) engine.dispose();
