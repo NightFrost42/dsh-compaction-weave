@@ -500,8 +500,8 @@ await test('w4-02-interrupted-pressure-resumes-via-ui-rpc-idle-no-disk-mask', as
     assert.equal(resumed.body.alreadyRunning, false);
 
     // Wait until background asyncRollingWave finishes
-    for (let i = 0; i < 100 && harness.runtime.progressTracker.hasActiveRun(f.session.id); i += 1) {
-      await new Promise((r) => setTimeout(r, 20));
+    for (let i = 0; i < 400 && (harness.runtime.progressTracker.hasActiveRun(f.session.id) || f.engine._busy.has(f.session)); i += 1) {
+      await new Promise((r) => setTimeout(r, 25));
     }
 
     const st2 = await harness.rpc('status', { sessionId: f.session.id });

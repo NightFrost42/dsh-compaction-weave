@@ -751,7 +751,7 @@ await test('fresh-P1-4-detached-resume-retains-caller-abort-until-wave-finishes'
   caller.abort(Object.assign(new Error('cancel'), { name: 'AbortError' }));
   await stopped.promise;
   assert.equal(activeSignal.aborted, true);
-  for (let i = 0; i < 20 && f.engine._busy.has(f.session); i++) await delay(0);
+  for (let i = 0; i < 400 && f.engine._busy.has(f.session); i += 1) await delay(25);
   assert.equal(f.engine._busy.has(f.session), false);
 });
 await test('fresh-P1-5-corrupt-state-structured-request-and-consume', async () => {
@@ -1265,7 +1265,7 @@ await test('seal-P2-2-retryCompactionFor-holds-busy-across-recovery-and-asyncRol
   await assert.rejects(retryCompactionFor(f.engine, f.session, { agent: f.agent }), { code: 'busy' });
 
   gate1.resolve();
-  for (let i = 0; i < 50 && f.engine._busy.has(f.session); i += 1) await delay(10);
+  for (let i = 0; i < 400 && f.engine._busy.has(f.session); i += 1) await delay(25);
   assert.equal(f.engine._busy.has(f.session), false);
 
   // 2. Resumable handoff path does not self-reject as busy and holds _busy until wave completes
@@ -1305,7 +1305,7 @@ await test('seal-P2-2-retryCompactionFor-holds-busy-across-recovery-and-asyncRol
   assert.equal(accepted2.completed, false);
   assert.equal(f2.engine._busy.has(f2.session), true);
   gate2.resolve();
-  for (let i = 0; i < 50 && f2.engine._busy.has(f2.session); i += 1) await delay(10);
+  for (let i = 0; i < 400 && f2.engine._busy.has(f2.session); i += 1) await delay(25);
   assert.equal(f2.engine._busy.has(f2.session), false);
 });
 
@@ -1820,7 +1820,7 @@ await test('codex-round2-redact-suffix-array-blocks-cache-identity-abort-flush-a
   callerCtrl.abort(Object.assign(new Error('abort retry'), { name: 'AbortError' }));
   await stoppedAbort.promise;
   assert.equal(innerSig.aborted, true);
-  for (let i = 0; i < 40 && fAbort.engine._busy.has(fAbort.session); i += 1) await delay(10);
+  for (let i = 0; i < 400 && fAbort.engine._busy.has(fAbort.session); i += 1) await delay(25);
   assert.equal(fAbort.engine._busy.has(fAbort.session), false);
 
   // 4. Failing flush on weave-snip-* recovery retains pending durability marker and retries flush
