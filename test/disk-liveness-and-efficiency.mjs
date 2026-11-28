@@ -261,7 +261,7 @@ async function createEngineFixture({
     addToolPair,
     async dispose() {
       engine.dispose();
-      await rm(root, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     },
   };
 }
@@ -530,7 +530,7 @@ await test('disk-liveness-workspace-roots-changes-traversal-tags-and-truncation'
       assert.equal(renderDiskLivenessNotice(skipped), '');
     }
   } finally {
-    await rm(base, { recursive: true, force: true });
+    await rm(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -597,7 +597,7 @@ await test('engine-disk-liveness-in-compaction-and-disable-flag', async () => {
       await fOff.dispose();
     }
   } finally {
-    await rm(ws, { recursive: true, force: true });
+    await rm(ws, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -791,7 +791,7 @@ await test('engine-tight-span-gracefully-drops-or-shrinks-disk-liveness', async 
       await fShrink.dispose();
     }
   } finally {
-    await rm(ws, { recursive: true, force: true });
+    await rm(ws, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -914,7 +914,7 @@ await test('prepare-continuation-disk-liveness-folded-archives-and-tight-budgets
     assert.doesNotMatch(tightTokRes.text, /<disk-state-check/);
     assert.match(tightTokRes.text, /Folded archives: weave-prior-cont-1 \(seq 1-5\), weave-prior-cont-0\./);
   } finally {
-    await rm(ws, { recursive: true, force: true });
+    await rm(ws, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

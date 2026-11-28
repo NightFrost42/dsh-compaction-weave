@@ -482,7 +482,7 @@ await test('image-offload-required-dispatches-verbatim-seqs-without-sys0-and-zer
     // Remaining surface nodes after commit kept system + checkpoint(new) + tailU cleanly
     assert.ok(f.session.surface.nodes.includes(tailU.seq));
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -544,7 +544,7 @@ await test('image-offload-loop-cap-2-no-progress-and-upstream-400-converge-with-
     assert.ok(f.session.surface.nodes.includes(uTail.seq));
     assert.equal(f.engine._failures.size, 0);
   } finally {
-    await rm(rootA, { recursive: true, force: true });
+    await rm(rootA, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 
   // Subcase B: Upstream multimodal 400 (2000px edge / too many images) converges via in-memory stripImagesForSummary
@@ -582,7 +582,7 @@ await test('image-offload-loop-cap-2-no-progress-and-upstream-400-converge-with-
     assert.equal(f.events[u1.seq].data.content[1].type, 'image', 'raw event image preserved intact');
     assert.ok(f.session.surface.nodes.includes(uTail.seq));
   } finally {
-    await rm(rootB, { recursive: true, force: true });
+    await rm(rootB, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -674,7 +674,7 @@ await test('continuation-renders-image-metadata-and-strips-on-multimodal-failure
     assert.ok(reqJson.includes('dimensions=390x2475'));
     assert.ok(reqJson.includes('bytes=312000'));
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -807,7 +807,7 @@ await test('2a-hysteresis-batch-offload-session-memory-contentGeneration-and-cal
     const remainingBytes = afterByteEntries.reduce((sum, item) => sum + item.bytes, 0);
     assert.ok(remainingBytes <= 1024 * 1024, `kept bytes ${remainingBytes} must not exceed 1 MiB low watermark`);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -864,7 +864,7 @@ await test('2a-host-without-imageOffloadProjection-fails-open-user-message-and-s
     fClosed.addToolResult('tc-c', [fClosed.registerImageBlock('z1'), fClosed.registerImageBlock('z2')], [tcc.seq]);
     assert.equal(await fClosed.engine._guardVisibleImageBudget(fClosed.agent, new AbortController().signal), null);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -891,7 +891,7 @@ await test('agent-request-error-multimodal-400-rescue-and-bili-413-redline', asy
     assert.equal(f.events.filter((e) => e.type === 'image/offload').length, 1);
     assert.ok(measureVisibleImages(f.session).visibleImageCount < 2);
   } finally {
-    await rm(rootA, { recursive: true, force: true });
+    await rm(rootA, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 
   // Case B: bili local proxy 413 preflight error NEVER enters multimodal retry / 2A / Snip even with 25 images
@@ -919,7 +919,7 @@ await test('agent-request-error-multimodal-400-rescue-and-bili-413-redline', asy
     );
     assert.equal(f.events.filter((e) => e.type === 'image/offload').length, 0, 'bili 413 must emit 0 image/offload events');
   } finally {
-    await rm(rootB, { recursive: true, force: true });
+    await rm(rootB, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -978,7 +978,7 @@ await test('config-normalizers-summary-config-persistence-and-client-controls', 
     assert.equal(offRes.config.maxVisibleAttachmentBytes, 0);
     assert.equal(offRes.config.maxVisibleImages, 0);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 
   assert.ok(clientSource.includes('weave-max-visible-attachment-mb'));

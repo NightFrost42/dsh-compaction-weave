@@ -285,7 +285,7 @@ async function createEngineFixture({
     addUser,
     addAssistant,
     addToolTurn,
-    cleanup: () => rm(root, { recursive: true, force: true }),
+    cleanup: () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }),
   };
 }
 
@@ -378,8 +378,8 @@ await test('reinject-includes-topk-local-files-skips-agents-secrets-outside-and-
       await fRemote.cleanup();
     }
   } finally {
-    await rm(workspace, { recursive: true, force: true });
-    await rm(outsideDir, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    await rm(outsideDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -531,7 +531,7 @@ await test('reinject-shrinks-or-drops-before-disk-liveness-and-archive-on-tight-
       await fCont.cleanup();
     }
   } finally {
-    await rm(workspace, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

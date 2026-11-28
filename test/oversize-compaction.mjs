@@ -278,7 +278,7 @@ await test('observation-mask-batched-over-3840-refs-multipass', async () => {
     );
     assert.equal(planSmallCap.batchRefs, 3); // 2 existing refs + 1 new mask ref
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -400,7 +400,7 @@ await test('observation-mask-skips-invalid-and-unmappable-nodes', async () => {
     const maskedText = f.session.deriveEventMessage(f.session.eventAt(f.surface.nodes.find((s) => s > good2.resEvent.seq))).content[0].text;
     assert.ok(maskedText.includes(OBSERVATION_MASK_MARKER));
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -851,7 +851,7 @@ await test('continuation-select-wave-and-pre-llm-ref-check', async () => {
     );
     assert.equal(llmCalls, 0, 'prepareContinuation MUST reject >4096 tool-source refs BEFORE any LLM call');
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1014,7 +1014,7 @@ await test('continuation-intermediate-page-progress-scoping', async () => {
       (err) => err.code === 'PROGRESS_FACT_CONFLICT',
     );
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1265,7 +1265,7 @@ await test('attachments-allowForeignFallback-opt-in-vs-strict-default', async ()
     );
     assert.deepEqual(partialResult, [{ type: 'image', attachmentId: validRef.attachmentId, bytes: payload.length }]);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

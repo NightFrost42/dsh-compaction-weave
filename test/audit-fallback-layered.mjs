@@ -1184,7 +1184,7 @@ await test('6-config-rpc-tracker-and-zh-en-ui-badge-and-settings', async () => {
     const got2 = await handleSummaryConfigRpc({ method: 'get' }, cfgPath);
     assert.equal(got2.config.auditExhaustionPolicy, 'block');
   } finally {
-    await rm(tmpDir, { recursive: true, force: true });
+    await rm(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 
   // Tracker allowlist + reset across runs

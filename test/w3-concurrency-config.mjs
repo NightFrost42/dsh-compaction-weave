@@ -234,7 +234,7 @@ await test('summary-config-speed-settings-validation-persistence-clear-and-hot-a
   } finally {
     if (priorHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = priorHome;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -776,7 +776,7 @@ await test('continuation-map-reduce-parallel-pages-reasoning-downgrade-and-429-a
     assert.match(result.checkpointBlocks[0].text, /不要写库/);
     assert.match(result.summarized.summary[0].text, /tasksCompleted: 5/);
   } finally {
-    await rm(f.root, { recursive: true, force: true });
+    await rm(f.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -797,7 +797,7 @@ await test('fresh-P2-5-reduce-splits-notes-larger-than-source-page-budget', asyn
       compactionId: 'fresh-reduce', signal: new AbortController().signal, archiveRoot: join(f.root, 'archive'), parallelContinuation: true });
     assert.ok(maps >= 2); assert.ok(reduces > maps, `expected split reduce groups, got maps=${maps} reduce=${reduces}`);
     assert.ok(result.summarized.rawText.includes('tasksCompleted: 5'));
-  } finally { await rm(f.root, { recursive: true, force: true }); }
+  } finally { await rm(f.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); }
 });
 
 await test('continuation-map-reduce-resume-after-reduce-failure-reuses-all-mapped-pages', async () => {
@@ -862,7 +862,7 @@ await test('continuation-map-reduce-resume-after-reduce-failure-reuses-all-mappe
     assert.equal(totalStreamCalls, callsAfterFirst + 1, 'fully reduced continuation must spend 0 calls on reuse');
     assert.equal(reused.summarized.continuation.requestsThisAttempt, 0);
   } finally {
-    await rm(f.root, { recursive: true, force: true });
+    await rm(f.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -975,10 +975,10 @@ await test('continuation-map-reduce-mid-map-failure-persists-ordered-prefix-and-
       // extraCalls = 1 -> at most 2 calls allowed with 0 accepted pages!
       assert.ok(budgetCalls <= 2, `concurrency must never exceed continuationCallBudget (spent ${budgetCalls})`);
     } finally {
-      await rm(fBudget.root, { recursive: true, force: true });
+      await rm(fBudget.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   } finally {
-    await rm(f.root, { recursive: true, force: true });
+    await rm(f.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1017,7 +1017,7 @@ await test('continuation-stays-sequential-when-parallel-not-opted-in-or-concurre
     assert.equal(maxActive, 1);
     assert.equal(calls.length, res.summarized.continuation.pages.length);
   } finally {
-    await rm(f.root, { recursive: true, force: true });
+    await rm(f.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

@@ -294,7 +294,7 @@ await test('issue5-config-and-summary-config-support-all-8-efforts', async () =>
       { code: 'INVALID_SUMMARY_REASONING_EFFORT' },
     );
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -697,7 +697,7 @@ await test('issue6-bridge-kinds-normalization-and-als-concurrency-isolation', as
     );
     assert.ok(res?.compactionId, 'wechat and configured extraReferenceSourceKinds bridge messages must not trigger polarity block');
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -809,7 +809,7 @@ await test('issue6-polarity-error-metadata-and-diagnostic-explanation', async ()
     assert.match(contExp, /source=qq-custom/);
     assert.ok(!contExp.includes('SECRET_CONT_PROSE'));
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

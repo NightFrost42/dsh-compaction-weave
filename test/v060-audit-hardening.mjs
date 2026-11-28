@@ -467,7 +467,7 @@ await test('P2-7-client-retryDelay-accepts-1.001-and-rejects-out-of-range-withou
       m.unmount();
     }
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -630,7 +630,7 @@ await test('P0-1-P1-1-P2-8-rpc-admit-electron-fallback-viewer-gate-and-body-limi
     dispose?.();
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -708,7 +708,7 @@ await test('P1-3-P1-4-P1-5-P2-1-P2-5-P2-9-concurrency-budget-breaker-retry-and-r
     assert.equal(engine._serviceProvided, false);
     engine.dispose();
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 
   // P2-9: resolveTargetRoute({ preferRequestHeader: true }) & retryCompactionFor checks unrecovered journal
@@ -990,7 +990,7 @@ await test('P1-7-to-P1-13-and-P2-audit-redact-preview-date-config-reinject-lock'
       smallUnclosedPemOut.content.includes('export const afterPem = 42;'),
     );
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 
   // Self P1-2: inline numbered list ordinals do not split false numeric constraints
@@ -1652,7 +1652,7 @@ await test('v060-release-gate-p1-1-2-3-and-p2-1-8-security-locks-and-client-regr
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -1857,7 +1857,7 @@ await test('4da2472-audit-remediation-p1-1-p1-2-p2-1-p2-2-and-conflict', async (
       assert.equal(c.failures, 2);
     });
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2224,7 +2224,7 @@ await test('d07bffc9-audit-remediation-focus-conflict-scope-scaling-locks-rpc-cl
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2805,7 +2805,7 @@ await test('ee09f93-audit-remediation-all-verified-p1-p2', async () => {
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -2963,7 +2963,7 @@ await test('31475c4-audit-remediation-resumable-focus-rpc-diag-pem', async () =>
     const proseOut = redactPemPrivateKeys(pemFollowedByProse, '[redacted-private-key]', { sampleTruncated: false });
     assert.ok(proseOut.includes('following line keeps context'), 'P2-3: non-EOF short prose lines must not be swallowed');
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3392,7 +3392,7 @@ await test('e2d2044-audit-remediation-all-6-p1-and-p2', async () => {
   } finally {
     if (priorHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = priorHome;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -3778,7 +3778,7 @@ await test('aff2666-audit-remediation-all-verified-p0-p1-p2-and-extra-guards', a
   } finally {
     if (priorHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = priorHome;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -4047,7 +4047,7 @@ await test('8c05d59-audit-remediation-all-p0-p1-p2-guards', async () => {
   } finally {
     if (priorHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = priorHome;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -4366,7 +4366,7 @@ await test('1da260d-audit-remediation-all-6-p1-and-3-p2-guards', async () => {
   } finally {
     if (priorHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = priorHome;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
