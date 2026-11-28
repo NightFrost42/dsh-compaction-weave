@@ -43,6 +43,7 @@ import { decorateCompactCommand } from '../lib/command-compact.js';
 import { createCommandHeartbeatScope } from '../lib/command-heartbeat.js';
 import { resolveConfig } from '../lib/config.js';
 import { planContinuationMemory, prepareContinuation, selectContinuationWave } from '../lib/continuation.js';
+import { continuationCallBudget } from '../lib/continuation-budget.js';
 import { WeaveCompactionEngine } from '../lib/engine.js';
 import { compactRegionInner } from '../lib/engine/span-commit.js';
 import { compactChunksConcurrent, generateValidatedPrecomputedSpan } from '../lib/engine/parallel-fold.js';
@@ -3654,6 +3655,1691 @@ await test('goal-round2-codex-P2-5-tolerance-float-parity-and-alternating-month-
   const altMs = performance.now() - t0;
   assert.equal(altRes.active.length, 2000);
   assert.ok(altMs < 500, `2000 alternating-month rules took ${altMs.toFixed(1)}ms`);
+});
+
+await test('goal-round3-P1-1-parallel-map-budget-race-and-out-of-order-persistence', async () => {
+  const mkNotes = (n) => `## Goal\nGoal p${n}\n\n## State\nState p${n}\n\n## Next\nNext p${n}\n\n## Uncertain\nNone.`;
+  const runTransientRace = async ({ extraCalls, summaryConcurrency, summaryRetryCount, fastSibling }) => {
+    const f = fixture({
+      archiveEnabled: true,
+      language: 'en',
+      summaryRetryCount,
+      summaryRetryDelayMs: 0,
+      maxTokens: 1200,
+      auditEnabled: false,
+      auditBlockOnLoss: false,
+      parallelPages: true,
+      summaryConcurrency,
+      summaryInputMaxBytes: 24000,
+      continuationMemoryBytes: 4096,
+      maxSummaryChunks: 32,
+      windowFallback: 1000000,
+      continuationMaxExtraCalls: extraCalls,
+    });
+    f.add('system', 'Sys.');
+    for (let i = 1; i <= 14; i += 1) {
+      f.add('assistant', `Segment ${i}: ` + `trace payload_${i} `.repeat(380));
+    }
+    const seqs = f.surface.nodes.slice(1);
+    const capacity = await resolveSummaryCapacity(
+      { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 1200 }) }, logger: { warn() {} } },
+      { targets: [{ provider: 'p', model: 'm' }] },
+      f.engine.config,
+      signal(),
+    );
+    let page1FailedOnce = false;
+    let mapCalls = 0;
+    let progressKey = null;
+    f.ctx.llm.stream = async function* (req) {
+      f.calls.push(req);
+      const body = req.messages.map((m) => blocksToText(m.content ?? [])).join('\n');
+      const m = /page (\d+) of (\d+)/.exec(body);
+      if (m) {
+        mapCalls += 1;
+        const pageNo = Number(m[1]);
+        if (pageNo === 1) {
+          await delay(fastSibling ? 35 : 5);
+          if (!page1FailedOnce) {
+            page1FailedOnce = true;
+            const err = new Error('HTTP 429 rate limit');
+            err.status = 429;
+            throw err;
+          }
+          yield { type: 'text-delta', text: mkNotes(pageNo) };
+          yield { type: 'finish', kind: 'stop' };
+          return;
+        }
+        await delay(fastSibling ? 5 : 40);
+        yield { type: 'text-delta', text: mkNotes(pageNo) };
+        yield { type: 'finish', kind: 'stop' };
+        return;
+      }
+      yield { type: 'text-delta', text: mkNotes('reduced') };
+      yield { type: 'finish', kind: 'stop' };
+    };
+    const res = await prepareContinuation({
+      ctx: f.ctx,
+      agent: f.agent,
+      session: f.session,
+      seqs,
+      policy: f.engine.config,
+      capacity,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: `cmp-race-${extraCalls}-${fastSibling}`,
+      signal: signal(),
+      archiveRoot: join(f.root, 'archive', 'sess-race'),
+      onProgressIdentity: (k) => { progressKey = k; },
+      rateLimitCooldownMs: 0,
+      parallelContinuation: true,
+    });
+    assert.ok(res?.summarized?.summary?.length > 0);
+    assert.equal(res.summarized.continuation.pages.length, seqs.length);
+    const store = new ContinuationProgressStore(join(f.root, 'archive', 'continuation-progress'), f.session.id, progressKey);
+    const saved = store.read()?.data;
+    assert.equal(saved.completedMapPages, undefined);
+    assert.equal(saved.next, seqs.length);
+    assert.ok(mapCalls <= seqs.length + 1, `expected minimal retries (${mapCalls} <= ${seqs.length + 1})`);
+  };
+
+  await runTransientRace({ extraCalls: 2, summaryConcurrency: 2, summaryRetryCount: 1, fastSibling: true });
+  await runTransientRace({ extraCalls: 2, summaryConcurrency: 2, summaryRetryCount: 1, fastSibling: false });
+  await runTransientRace({ extraCalls: 4, summaryConcurrency: 6, summaryRetryCount: 2, fastSibling: true });
+
+  // Tight extraCalls=1 with a Page-1 retry completes ALL Map pages without false-tripping mid-Map,
+  // pauses cleanly before Reduce, and finishes on 1 manual renewal.
+  {
+    const ft = fixture({
+      archiveEnabled: true,
+      language: 'en',
+      summaryRetryCount: 1,
+      summaryRetryDelayMs: 0,
+      maxTokens: 1200,
+      auditEnabled: false,
+      auditBlockOnLoss: false,
+      parallelPages: true,
+      summaryConcurrency: 2,
+      summaryInputMaxBytes: 24000,
+      continuationMemoryBytes: 4096,
+      maxSummaryChunks: 32,
+      windowFallback: 1000000,
+      continuationMaxExtraCalls: 1,
+    });
+    ft.add('system', 'Sys.');
+    for (let i = 1; i <= 14; i += 1) {
+      ft.add('assistant', `Tight segment ${i}: ` + `payload_${i} `.repeat(380));
+    }
+    const tSeqs = ft.surface.nodes.slice(1);
+    const tCap = await resolveSummaryCapacity(
+      { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 1200 }) }, logger: { warn() {} } },
+      { targets: [{ provider: 'p', model: 'm' }] },
+      ft.engine.config,
+      signal(),
+    );
+    let failedOnce = false;
+    ft.ctx.llm.stream = async function* (req) {
+      ft.calls.push(req);
+      const body = req.messages.map((m) => blocksToText(m.content ?? [])).join('\n');
+      const m = /page (\d+) of (\d+)/.exec(body);
+      if (m) {
+        const pageNo = Number(m[1]);
+        if (pageNo === 1 && !failedOnce) {
+          await delay(30);
+          failedOnce = true;
+          const err = new Error('HTTP 429 rate limit');
+          err.status = 429;
+          throw err;
+        }
+        await delay(5);
+        yield { type: 'text-delta', text: mkNotes(pageNo) };
+        yield { type: 'finish', kind: 'stop' };
+        return;
+      }
+      yield { type: 'text-delta', text: mkNotes('reduced') };
+      yield { type: 'finish', kind: 'stop' };
+    };
+    let tightErr = null;
+    try {
+      await prepareContinuation({
+        ctx: ft.ctx,
+        agent: ft.agent,
+        session: ft.session,
+        seqs: tSeqs,
+        policy: ft.engine.config,
+        capacity: tCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-tight-1',
+        signal: signal(),
+        archiveRoot: join(ft.root, 'archive', 'sess-tight'),
+        rateLimitCooldownMs: 0,
+        parallelContinuation: true,
+      });
+    } catch (e) {
+      tightErr = e;
+    }
+    assert.equal(tightErr?.code, 'CONTINUATION_CALL_BUDGET');
+    assert.ok((tightErr?.continuationProgress?.totalPages ?? 0) >= 3);
+    assert.equal(tightErr?.continuationProgress?.acceptedPages, tightErr?.continuationProgress?.totalPages);
+    const tResumed = await prepareContinuation({
+      ctx: ft.ctx,
+      agent: ft.agent,
+      session: ft.session,
+      seqs: tSeqs,
+      policy: ft.engine.config,
+      capacity: tCap,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-tight-2',
+      signal: signal(),
+      archiveRoot: join(ft.root, 'archive', 'sess-tight'),
+      manualRetry: true,
+      requestId: 'req-tight-renew',
+      rateLimitCooldownMs: 0,
+      parallelContinuation: true,
+    });
+    assert.ok(tResumed?.summarized?.summary?.length > 0);
+  }
+
+  // Persistent failure on Page 1 must persist completed sibling pages and resume cleanly without rebilling them
+  const fp = fixture({
+    archiveEnabled: true,
+    language: 'en',
+    summaryRetryCount: 2,
+    summaryRetryDelayMs: 0,
+    maxTokens: 1200,
+    auditEnabled: false,
+    auditBlockOnLoss: false,
+    parallelPages: true,
+    summaryConcurrency: 4,
+    summaryInputMaxBytes: 24000,
+    continuationMemoryBytes: 4096,
+    maxSummaryChunks: 32,
+    windowFallback: 1000000,
+    continuationMaxExtraCalls: 1,
+  });
+  fp.add('system', 'Sys.');
+  for (let i = 1; i <= 6; i += 1) {
+    fp.add('assistant', `Persistent segment ${i}: ` + `data_${i} `.repeat(380));
+  }
+  const pSeqs = fp.surface.nodes.slice(1);
+  const pCap = await resolveSummaryCapacity(
+    { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 1200 }) }, logger: { warn() {} } },
+    { targets: [{ provider: 'p', model: 'm' }] },
+    fp.engine.config,
+    signal(),
+  );
+  let failPage1 = true;
+  let progressKey = null;
+  const pagesCalledOnResume = [];
+  let inResume = false;
+  fp.ctx.llm.stream = async function* (req) {
+    fp.calls.push(req);
+    const body = req.messages.map((m) => blocksToText(m.content ?? [])).join('\n');
+    const m = /page (\d+) of (\d+)/.exec(body);
+    if (m) {
+      const pageNo = Number(m[1]);
+      if (inResume) pagesCalledOnResume.push(pageNo);
+      if (pageNo === 1 && failPage1) {
+        await delay(25);
+        yield { type: 'text-delta', text: 'invalid' };
+        yield { type: 'finish', kind: 'stop' };
+        return;
+      }
+      await delay(5);
+      yield { type: 'text-delta', text: mkNotes(pageNo) };
+      yield { type: 'finish', kind: 'stop' };
+      return;
+    }
+    yield { type: 'text-delta', text: mkNotes('final') };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  const errBudget = await (async () => {
+    try {
+      await prepareContinuation({
+        ctx: fp.ctx,
+        agent: fp.agent,
+        session: fp.session,
+        seqs: pSeqs,
+        policy: fp.engine.config,
+        capacity: pCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-persist-1',
+        signal: signal(),
+        archiveRoot: join(fp.root, 'archive', 'sess-persist'),
+        onProgressIdentity: (k) => { progressKey = k; },
+        rateLimitCooldownMs: 0,
+        parallelContinuation: true,
+      });
+      return null;
+    } catch (e) {
+      return e;
+    }
+  })();
+  assert.equal(errBudget?.code, 'CONTINUATION_CALL_BUDGET');
+  const pStore = new ContinuationProgressStore(join(fp.root, 'archive', 'continuation-progress'), fp.session.id, progressKey);
+  const paused = pStore.read()?.data;
+  const savedOutOfOrderKeys = Object.keys(paused?.completedMapPages ?? {});
+  assert.ok(savedOutOfOrderKeys.length >= 1, `expected completed sibling pages saved, got ${JSON.stringify(paused)}`);
+  assert.equal(errBudget.continuationProgress.acceptedPages, savedOutOfOrderKeys.length);
+
+  // Tamper checks on completedMapPages must fail closed with CONTINUATION_PROGRESS_INVALID
+  const checkTamperedOutOfOrder = async (mutate) => {
+    const cur = pStore.read();
+    const copy = structuredClone(cur.data);
+    mutate(copy);
+    pStore.write(copy, cur.revision);
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: fp.ctx,
+        agent: fp.agent,
+        session: fp.session,
+        seqs: pSeqs,
+        policy: fp.engine.config,
+        capacity: pCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-tamper',
+        signal: signal(),
+        archiveRoot: join(fp.root, 'archive', 'sess-persist'),
+        parallelContinuation: true,
+      }),
+      { code: 'CONTINUATION_PROGRESS_INVALID' },
+    );
+    pStore.write(cur.data, pStore.read().revision);
+  };
+  await checkTamperedOutOfOrder((d) => { d.completedMapPages['0'] = d.completedMapPages[savedOutOfOrderKeys[0]]; });
+  await checkTamperedOutOfOrder((d) => { d.completedMapPages[savedOutOfOrderKeys[0]].receipt.sourceSha256 = '0'.repeat(64); });
+
+  failPage1 = false;
+  inResume = true;
+  const resumed = await prepareContinuation({
+    ctx: fp.ctx,
+    agent: fp.agent,
+    session: fp.session,
+    seqs: pSeqs,
+    policy: fp.engine.config,
+    capacity: pCap,
+    chain: { targets: [{ provider: 'p', model: 'm' }] },
+    compactionId: 'cmp-persist-2',
+    signal: signal(),
+    archiveRoot: join(fp.root, 'archive', 'sess-persist'),
+    manualRetry: true,
+    requestId: 'req-persist-renew',
+    rateLimitCooldownMs: 0,
+    parallelContinuation: true,
+  });
+  assert.ok(resumed?.summarized?.summary?.length > 0);
+  for (const key of savedOutOfOrderKeys) {
+    assert.equal(pagesCalledOnResume.includes(Number(key) + 1), false, `persisted sibling page ${Number(key) + 1} must not be rebilled`);
+  }
+});
+
+await test('goal-round3-P1-2-json-escaped-credential-redaction', async () => {
+  const apiSecret = ['sk_live_json', 'topsecret', '987654'].join('_');
+  const rawApiKey = ['myCustomApiSecret', 'Alpha', '987654'].join('_');
+  const awsSecret = ['wJalrXUtnFEMI', 'K7MDENG', 'bPxRfiCYEXAMPLEKEY'].join('/');
+  const dbPassword = ['hunter2', 'json', 'pass99'].join('_');
+  const basicSecret = 'Basic ' + Buffer.from('audituser:s3cr3tPass!').toString('base64');
+
+  const innerJson = JSON.stringify({
+    api_key: rawApiKey,
+    aws_secret_access_key: awsSecret,
+    password: dbPassword,
+    Authorization: basicSecret,
+    client_secret: apiSecret,
+  });
+  const onceEscaped = JSON.stringify({ payload: innerJson });
+  const twiceEscaped = JSON.stringify({ wrapped: onceEscaped });
+
+  for (const sample of [onceEscaped, twiceEscaped]) {
+    assert.equal(containsSecretCredential(sample), true, `containsSecretCredential failed on escaped sample: ${sample}`);
+    const scrubbed = redactCredentials(sample);
+    for (const secret of [rawApiKey, awsSecret, dbPassword, basicSecret, apiSecret]) {
+      assert.equal(scrubbed.includes(secret), false, `secret leaked after redactCredentials: ${secret}`);
+    }
+    assert.equal(containsSecretCredential(scrubbed), false, `redacted sample must be clean: ${scrubbed}`);
+    const parsed = JSON.parse(scrubbed);
+    assert.ok(parsed && typeof parsed === 'object', 'redacted JSON must remain parseable');
+  }
+
+  // Escaped placeholders must remain non-secret (zero false positives)
+  const cleanEscaped = JSON.stringify({
+    payload: JSON.stringify({ api_key: 'null', password: '', client_secret: 'placeholder', aws_secret_access_key: 'short' }),
+  });
+  assert.equal(containsSecretCredential(cleanEscaped), false);
+  assert.equal(redactCredentials(cleanEscaped), cleanEscaped);
+
+  // E2E archive write/read + history_list + history_read + workspace file reinjection
+  const f = fixture({ auto: false, archiveEnabled: true });
+  const ws = join(f.root, 'ws');
+  mkdirSync(join(ws, 'src'), { recursive: true });
+  writeFileSync(join(ws, 'src', 'config.ts'), `export const blob = ${onceEscaped};\n`, 'utf8');
+  f.session.header.cwd = ws;
+  f.add('system', 'Sys.');
+  const u1 = f.session.append('assistant/message', {
+    message: {
+      id: 'm-tc',
+      role: 'assistant',
+      source: { kind: 'model', provider: 'p', model: 'm' },
+      content: [{ type: 'tool-call', id: 'tc-json-1', name: 'write', arguments: JSON.stringify({ path: 'src/config.ts', content: innerJson }) }],
+    },
+  }, { surfaceOp: 'append' });
+  const t2 = f.session.append('tool/result', {
+    message: {
+      id: 'm-tr',
+      role: 'tool',
+      toolCallId: 'tc-json-1',
+      source: { kind: 'tool-result', callId: 'tc-json-1' },
+      content: [{ type: 'text', text: 'wrote file' }],
+    },
+  }, { surfaceOp: 'append' });
+
+  const arch = new CompactionArchive({ root: join(f.root, 'arch-json') });
+  const written = await arch.writeSpan({
+    sessionId: f.session.id,
+    compactionId: 'cmp-json-redact',
+    entries: spanEntries(f.session, [u1.seq, t2.seq]),
+  });
+  assert.ok(written);
+  const spanRead = await arch.readSpan(f.session.id, 'cmp-json-redact');
+  const serializedSpan = JSON.stringify(spanRead);
+  for (const secret of [rawApiKey, awsSecret, dbPassword, basicSecret, apiSecret]) {
+    assert.equal(serializedSpan.includes(secret), false, `archive leaked ${secret}`);
+  }
+  const indexRaw = fs.readFileSync(join(arch.dirFor(f.session.id), 'index.jsonl'), 'utf8');
+  for (const secret of [rawApiKey, awsSecret, dbPassword, basicSecret, apiSecret]) {
+    assert.equal(indexRaw.includes(secret), false, `index.jsonl leaked ${secret}`);
+  }
+  const reinj = collectActiveWorkspaceFiles({
+    session: f.session,
+    shadowedSeqs: [u1.seq, t2.seq],
+    workspaceRoots: [ws],
+  });
+  for (const secret of [rawApiKey, awsSecret, dbPassword, basicSecret, apiSecret]) {
+    assert.equal(reinj.text.includes(secret), false, `reinject leaked ${secret}`);
+  }
+});
+
+await test('goal-round3-P1-3-compound-provenance-same-verb-and-laundering', async () => {
+  // Same-verb compound approval + single partial revocation (ZH & EN) must allow surviving approval
+  const sameVerbPublish = auditInstructionProvenance({
+    userMessages: [
+      { seq: 1, text: '我已批准发布 alpha-svc 到 staging 并且发布 beta-svc 到 staging。' },
+      { seq: 2, text: '取消发布 beta-svc 到 staging。' },
+    ],
+    summaryText: [
+      '## 1. Primary Request and Intent',
+      '用户已批准发布 alpha-svc 到 staging。',
+      '## 6. All User Messages',
+      '1. 我已批准发布 alpha-svc 到 staging 并且发布 beta-svc 到 staging。',
+      '2. 取消发布 beta-svc 到 staging。',
+    ].join('\n'),
+  });
+  assert.deepEqual(sameVerbPublish, []);
+
+  const sameVerbEn = auditInstructionProvenance({
+    userMessages: [
+      { seq: 1, text: 'I approve deploying alpha-svc and deploying beta-svc.' },
+      { seq: 2, text: 'Cancel deploying beta-svc.' },
+    ],
+    summaryText: '## 1. Primary Request and Intent\nThe user approved deploying alpha-svc.\n## 6. All User Messages\nRecorded.',
+  });
+  assert.deepEqual(sameVerbEn, []);
+
+  // Compound permission laundering must be blocked with revokedMatch: true
+  const launderingRevoke = auditInstructionProvenance({
+    userMessages: [
+      { seq: 1, text: '我已批准部署 alpha-svc 到 staging 并且测试 beta-svc。' },
+      { seq: 2, text: '取消测试 beta-svc。' },
+    ],
+    summaryText: '## 1. Primary Request and Intent\n用户已批准部署 alpha-svc 到 staging 并且测试 beta-svc。\n## 6. All User Messages\n已记录。',
+  });
+  assert.ok(launderingRevoke.length >= 1 && launderingRevoke[0].revokedMatch === true, `expected revokedMatch block on launderingRevoke, got ${JSON.stringify(launderingRevoke)}`);
+
+  const launderingRetired = auditInstructionProvenance({
+    userMessages: [{ seq: 1, text: '我已批准读取 logs 并且检查 metrics。' }],
+    retiredDecisions: [{ reason: 'cancelled', seq: 1, by: 2, text: '检查 metrics' }],
+    summaryText: '## 1. Primary Request and Intent\n用户已批准读取 logs 并且检查 metrics。\n## 6. All User Messages\n已记录。',
+  });
+  assert.ok(launderingRetired.length >= 1 && launderingRetired[0].revokedMatch === true, `expected revokedMatch block on launderingRetired, got ${JSON.stringify(launderingRetired)}`);
+
+  // Outer scope qualifier must carry onto surviving compound sibling without leaking into prod
+  const scopedOk = auditInstructionProvenance({
+    userMessages: [
+      { seq: 1, text: '我已批准在 staging 环境下部署 alpha-svc 并且测试 beta-svc。' },
+      { seq: 2, text: '取消测试 beta-svc。' },
+    ],
+    summaryText: '## 1. Primary Request and Intent\n在 staging 环境下用户已批准部署 alpha-svc。\n## 6. All User Messages\n已记录。',
+  });
+  assert.deepEqual(scopedOk, []);
+  const scopedEscalate = auditInstructionProvenance({
+    userMessages: [
+      { seq: 1, text: '我已批准在 staging 环境下部署 alpha-svc 并且测试 beta-svc。' },
+      { seq: 2, text: '取消测试 beta-svc。' },
+    ],
+    summaryText: '## 1. Primary Request and Intent\n在 prod 环境下用户已批准部署 alpha-svc。\n## 6. All User Messages\n已记录。',
+  });
+  assert.ok(scopedEscalate.length >= 1);
+
+  // E2E compactRegion under default auditExhaustionPolicy: 'fallback' commits surviving approval cleanly
+  const f = fixture({ language: 'zh-CN', summaryRetryCount: 0, summaryRetryDelayMs: 0 });
+  const pad = 'Work log observation line verified cleanly. '.repeat(220);
+  f.add('system', 'System rules.');
+  const m1 = f.add('user', '我已批准发布 alpha-svc 到 staging 并且发布 beta-svc 到 staging。');
+  f.add('assistant', pad);
+  f.add('user', '取消发布 beta-svc 到 staging。');
+  const m4 = f.add('assistant', pad);
+  f.session.append('turn/start', { turn: 1 });
+  f.add('user', 'Continue checking status.');
+  const validSummary = [
+    '## 1. Primary Request and Intent',
+    '用户已批准发布 alpha-svc 到 staging。',
+    '## 2. Key Technical Concepts',
+    'Staging deployment scope narrowed to alpha-svc.',
+    '## 3. Files and Code Sections',
+    'None.',
+    '## 4. Errors and Fixes',
+    'None.',
+    '## 5. Problem Solving',
+    'Retained active approval for alpha-svc.',
+    '## 6. All User Messages',
+    '- seq 1: 我已批准发布 alpha-svc 到 staging 并且发布 beta-svc 到 staging。',
+    '- seq 3: 取消发布 beta-svc 到 staging。',
+    '## 7. Pending Tasks',
+    'Proceed with alpha-svc staging release.',
+    '## 8. Work Completed',
+    'Observation checked.',
+    '## 9. Context for Continuing Work',
+    'Deploy alpha-svc to staging.',
+  ].join('\n');
+  f.ctx.llm.stream = async function* (req) {
+    f.calls.push(req);
+    yield { type: 'text-delta', text: validSummary };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  const committed = await f.engine.compactRegion(m1.seq, m4.seq, f.agent);
+  assert.ok(committed?.compactionId, `expected compactRegion to commit, got ${JSON.stringify(committed)}`);
+});
+
+await test('goal-round3-codex-all-5-p1-and-p2-guards', async () => {
+  // 1. P1-1 & P2-1 (lib/redact.js): embedded escaped quotes + depth-2 + 2-backslash delim + linear O(N) runtime
+  const embedded = JSON.stringify({ payload: JSON.stringify({ password: 'first"second_secret987' }) });
+  assert.equal(containsSecretCredential(embedded), true);
+  const redactedEmb = redactCredentials(embedded);
+  assert.equal(redactedEmb.includes('second_secret987'), false, redactedEmb);
+  assert.equal(containsSecretCredential(redactedEmb), false, redactedEmb);
+  assert.equal(JSON.parse(JSON.parse(redactedEmb).payload).password, '[redacted]');
+
+  const twoSlash = 'log payload \\\\"api_key\\\\":\\\\"myTwoSlashSecret99\\\\" done';
+  assert.equal((twoSlash.match(/\\\\"/g) ?? []).length, 4);
+  assert.equal(containsSecretCredential(twoSlash), true);
+  const redactedTwo = redactCredentials(twoSlash);
+  assert.equal(redactedTwo.includes('myTwoSlashSecret99'), false);
+  assert.equal(containsSecretCredential(redactedTwo), false);
+
+  for (const bs of ['\\', '\\\\', '\\\\\\\\']) {
+    const sample = `PASSWORD=${bs}VerySecret99`;
+    assert.equal(containsSecretCredential(sample), true, sample);
+    const red = redactCredentials(sample);
+    assert.equal(red.includes('VerySecret99'), false, red);
+    assert.equal(containsSecretCredential(red), false, red);
+    assert.equal(redactErrorText(sample).includes('VerySecret99'), false);
+  }
+  for (const paddedStructured of [`password=[${' '.repeat(24)}"x"]`, `password={${' '.repeat(24)}"a": 1}`]) {
+    assert.equal(containsSecretCredential(paddedStructured), false, paddedStructured);
+    assert.equal(redactCredentials(paddedStructured), paddedStructured);
+  }
+
+  for (const adv of ['a.'.repeat(20000) + 'z', 'a_'.repeat(20000) + 'z']) {
+    const t0 = performance.now();
+    assert.equal(containsSecretCredential(adv), false);
+    assert.equal(redactCredentials(adv), adv);
+    assert.ok(performance.now() - t0 < 150, `linear scan exceeded 150ms`);
+  }
+
+  // 2. P1-2: Compound revocation revokes EVERY matching child & blocks all individual/combined claims
+  for (const claim of [
+    '## 1. Primary Request and Intent\nThe user approved deploying alpha-svc.\n## 6. All User Messages\nRecorded.',
+    '## 1. Primary Request and Intent\nThe user approved deploying beta-svc.\n## 6. All User Messages\nRecorded.',
+    '## 1. Primary Request and Intent\nThe user approved deploying alpha-svc and deploying beta-svc.\n## 6. All User Messages\nRecorded.',
+  ]) {
+    const res = auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: 'I approve deploying alpha-svc and deploying beta-svc.' },
+        { seq: 2, text: 'Cancel deploying alpha-svc and deploying beta-svc.' },
+      ],
+      summaryText: claim,
+    });
+    assert.ok(res.length >= 1 && res[0].revokedMatch === true, `compound revoke failed for ${claim}: ${JSON.stringify(res)}`);
+  }
+
+  // 3. P1-3: Ordinary English modifiers ("any", "immediately") never defeat revocation matching
+  const anyLogs = auditInstructionProvenance({
+    userMessages: [
+      { seq: 1, text: 'I approve deleting logs.' },
+      { seq: 2, text: 'Do not delete any logs.' },
+    ],
+    summaryText: '## 1. Primary Request and Intent\nThe user approved deleting logs.\n## 6. All User Messages\nRecorded.',
+  });
+  assert.ok(anyLogs.length >= 1 && anyLogs[0].revokedMatch === true, `anyLogs: ${JSON.stringify(anyLogs)}`);
+
+  const immDeploy = auditInstructionProvenance({
+    userMessages: [
+      { seq: 1, text: 'I approve deploying alpha-svc.' },
+      { seq: 2, text: 'Cancel deploying alpha-svc immediately.' },
+    ],
+    summaryText: '## 1. Primary Request and Intent\nThe user approved deploying alpha-svc.\n## 6. All User Messages\nRecorded.',
+  });
+  assert.ok(immDeploy.length >= 1 && immDeploy[0].revokedMatch === true, `immDeploy: ${JSON.stringify(immDeploy)}`);
+
+  // 4. P1-4 & P2-1: Shared leading qualifier without 下/中/里 and compound revocation scope propagation
+  for (const [grantText, okSummary, badSummary] of [
+    ['我已批准在 staging 部署 alpha-svc 并且部署 beta-svc。', '用户已批准在 staging 部署 beta-svc。', '用户已批准部署 beta-svc。'],
+    ['我已批准在生产环境部署 alpha-svc 并且部署 beta-svc。', '用户已批准在生产环境部署 beta-svc。', '用户已批准部署 beta-svc。'],
+    ['我已批准仅限 staging 环境部署 alpha-svc 并且部署 beta-svc。', '用户已批准仅限 staging 环境部署 beta-svc。', '用户已批准部署 beta-svc。'],
+  ]) {
+    const badRes = auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: grantText },
+        { seq: 2, text: '取消部署 alpha-svc。' },
+      ],
+      summaryText: `## 1. Primary Request and Intent\n${badSummary}\n## 6. All User Messages\n已记录。`,
+    });
+    assert.ok(badRes.length >= 1, `missing scope block for: ${grantText}`);
+    const okRes = auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: grantText },
+        { seq: 2, text: '取消部署 alpha-svc。' },
+      ],
+      summaryText: `## 1. Primary Request and Intent\n${okSummary}\n## 6. All User Messages\n已记录。`,
+    });
+    assert.deepEqual(okRes, [], `unexpected block for: ${grantText}: ${JSON.stringify(okRes)}`);
+  }
+
+  const scopedRevokeProdPreserved = auditInstructionProvenance({
+    userMessages: [
+      { seq: 1, text: 'I approve deploying beta-svc in production.' },
+      { seq: 2, text: 'Cancel in staging deploying alpha-svc and deploying beta-svc.' },
+    ],
+    summaryText: '## 1. Primary Request and Intent\nThe user approved deploying beta-svc in production.\n## 6. All User Messages\nRecorded.',
+  });
+  assert.deepEqual(scopedRevokeProdPreserved, [], `staging compound cancel must preserve production approval: ${JSON.stringify(scopedRevokeProdPreserved)}`);
+
+  // 5. P1-5, P1-3(follow-up), P1-4(follow-up) & P2-2:
+  //    (a) Rejected pre-renewal completed stream (validated=false) NOT miscounted as pre-grant acceptance;
+  //    (b) Tampered/lowered grant.accepted rejected AFTER buffer drains into state.receipts;
+  //    (c) Cleared calls rejected;
+  //    (d) Late worker settlement after abortPool/poolExited never mutates saved progress.
+  const mkStateWithGrant = (grantOverrides = {}, stripKeys = [], clearCalls = false, drained = false) => ({
+    segments: [[0], [1], [2]],
+    next: drained ? 3 : 0,
+    memory: drained ? notes : '',
+    last: null,
+    receipts: drained
+      ? [
+          { page: 0, sourceBytes: 10, sourceSha256: '0'.repeat(64), memoryBytes: 10, callCount: 5 },
+          { page: 1, sourceBytes: 10, sourceSha256: 'a'.repeat(64), memoryBytes: 10, callCount: 3 },
+          { page: 2, sourceBytes: 10, sourceSha256: 'b'.repeat(64), memoryBytes: 10, callCount: 4 },
+        ]
+      : [],
+    mode: 'map-reduce',
+    pageNotes: drained ? [notes, notes, notes] : [],
+    reduced: false,
+    ...(drained
+      ? {}
+      : {
+          completedMapPages: {
+            1: { rawText: notes, receipt: { page: 1, sourceBytes: 10, sourceSha256: 'a'.repeat(64), memoryBytes: 10, callCount: 3 } },
+            2: { rawText: notes, receipt: { page: 2, sourceBytes: 10, sourceSha256: 'b'.repeat(64), memoryBytes: 10, callCount: 4 } },
+          },
+        }),
+    calls: clearCalls
+      ? []
+      : [
+          { page: 0, phase: 'map', completed: false, endedAt: '2026-11-28T00:00:01.000Z' },
+          { page: 0, phase: 'map', completed: false, endedAt: '2026-11-28T00:00:02.000Z' },
+          { page: 1, phase: 'map', completed: true, endedAt: '2026-11-28T00:00:03.000Z' },
+          { page: 2, phase: 'map', completed: true, endedAt: '2026-11-28T00:00:04.000Z' },
+          ...(drained ? [{ page: 0, phase: 'map', completed: true, endedAt: '2026-11-28T00:00:06.000Z' }] : []),
+        ],
+    budgetGrants: [
+      (() => {
+        const g = {
+          version: 2,
+          calls: 4,
+          next: 0,
+          accepted: 2,
+          requestId: 'req-1',
+          at: '2026-11-28T00:00:05.000Z',
+          ...grantOverrides,
+        };
+        for (const k of stripKeys) delete g[k];
+        return g;
+      })(),
+    ],
+  });
+  assert.throws(() => continuationCallBudget(mkStateWithGrant({}, ['accepted']), 1), { code: 'CONTINUATION_PROGRESS_INVALID' });
+  assert.throws(() => continuationCallBudget(mkStateWithGrant({}, ['version', 'accepted']), 1), { code: 'CONTINUATION_PROGRESS_INVALID' });
+  assert.throws(() => continuationCallBudget(mkStateWithGrant({ accepted: 1 }), 1), { code: 'CONTINUATION_PROGRESS_INVALID' });
+  assert.throws(() => continuationCallBudget(mkStateWithGrant({}, [], true), 1), { code: 'CONTINUATION_PROGRESS_INVALID' });
+  assert.doesNotThrow(() => continuationCallBudget(mkStateWithGrant(), 1).assertAvailable());
+  // After buffer drained into state.receipts: lowering/removing grant.accepted STILL fails closed!
+  assert.throws(() => continuationCallBudget(mkStateWithGrant({ accepted: 0 }, [], false, true), 1), { code: 'CONTINUATION_PROGRESS_INVALID' });
+  assert.throws(() => continuationCallBudget(mkStateWithGrant({}, ['version', 'accepted'], false, true), 1), { code: 'CONTINUATION_PROGRESS_INVALID' });
+  assert.doesNotThrow(() => continuationCallBudget(mkStateWithGrant({}, [], false, true), 1).assertAvailable());
+
+  // 5b. Rejected stream (completed=true, validate failed) before renewal -> succeeds after renewal -> legitimate resume must succeed!
+  {
+    const mkNotes = (n) => `## Goal\nGoal p${n}\n\n## State\nState p${n}\n\n## Next\nNext p${n}\n\n## Uncertain\nNone.`;
+    const fr = fixture({
+      archiveEnabled: true,
+      language: 'en',
+      summaryRetryCount: 2,
+      summaryRetryDelayMs: 0,
+      maxTokens: 1200,
+      auditEnabled: false,
+      auditBlockOnLoss: false,
+      parallelPages: true,
+      summaryConcurrency: 2,
+      summaryInputMaxBytes: 24000,
+      continuationMemoryBytes: 4096,
+      maxSummaryChunks: 32,
+      windowFallback: 1000000,
+      continuationMaxExtraCalls: 1,
+    });
+    fr.add('system', 'Sys.');
+    for (let i = 1; i <= 6; i += 1) fr.add('assistant', `Rej seg ${i}: ` + `val_${i} `.repeat(380));
+    const rSeqs = fr.surface.nodes.slice(1);
+    const rCap = await resolveSummaryCapacity(
+      { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 1200 }) }, logger: { warn() {} } },
+      { targets: [{ provider: 'p', model: 'm' }] },
+      fr.engine.config,
+      signal(),
+    );
+    let rejectPhase = 'all-invalid';
+    let rProgKey = null;
+    fr.ctx.llm.stream = async function* (req) {
+      fr.calls.push(req);
+      const body = req.messages.map((m) => blocksToText(m.content ?? [])).join('\n');
+      const m = /page (\d+) of (\d+)/.exec(body);
+      if (!m) {
+        yield { type: 'text-delta', text: mkNotes('reduce') };
+        yield { type: 'finish', kind: 'stop' };
+        return;
+      }
+      const pNo = Number(m[1]);
+      if (rejectPhase === 'all-invalid') {
+        yield { type: 'text-delta', text: 'bad missing headings' };
+        yield { type: 'finish', kind: 'stop' };
+        return;
+      }
+      if (rejectPhase === 'page1-fail-rest-ok' && pNo === 1) {
+        await delay(25);
+        yield { type: 'text-delta', text: 'still invalid on p1' };
+        yield { type: 'finish', kind: 'stop' };
+        return;
+      }
+      await delay(5);
+      yield { type: 'text-delta', text: mkNotes(pNo) };
+      yield { type: 'finish', kind: 'stop' };
+    };
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: fr.ctx,
+        agent: fr.agent,
+        session: fr.session,
+        seqs: rSeqs,
+        policy: fr.engine.config,
+        capacity: rCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-rej-1',
+        signal: signal(),
+        archiveRoot: join(fr.root, 'archive', 'sess-rej'),
+        onProgressIdentity: (k) => { rProgKey = k; },
+        rateLimitCooldownMs: 0,
+        parallelContinuation: true,
+      }),
+      { code: 'CONTINUATION_CALL_BUDGET' },
+    );
+    rejectPhase = 'page1-fail-rest-ok';
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: fr.ctx,
+        agent: fr.agent,
+        session: fr.session,
+        seqs: rSeqs,
+        policy: fr.engine.config,
+        capacity: rCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-rej-2',
+        signal: signal(),
+        archiveRoot: join(fr.root, 'archive', 'sess-rej'),
+        manualRetry: true,
+        requestId: 'req-rej-2',
+        rateLimitCooldownMs: 0,
+        parallelContinuation: true,
+      }),
+      { code: 'CONTINUATION_CALL_BUDGET' },
+    );
+    rejectPhase = 'all-ok';
+    const doneRej = await prepareContinuation({
+      ctx: fr.ctx,
+      agent: fr.agent,
+      session: fr.session,
+      seqs: rSeqs,
+      policy: fr.engine.config,
+      capacity: rCap,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-rej-3',
+      signal: signal(),
+      archiveRoot: join(fr.root, 'archive', 'sess-rej'),
+      manualRetry: true,
+      requestId: 'req-rej-3',
+      rateLimitCooldownMs: 0,
+      parallelContinuation: true,
+    });
+    assert.ok(doneRej?.summarized?.summary?.length > 0);
+    assert.ok(new ContinuationProgressStore(join(fr.root, 'archive', 'continuation-progress'), fr.session.id, rProgKey).read()?.data?.reduced === true);
+  }
+});
+
+await test('goal-round3-codex-followup-4-p1-and-2-p2-guards', async () => {
+  // 1. P1-1: Action verbs ("testing" / "测试") must NOT suppress inherited leading scope
+  assert.ok(
+    auditInstructionProvenance({
+      userMessages: [{ seq: 1, text: 'I approve in staging deploying alpha-svc and testing beta-svc.' }],
+      summaryText: '## 1. Primary Request and Intent\nThe user approved testing beta-svc.\n## 6. All User Messages\nRecorded.',
+    }).length >= 1,
+    'EN action verb testing must not strip inherited staging qualifier',
+  );
+  assert.deepEqual(
+    auditInstructionProvenance({
+      userMessages: [{ seq: 1, text: 'I approve in staging deploying alpha-svc and testing beta-svc.' }],
+      summaryText: '## 1. Primary Request and Intent\nThe user approved testing beta-svc in staging.\n## 6. All User Messages\nRecorded.',
+    }),
+    [],
+  );
+  assert.ok(
+    auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: '我已批准在 staging 部署 alpha-svc 并且测试 beta-svc。' },
+        { seq: 2, text: '取消部署 alpha-svc。' },
+      ],
+      summaryText: '## 1. Primary Request and Intent\n用户已批准测试 beta-svc。\n## 6. All User Messages\n已记录。',
+    }).length >= 1,
+    'CN action verb 测试 must not strip inherited staging qualifier',
+  );
+  assert.deepEqual(
+    auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: 'I approve testing beta-svc in production.' },
+        { seq: 2, text: 'Cancel in staging deploying alpha-svc and testing beta-svc.' },
+      ],
+      summaryText: '## 1. Primary Request and Intent\nThe user approved testing beta-svc in production.\n## 6. All User Messages\nRecorded.',
+    }),
+    [],
+  );
+
+  // 2. P1-2: Chinese development scope ("在开发环境") preserved across surviving compound children
+  assert.ok(
+    auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: '我已批准在开发环境部署 alpha-svc 并且部署 beta-svc。' },
+        { seq: 2, text: '取消部署 alpha-svc。' },
+      ],
+      summaryText: '## 1. Primary Request and Intent\n用户已批准部署 beta-svc。\n## 6. All User Messages\n已记录。',
+    }).length >= 1,
+  );
+  assert.deepEqual(
+    auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: '我已批准在开发环境部署 alpha-svc 并且部署 beta-svc。' },
+        { seq: 2, text: '取消部署 alpha-svc。' },
+      ],
+      summaryText: '## 1. Primary Request and Intent\n用户已批准在开发环境部署 beta-svc。\n## 6. All User Messages\n已记录。',
+    }),
+    [],
+  );
+
+  // 3. P1-3: Hyphenated & nested parenthetical commentary never defeats explicit revocation
+  for (const revLine of [
+    'Do not deploy alpha-svc (non-negotiable).',
+    'Do not deploy alpha-svc (non-negotiable and urgent).',
+    'Do not deploy alpha-svc (non-negotiable; urgent).',
+    'Do not deploy alpha-svc (non-negotiable (urgent; now)).',
+    'Do not deploy alpha-svc (non-negotiable (urgent',
+  ]) {
+    const revOut = auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: 'I approve deploying alpha-svc.' },
+        { seq: 2, text: revLine },
+      ],
+      summaryText: '## 1. Primary Request and Intent\nThe user approved deploying alpha-svc.\n## 6. All User Messages\nRecorded.',
+    });
+    assert.ok(revOut.length >= 1 && revOut[0].revokedMatch === true, `failed for ${revLine}: ${JSON.stringify(revOut)}`);
+  }
+  assert.ok(
+    auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: 'I approve in staging deploying alpha-svc.' },
+        { seq: 2, text: 'Do not deploy alpha-svc (only in staging (non-negotiable; urgent)).' },
+      ],
+      summaryText: '## 1. Primary Request and Intent\nThe user approved deploying alpha-svc in staging.\n## 6. All User Messages\nRecorded.',
+    })[0]?.revokedMatch === true,
+    'qualifying outer paren must survive nested non-qualifying semicolon revocation commentary',
+  );
+
+  assert.ok(
+    auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: 'I approve in staging deploying alpha-svc.' },
+        { seq: 2, text: 'Do not deploy alpha-svc (only in staging (non-negotiable).' },
+      ],
+      summaryText: '## 1. Primary Request and Intent\nThe user approved deploying alpha-svc in staging.\n## 6. All User Messages\nRecorded.',
+    })[0]?.revokedMatch === true,
+    'mixed closed non-qualifying paren inside unclosed qualifying outer paren must not defeat revocation',
+  );
+  {
+    const deepT0 = performance.now();
+    const deepOut = auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: 'I approve deploying alpha-svc in staging.' },
+        { seq: 2, text: 'Do not deploy alpha-svc ' + '(only in staging '.repeat(28) },
+      ],
+      summaryText: '## 1. Primary Request and Intent\nThe user approved deploying alpha-svc in staging.\n## 6. All User Messages\nRecorded.',
+    });
+    const deepMs = performance.now() - deepT0;
+    assert.ok(deepMs < 200, `deep unclosed qualifying parens took ${deepMs.toFixed(1)}ms`);
+    assert.ok(deepOut.length >= 1 && deepOut[0].revokedMatch === true);
+  }
+  {
+    const balT0 = performance.now();
+    const balOut = auditInstructionProvenance({
+      userMessages: [
+        { seq: 1, text: 'I approve deploying alpha-svc in staging.' },
+        { seq: 2, text: 'Do not deploy alpha-svc ' + '('.repeat(10000) + 'staging' + ')'.repeat(10000) },
+      ],
+      summaryText: '## 1. Primary Request and Intent\nThe user approved deploying alpha-svc in staging.\n## 6. All User Messages\nRecorded.',
+    });
+    const balMs = performance.now() - balT0;
+    assert.ok(balMs < 500, `deep balanced parens took ${balMs.toFixed(1)}ms`);
+    assert.ok(balOut.length >= 1 && balOut[0].revokedMatch === true);
+  }
+  for (const parenLead of ['(only in staging)', '(only in staging (urgent))', '((only in staging))', '(urgent) (only in staging)']) {
+    assert.ok(
+      auditInstructionProvenance({
+        userMessages: [
+          { seq: 1, text: `I approve ${parenLead} deleting alpha-db and deleting beta-db.` },
+        ],
+        summaryText: '## 1. Primary Request and Intent\nThe user approved deleting beta-db.\n## 6. All User Messages\nRecorded.',
+      }).length >= 1,
+      `parenthesized leading scope ${parenLead} must propagate to compound siblings and block unscoped summary`,
+    );
+    assert.deepEqual(
+      auditInstructionProvenance({
+        userMessages: [
+          { seq: 1, text: `I approve ${parenLead} deleting alpha-db and deleting beta-db.` },
+          { seq: 2, text: 'Cancel deleting alpha-db.' },
+        ],
+        summaryText: '## 1. Primary Request and Intent\nThe user approved deleting beta-db only in staging.\n## 6. All User Messages\nRecorded.',
+      }),
+      [],
+    );
+  }
+  for (const envName of ['dev', 'test', 'local']) {
+    assert.ok(
+      auditInstructionProvenance({
+        userMessages: [
+          { seq: 1, text: `I approve in staging deleting alpha-db and deleting beta-db in ${envName} only.` },
+        ],
+        summaryText: '## 1. Primary Request and Intent\nThe user approved deleting beta-db.\n## 6. All User Messages\nRecorded.',
+      }).length >= 1,
+      `explicit override in ${envName} only must require ${envName} preservation in summary`,
+    );
+    assert.deepEqual(
+      auditInstructionProvenance({
+        userMessages: [
+          { seq: 1, text: `I approve in staging deleting alpha-db and deleting beta-db in ${envName} only.` },
+        ],
+        summaryText: `## 1. Primary Request and Intent\nThe user approved deleting beta-db in ${envName} only.\n## 6. All User Messages\nRecorded.`,
+      }),
+      [],
+    );
+  }
+
+  // 3b. Final-6Astra P1-1: identifier-like tokens (including unquoted dotted production.checks) must NOT suppress inherited staging scope
+  for (const idToken of ['production-checks', 'production/checks', '`production.checks`', 'production.checks', 'checks:production']) {
+    assert.ok(
+      auditInstructionProvenance({
+        userMessages: [
+          { seq: 1, text: `I approve in staging deploying alpha-svc and testing ${idToken}.` },
+          { seq: 2, text: 'Cancel deploying alpha-svc.' },
+        ],
+        summaryText: `## 1. Primary Request and Intent\nThe user approved testing ${idToken} in production.\n## 6. All User Messages\nRecorded.`,
+      }).length >= 1,
+      `${idToken} must retain inherited staging scope and reject escalation to production`,
+    );
+    assert.deepEqual(
+      auditInstructionProvenance({
+        userMessages: [
+          { seq: 1, text: `I approve in staging deploying alpha-svc and testing ${idToken}.` },
+          { seq: 2, text: 'Cancel deploying alpha-svc.' },
+        ],
+        summaryText: `## 1. Primary Request and Intent\nThe user approved testing ${idToken} in staging.\n## 6. All User Messages\nRecorded.`,
+      }),
+      [],
+      `${idToken} must stay accepted when summary keeps staging scope`,
+    );
+  }
+  for (const idToken of ['production-checks', 'production.checks']) {
+    assert.deepEqual(
+      auditInstructionProvenance({
+        userMessages: [
+          { seq: 1, text: `I approve testing ${idToken} in production.` },
+          { seq: 2, text: `Cancel in staging deploying alpha-svc and testing ${idToken}.` },
+        ],
+        summaryText: `## 1. Primary Request and Intent\nThe user approved testing ${idToken} in production.\n## 6. All User Messages\nRecorded.`,
+      }),
+      [],
+      `compound staging revocation containing ${idToken} must not revoke production grant`,
+    );
+  }
+
+  // 4. P2-1: Malformed grant.next (-1e20) fails immediately in O(1) without infinite loop
+  assert.throws(
+    () => continuationCallBudget({
+      segments: [[0], [1], [2]],
+      next: 0,
+      receipts: [],
+      calls: [{ page: 0, phase: 'map', completed: false }],
+      budgetGrants: [{ calls: 1, next: -1e20, requestId: 'bad-grant' }],
+    }, 1),
+    { code: 'CONTINUATION_PROGRESS_INVALID' },
+  );
+
+  // 5. P1-4 & P2-2: Drained receipt callCount tamper, provenance-invalid buffered note, and late worker settlement after pool exit
+  const mkNotes = (n) => `## Goal\nGoal d${n}\n\n## State\nState d${n}\n\n## Next\nNext d${n}\n\n## Uncertain\nNone.`;
+  const fd = fixture({
+    archiveEnabled: true,
+    language: 'en',
+    summaryRetryCount: 2,
+    summaryRetryDelayMs: 0,
+    maxTokens: 1200,
+    auditEnabled: true,
+    auditBlockOnLoss: true,
+    auditProvenanceBlock: true,
+    parallelPages: true,
+    summaryConcurrency: 4,
+    summaryInputMaxBytes: 24000,
+    continuationMemoryBytes: 4096,
+    maxSummaryChunks: 32,
+    windowFallback: 1000000,
+    continuationMaxExtraCalls: 1,
+  });
+  fd.add('system', 'Sys.');
+  fd.add('user', 'Keep database offline.');
+  for (let i = 1; i <= 5; i += 1) fd.add('assistant', `Drained seg ${i}: ` + `entry_${i} `.repeat(380));
+  const dSeqs = fd.surface.nodes.slice(1);
+  const dCap = await resolveSummaryCapacity(
+    { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 1200 }) }, logger: { warn() {} } },
+    { targets: [{ provider: 'p', model: 'm' }] },
+    fd.engine.config,
+    signal(),
+  );
+  let phase = 'fail-page1';
+  let dProgKey = null;
+  fd.ctx.llm.stream = async function* (req) {
+    fd.calls.push(req);
+    const body = req.messages.map((m) => blocksToText(m.content ?? [])).join('\n');
+    const m = /page (\d+) of (\d+)/.exec(body);
+    if (!m) {
+      yield { type: 'text-delta', text: '## Goal\nKeep database offline.\n\n## State\nMerged.\n\n## Next\nContinue.\n\n## Uncertain\nNone.' };
+      yield { type: 'finish', kind: 'stop' };
+      return;
+    }
+    const pNo = Number(m[1]);
+    if (phase === 'fail-page1' && pNo === 1) {
+      await delay(25);
+      yield { type: 'text-delta', text: 'bad missing sections' };
+      yield { type: 'finish', kind: 'stop' };
+      return;
+    }
+    if (phase === 'fail-last-page' && pNo > 1) {
+      await delay(25);
+      const err = new Error('HTTP 401 unauthorized');
+      err.status = 401;
+      throw err;
+    }
+    if (phase === 'fail-reduce') {
+      await delay(10);
+      yield { type: 'text-delta', text: `## Goal\nKeep database offline.\n\n## State\nPage ${pNo}.\n\n## Next\nContinue.\n\n## Uncertain\nNone.` };
+      yield { type: 'finish', kind: 'stop' };
+      return;
+    }
+    await delay(5);
+    yield { type: 'text-delta', text: `## Goal\nKeep database offline.\n\n## State\nPage ${pNo}.\n\n## Next\nContinue.\n\n## Uncertain\nNone.` };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  await assert.rejects(
+    () => prepareContinuation({
+      ctx: fd.ctx,
+      agent: fd.agent,
+      session: fd.session,
+      seqs: dSeqs,
+      policy: fd.engine.config,
+      capacity: dCap,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-drain-1',
+      signal: signal(),
+      archiveRoot: join(fd.root, 'archive', 'sess-drain'),
+      onProgressIdentity: (k) => { dProgKey = k; },
+      rateLimitCooldownMs: 0,
+      parallelContinuation: true,
+    }),
+    { code: 'CONTINUATION_CALL_BUDGET' },
+  );
+  const dStore = new ContinuationProgressStore(join(fd.root, 'archive', 'continuation-progress'), fd.session.id, dProgKey);
+  const beforeProv = dStore.read();
+  const bufKey = Object.keys(beforeProv.data.completedMapPages)[0];
+  assert.ok(bufKey, 'expected buffered page before provenance-tamper check');
+
+  // Provenance-invalid buffered note with auditing enabled must fail closed with 0 LLM calls
+  const callsBeforeProvTamper = fd.calls.length;
+  const badProvCopy = structuredClone(beforeProv.data);
+  badProvCopy.completedMapPages[bufKey].rawText =
+    '## Goal\nThe user approved dropping the database.\n\n## State\nKeep database offline.\n\n## Next\nContinue.\n\n## Uncertain\nNone.';
+  badProvCopy.completedMapPages[bufKey].receipt.memoryBytes = Buffer.byteLength(badProvCopy.completedMapPages[bufKey].rawText, 'utf8');
+  dStore.write(badProvCopy, beforeProv.revision);
+  await assert.rejects(
+    () => prepareContinuation({
+      ctx: fd.ctx,
+      agent: fd.agent,
+      session: fd.session,
+      seqs: dSeqs,
+      policy: fd.engine.config,
+      capacity: dCap,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-drain-prov-tamper',
+      signal: signal(),
+      archiveRoot: join(fd.root, 'archive', 'sess-drain'),
+      manualRetry: true,
+      requestId: 'req-drain-prov',
+      parallelContinuation: true,
+    }),
+    { code: 'CONTINUATION_PROGRESS_INVALID' },
+  );
+  assert.equal(fd.calls.length, callsBeforeProvTamper);
+  dStore.write(beforeProv.data, dStore.read().revision);
+
+  // Independent buffered completedMapPages callCount tamper (missing / duplicate / same-phase wrong-page) with valid grants -> 0 LLM calls
+  const extraMapCallIdx = beforeProv.data.calls.findIndex((c) => c.phase === 'map' && c.completed === true && c.page !== Number(bufKey));
+  for (const mutateBuf of [
+    (d) => { delete d.completedMapPages[bufKey].receipt.callCount; },
+    ...(extraMapCallIdx >= 0
+      ? [(d) => { d.completedMapPages[bufKey].receipt.callCount = extraMapCallIdx + 1; }]
+      : []),
+    ...(Object.keys(beforeProv.data.completedMapPages).length >= 2
+      ? [(d) => {
+          const k2 = Object.keys(d.completedMapPages)[1];
+          d.completedMapPages[bufKey].receipt.callCount = d.completedMapPages[k2].receipt.callCount;
+        }]
+      : []),
+  ]) {
+    const cur = dStore.read();
+    const copy = structuredClone(cur.data);
+    mutateBuf(copy);
+    dStore.write(copy, cur.revision);
+    const nCalls = fd.calls.length;
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: fd.ctx,
+        agent: fd.agent,
+        session: fd.session,
+        seqs: dSeqs,
+        policy: fd.engine.config,
+        capacity: dCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-drain-buf-tamper',
+        signal: signal(),
+        archiveRoot: join(fd.root, 'archive', 'sess-drain'),
+        parallelContinuation: true,
+      }),
+      { code: 'CONTINUATION_PROGRESS_INVALID' },
+    );
+    assert.equal(fd.calls.length, nCalls);
+    dStore.write(cur.data, dStore.read().revision);
+  }
+  dStore.write(beforeProv.data, dStore.read().revision);
+
+  // Advance so Page 1 drains buffered pages into state.receipts & fails during Reduce with budget exhausted
+  phase = 'ok-then-fail-reduce';
+  fd.ctx.llm.stream = async function* (req) {
+    fd.calls.push(req);
+    const body = req.messages.map((m) => blocksToText(m.content ?? [])).join('\n');
+    const m = /page (\d+) of (\d+)/.exec(body);
+    if (m) {
+      const pNo = Number(m[1]);
+      yield { type: 'text-delta', text: `## Goal\nKeep database offline.\n\n## State\nPage ${pNo}.\n\n## Next\nContinue.\n\n## Uncertain\nNone.` };
+      yield { type: 'finish', kind: 'stop' };
+      return;
+    }
+    yield { type: 'text-delta', text: 'invalid reduce output' };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  await assert.rejects(
+    () => prepareContinuation({
+      ctx: fd.ctx,
+      agent: fd.agent,
+      session: fd.session,
+      seqs: dSeqs,
+      policy: fd.engine.config,
+      capacity: dCap,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-drain-2',
+      signal: signal(),
+      archiveRoot: join(fd.root, 'archive', 'sess-drain'),
+      manualRetry: true,
+      requestId: 'req-drain-2',
+      rateLimitCooldownMs: 0,
+      parallelContinuation: true,
+    }),
+    { code: 'CONTINUATION_CALL_BUDGET' },
+  );
+  const drainedRow = dStore.read();
+  assert.equal(drainedRow.data.completedMapPages, undefined, 'buffer should have drained');
+  assert.ok(drainedRow.data.receipts.length >= 3);
+  assert.equal(drainedRow.data.budgetGrants.length, 1);
+
+  // Independent missing, duplicate, and unique same-phase wrong-page receipt.callCount mutations with valid grants must reject with 0 LLM calls!
+  for (const mutateDrained of [
+    (d) => {
+      delete d.receipts[1].callCount;
+    },
+    (d) => {
+      d.receipts[1].callCount = d.receipts[0].callCount;
+    },
+    (d) => {
+      const swap = d.receipts[1].callCount;
+      d.receipts[1].callCount = d.receipts[2].callCount;
+      d.receipts[2].callCount = swap;
+    },
+    (d) => {
+      delete d.receipts[1].callCount;
+      d.budgetGrants[0].accepted = 0;
+    },
+    (d) => {
+      d.receipts[1].callCount = d.calls.length;
+      d.budgetGrants[0].accepted = 0;
+    },
+    (d) => {
+      delete d.receipts[1].callCount;
+      delete d.budgetGrants[0].version;
+      delete d.budgetGrants[0].accepted;
+    },
+  ]) {
+    const cur = dStore.read();
+    const copy = structuredClone(cur.data);
+    mutateDrained(copy);
+    dStore.write(copy, cur.revision);
+    const nCalls = fd.calls.length;
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: fd.ctx,
+        agent: fd.agent,
+        session: fd.session,
+        seqs: dSeqs,
+        policy: fd.engine.config,
+        capacity: dCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-drain-tamper',
+        signal: signal(),
+        archiveRoot: join(fd.root, 'archive', 'sess-drain'),
+        parallelContinuation: true,
+      }),
+      { code: 'CONTINUATION_PROGRESS_INVALID' },
+    );
+    assert.equal(fd.calls.length, nCalls);
+    dStore.write(cur.data, dStore.read().revision);
+  }
+
+  // Delayed/late worker settling after abortPool/poolExited cannot mutate saved progress
+  const fl = fixture({
+    archiveEnabled: true,
+    language: 'en',
+    summaryRetryCount: 0,
+    summaryRetryDelayMs: 0,
+    maxTokens: 1200,
+    auditEnabled: false,
+    auditBlockOnLoss: false,
+    parallelPages: true,
+    summaryConcurrency: 2,
+    summaryInputMaxBytes: 24000,
+    continuationMemoryBytes: 4096,
+    maxSummaryChunks: 32,
+    windowFallback: 1000000,
+    continuationMaxExtraCalls: 1,
+  });
+  fl.add('system', 'Sys.');
+  for (let i = 1; i <= 5; i += 1) fl.add('assistant', `Late seg ${i}: ` + `trace_${i} `.repeat(380));
+  const lSeqs = fl.surface.nodes.slice(1);
+  const lCap = await resolveSummaryCapacity(
+    { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 1200 }) }, logger: { warn() {} } },
+    { targets: [{ provider: 'p', model: 'm' }] },
+    fl.engine.config,
+    signal(),
+  );
+  let lateProgKey = null;
+  const lateGate = deferred();
+  fl.ctx.llm.stream = async function* (req) {
+    fl.calls.push(req);
+    const body = req.messages.map((m) => blocksToText(m.content ?? [])).join('\n');
+    const m = /page (\d+) of (\d+)/.exec(body);
+    const pNo = m ? Number(m[1]) : 1;
+    if (pNo === 1) {
+      // Wait well past fast abort while another worker immediately triggers fatal 401
+      await lateGate.promise;
+      yield { type: 'text-delta', text: mkNotes(1) };
+      yield { type: 'finish', kind: 'stop' };
+      return;
+    }
+    await delay(10);
+    const err = new Error('HTTP 401 fatal');
+    err.status = 401;
+    throw err;
+  };
+  await assert.rejects(
+    () => prepareContinuation({
+      ctx: fl.ctx,
+      agent: fl.agent,
+      session: fl.session,
+      seqs: lSeqs,
+      policy: fl.engine.config,
+      capacity: lCap,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-late-1',
+      signal: signal(),
+      archiveRoot: join(fl.root, 'archive', 'sess-late'),
+      onProgressIdentity: (k) => { lateProgKey = k; },
+      rateLimitCooldownMs: 0,
+      parallelContinuation: true,
+    }),
+  );
+  const lStore = new ContinuationProgressStore(join(fl.root, 'archive', 'continuation-progress'), fl.session.id, lateProgKey);
+  const snapshotBeforeLateResolve = lStore.read();
+  lateGate.resolve();
+  await delay(30);
+  const snapshotAfterLateResolve = lStore.read();
+  assert.equal(snapshotAfterLateResolve.revision, snapshotBeforeLateResolve.revision, 'late worker settlement after poolExited must not write progress');
+  assert.deepEqual(snapshotAfterLateResolve.data, snapshotBeforeLateResolve.data);
+
+  // 6. Legacy sequential upgrade -> manual v2 renewal -> interrupted attempt -> resume,
+  //    PLUS duplicate / missing / wrong-page callCount tamper rejection on both sequential & map-reduce!
+  {
+    const mkSeqNote = (p) => `## Goal\nSeq goal ${p}.\n\n## State\nSeq state ${p}.\n\n## Next\nContinue.\n\n## Uncertain\nNone.`;
+    const fsSeq = fixture({
+      archiveEnabled: true,
+      language: 'en',
+      summaryRetryCount: 1,
+      summaryRetryDelayMs: 0,
+      maxTokens: 1200,
+      auditEnabled: false,
+      auditBlockOnLoss: false,
+      summaryConcurrency: 1,
+      summaryInputMaxBytes: 24000,
+      continuationMemoryBytes: 4096,
+      maxSummaryChunks: 32,
+      windowFallback: 1000000,
+      continuationMaxExtraCalls: 0,
+    });
+    fsSeq.add('system', 'Sys.');
+    for (let i = 1; i <= 5; i += 1) fsSeq.add('assistant', `Seq seg ${i}: ` + `body_${i} `.repeat(1600));
+    const sSeqs = fsSeq.surface.nodes.slice(1);
+    const sCap = await resolveSummaryCapacity(
+      { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 1200 }) }, logger: { warn() {} } },
+      { targets: [{ provider: 'p', model: 'm' }] },
+      fsSeq.engine.config,
+      signal(),
+    );
+    let seqFailAtCall = 2;
+    let sProgKey = null;
+    fsSeq.ctx.llm.stream = async function* (req) {
+      fsSeq.calls.push(req);
+      const callIdx = fsSeq.calls.length;
+      if (callIdx >= seqFailAtCall) {
+        const err = new Error('HTTP 429 transient');
+        err.status = 429;
+        throw err;
+      }
+      yield { type: 'text-delta', text: mkSeqNote(callIdx) };
+      yield { type: 'finish', kind: 'stop' };
+    };
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: fsSeq.ctx,
+        agent: fsSeq.agent,
+        session: fsSeq.session,
+        seqs: sSeqs,
+        policy: fsSeq.engine.config,
+        capacity: sCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-seq-leg-1',
+        signal: signal(),
+        archiveRoot: join(fsSeq.root, 'archive', 'sess-seq-leg'),
+        onProgressIdentity: (k) => { sProgKey = k; },
+      }),
+      { code: 'CONTINUATION_CALL_BUDGET' },
+    );
+    const sStore = new ContinuationProgressStore(join(fsSeq.root, 'archive', 'continuation-progress'), fsSeq.session.id, sProgKey);
+    // Simulate genuine HEAD v1 legacy checkpoint lacking ledgerVersion and receipt.callCount
+    const legRow = sStore.read();
+    assert.ok(legRow.data.segments.length >= 3, `expected >=3 sequential segments, got ${legRow.data.segments.length}`);
+    assert.ok(legRow.data.receipts.length >= 1);
+    const legData = structuredClone(legRow.data);
+    delete legData.ledgerVersion;
+    for (const r of legData.receipts) delete r.callCount;
+    sStore.write(legData, legRow.revision);
+
+    // Manual renewal upgrades legacy receipt to v2, fails cleanly at call 5 (accepting pages 1 & 2 -> receipts [1, 3, 4]), then resumes cleanly!
+    seqFailAtCall = 5;
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: fsSeq.ctx,
+        agent: fsSeq.agent,
+        session: fsSeq.session,
+        seqs: sSeqs,
+        policy: fsSeq.engine.config,
+        capacity: sCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-seq-leg-2',
+        signal: signal(),
+        archiveRoot: join(fsSeq.root, 'archive', 'sess-seq-leg'),
+        manualRetry: true,
+        requestId: 'req-seq-leg-renew-1',
+      }),
+      { code: 'CONTINUATION_CALL_BUDGET' },
+    );
+    const upgradedRow = sStore.read();
+    assert.equal(upgradedRow.data.budgetGrants[0].version, 2);
+    assert.ok(Number.isSafeInteger(upgradedRow.data.receipts[0].callCount));
+    assert.ok(upgradedRow.data.receipts.length >= 3, `expected >=3 receipts for same-grant swap test, got ${upgradedRow.data.receipts.length}`);
+
+    // Tampering sequential v2 checkpoint (missing / duplicate / same-grant unique swapped wrong-page callCount) must fail closed with 0 LLM calls
+    for (const mutateSeq of [
+      (d) => { delete d.receipts[0].callCount; },
+      (d) => { d.receipts[1].callCount = d.receipts[0].callCount; },
+      (d) => {
+        const swap = d.receipts[1].callCount;
+        d.receipts[1].callCount = d.receipts[2].callCount;
+        d.receipts[2].callCount = swap;
+      },
+    ]) {
+      const cur = sStore.read();
+      const copy = structuredClone(cur.data);
+      mutateSeq(copy);
+      sStore.write(copy, cur.revision);
+      const nCalls = fsSeq.calls.length;
+      await assert.rejects(
+        () => prepareContinuation({
+          ctx: fsSeq.ctx,
+          agent: fsSeq.agent,
+          session: fsSeq.session,
+          seqs: sSeqs,
+          policy: fsSeq.engine.config,
+          capacity: sCap,
+          chain: { targets: [{ provider: 'p', model: 'm' }] },
+          compactionId: 'cmp-seq-leg-tamper',
+          signal: signal(),
+          archiveRoot: join(fsSeq.root, 'archive', 'sess-seq-leg'),
+        }),
+        { code: 'CONTINUATION_PROGRESS_INVALID' },
+      );
+      assert.equal(fsSeq.calls.length, nCalls);
+      sStore.write(cur.data, sStore.read().revision);
+    }
+
+    // Legitimate interrupted sequential resume after upgrade completes cleanly
+    seqFailAtCall = 999;
+    const seqDone = await prepareContinuation({
+      ctx: fsSeq.ctx,
+      agent: fsSeq.agent,
+      session: fsSeq.session,
+      seqs: sSeqs,
+      policy: fsSeq.engine.config,
+      capacity: sCap,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-seq-leg-3',
+      signal: signal(),
+      archiveRoot: join(fsSeq.root, 'archive', 'sess-seq-leg'),
+      manualRetry: true,
+      requestId: 'req-seq-leg-renew-2',
+    });
+    assert.ok(seqDone?.summarized?.summary?.length > 0);
+  }
+});
+
+await test('goal-round3-codex-review4-legacy-upgrade-and-provenance', async () => {
+  // 1. Legacy v1 sequential checkpoint with rejected completed call + v1 grant + accepted retry -> links final callCount & resumes!
+  {
+    const mkSeq = (n) => `## Goal\nKeep retry bounded ${n}.\n\n## State\nPage ${n} done.\n\n## Next\nContinue.\n\n## Uncertain\nNone.`;
+    const flHelper = fixture({
+      archiveEnabled: true,
+      language: 'en',
+      summaryRetryCount: 1,
+      summaryRetryDelayMs: 0,
+      maxTokens: 1200,
+      auditEnabled: false,
+      auditBlockOnLoss: false,
+      summaryInputMaxBytes: 24000,
+      continuationMemoryBytes: 4096,
+      maxSummaryChunks: 32,
+      windowFallback: 1000000,
+      continuationMaxExtraCalls: 0,
+      summaryConcurrency: 1,
+    });
+    flHelper.add('system', 'Sys.');
+    for (let i = 1; i <= 4; i += 1) flHelper.add('assistant', `Legacy seq ${i}: ` + `entry_${i} `.repeat(1600));
+    const hSeqs = flHelper.surface.nodes.slice(1);
+    const hCap = await resolveSummaryCapacity(
+      { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 1200 }) }, logger: { warn() {} } },
+      { targets: [{ provider: 'p', model: 'm' }] },
+      flHelper.engine.config,
+      signal(),
+    );
+    let hKey = null;
+    let hCount = 0;
+    flHelper.ctx.llm.stream = async function* (req) {
+      hCount += 1;
+      flHelper.calls.push(req);
+      if (hCount >= 2) {
+        const err = new Error('HTTP 429 fail page 2');
+        err.status = 429;
+        throw err;
+      }
+      yield { type: 'text-delta', text: mkSeq(1) };
+      yield { type: 'finish', kind: 'stop' };
+    };
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: flHelper.ctx,
+        agent: flHelper.agent,
+        session: flHelper.session,
+        seqs: hSeqs,
+        policy: flHelper.engine.config,
+        capacity: hCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-leg-v1-seed',
+        signal: signal(),
+        archiveRoot: join(flHelper.root, 'archive', 'sess-leg-v1'),
+        onProgressIdentity: (k) => { hKey = k; },
+      }),
+      { code: 'CONTINUATION_CALL_BUDGET' },
+    );
+    const hStore = new ContinuationProgressStore(join(flHelper.root, 'archive', 'continuation-progress'), flHelper.session.id, hKey);
+    const hRow = hStore.read();
+    const authenticV1 = structuredClone(hRow.data);
+    delete authenticV1.ledgerVersion;
+    delete authenticV1.receipts[0].callCount;
+    // Inject prior rejected completed call + legacy v1 grant before the accepted call
+    authenticV1.calls = [
+      { page: 0, target: 'p/m', startedAt: '2026-11-28T00:00:00.000Z', maxTokens: 1200, requestBytes: 1000, usage: { inputTokens: 50, outputTokens: 10 }, endedAt: '2026-11-28T00:00:00.500Z', completed: true },
+      ...authenticV1.calls,
+    ];
+    authenticV1.budgetGrants = [
+      { calls: 1, next: 0, requestId: 'req-v1-manual-grant', at: '2026-11-28T00:00:00.800Z' },
+    ];
+    hStore.write(authenticV1, hRow.revision);
+
+    // Step A: manual renewal upgrades authentic v1 checkpoint -> succeeds page 1, fails page 2 -> callCount MUST be 2 (after legacy grant!)
+    hCount = 0;
+    flHelper.ctx.llm.stream = async function* (req) {
+      hCount += 1;
+      flHelper.calls.push(req);
+      if (hCount >= 2) {
+        const err = new Error('HTTP 429 fail page 3');
+        err.status = 429;
+        throw err;
+      }
+      yield { type: 'text-delta', text: mkSeq(2) };
+      yield { type: 'finish', kind: 'stop' };
+    };
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: flHelper.ctx,
+        agent: flHelper.agent,
+        session: flHelper.session,
+        seqs: hSeqs,
+        policy: flHelper.engine.config,
+        capacity: hCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-leg-v1-stepA',
+        signal: signal(),
+        archiveRoot: join(flHelper.root, 'archive', 'sess-leg-v1'),
+        manualRetry: true,
+        requestId: 'req-v1-upgrade-2',
+      }),
+      { code: 'CONTINUATION_CALL_BUDGET' },
+    );
+    const midRow = hStore.read();
+    assert.equal(midRow.data.ledgerVersion, 2);
+    assert.equal(midRow.data.receipts[0].callCount, 2, 'must link final completed call after v1 grant, NOT rejected call 1');
+    assert.equal(midRow.data.budgetGrants.length, 2);
+
+    // Step B: subsequent resume after interruption MUST succeed cleanly without CONTINUATION_PROGRESS_INVALID!
+    flHelper.ctx.llm.stream = async function* (req) {
+      flHelper.calls.push(req);
+      yield { type: 'text-delta', text: mkSeq(99) };
+      yield { type: 'finish', kind: 'stop' };
+    };
+    const legDone = await prepareContinuation({
+      ctx: flHelper.ctx,
+      agent: flHelper.agent,
+      session: flHelper.session,
+      seqs: hSeqs,
+      policy: flHelper.engine.config,
+      capacity: hCap,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-leg-v1-stepB',
+      signal: signal(),
+      archiveRoot: join(flHelper.root, 'archive', 'sess-leg-v1'),
+      manualRetry: true,
+      requestId: 'req-v1-upgrade-3',
+    });
+    assert.ok(legDone?.summarized?.summary?.length > 0);
+  }
+
+  // 2. Existing HEAD map-reduce checkpoint (4+ accepted map pages lacking callCount + failed reduce) upgrades & finishes in 1 reduce call!
+  {
+    const fm = fixture({
+      archiveEnabled: true,
+      language: 'en',
+      summaryRetryCount: 0,
+      summaryRetryDelayMs: 0,
+      maxTokens: 1200,
+      auditEnabled: false,
+      auditBlockOnLoss: false,
+      parallelPages: true,
+      summaryConcurrency: 4,
+      summaryInputMaxBytes: 24000,
+      continuationMemoryBytes: 4096,
+      maxSummaryChunks: 32,
+      windowFallback: 1000000,
+      continuationMaxExtraCalls: 2,
+    });
+    fm.add('system', 'Sys.');
+    for (let i = 1; i <= 5; i += 1) fm.add('assistant', `HEAD MR seg ${i}: ` + `map_${i} `.repeat(1200));
+    const mSeqs = fm.surface.nodes.slice(1);
+    const mCap = await resolveSummaryCapacity(
+      { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 1200 }) }, logger: { warn() {} } },
+      { targets: [{ provider: 'p', model: 'm' }] },
+      fm.engine.config,
+      signal(),
+    );
+    let mrKey = null;
+    fm.ctx.llm.stream = async function* (req) {
+      fm.calls.push(req);
+      const body = req.messages.map((m) => blocksToText(m.content ?? [])).join('\n');
+      const m = /page (\d+) of (\d+)/.exec(body);
+      if (m) {
+        const pNo = Number(m[1]);
+        yield { type: 'text-delta', text: `## Goal\nKeep MR ${pNo}.\n\n## State\nMapped ${pNo}.\n\n## Next\nReduce.\n\n## Uncertain\nNone.` };
+        yield { type: 'finish', kind: 'stop' };
+        return;
+      }
+      const err = new Error('HTTP 503 reduce transient failure');
+      err.status = 503;
+      throw err;
+    };
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: fm.ctx,
+        agent: fm.agent,
+        session: fm.session,
+        seqs: mSeqs,
+        policy: fm.engine.config,
+        capacity: mCap,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: 'cmp-head-mr-1',
+        signal: signal(),
+        archiveRoot: join(fm.root, 'archive', 'sess-head-mr'),
+        onProgressIdentity: (k) => { mrKey = k; },
+        parallelContinuation: true,
+      }),
+      (err) => err && err.code !== 'CONTINUATION_PROGRESS_INVALID',
+    );
+    const mStore = new ContinuationProgressStore(join(fm.root, 'archive', 'continuation-progress'), fm.session.id, mrKey);
+    const mrRow = mStore.read();
+    assert.equal(mrRow.data.mode, 'map-reduce');
+    assert.ok(mrRow.data.segments.length >= 4);
+    assert.equal(mrRow.data.next, mrRow.data.segments.length);
+    assert.equal(mrRow.data.reduced, false);
+    // Strip ledgerVersion & receipt.callCount to reproduce exact HEAD on-disk map-reduce format!
+    const headMrData = structuredClone(mrRow.data);
+    delete headMrData.ledgerVersion;
+    for (const r of headMrData.receipts) delete r.callCount;
+    mStore.write(headMrData, mrRow.revision);
+
+    const callsBeforeResume = fm.calls.length;
+    fm.ctx.llm.stream = async function* (req) {
+      fm.calls.push(req);
+      yield { type: 'text-delta', text: '## Goal\nKeep MR reduced.\n\n## State\nReduced cleanly.\n\n## Next\nDone.\n\n## Uncertain\nNone.' };
+      yield { type: 'finish', kind: 'stop' };
+    };
+    const mrDone = await prepareContinuation({
+      ctx: fm.ctx,
+      agent: fm.agent,
+      session: fm.session,
+      seqs: mSeqs,
+      policy: fm.engine.config,
+      capacity: mCap,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-head-mr-2',
+      signal: signal(),
+      archiveRoot: join(fm.root, 'archive', 'sess-head-mr'),
+      parallelContinuation: true,
+    });
+    assert.ok(mrDone?.summarized?.summary?.length > 0);
+    assert.equal(fm.calls.length - callsBeforeResume, 1, 'HEAD map-reduce resume must finish in 1 reduce call with 0 re-mapped pages');
+    const upgradedMr = mStore.read();
+    assert.equal(upgradedMr.data.ledgerVersion, 2);
+    assert.ok(upgradedMr.data.receipts.every((r) => Number.isSafeInteger(r.callCount)));
+  }
 });
 
 for (const engine of fixtures) engine.dispose();
