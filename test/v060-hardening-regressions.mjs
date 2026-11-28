@@ -18,11 +18,11 @@ import { validateProgressFacts } from '../lib/progress-facts.js';
 import { runConcurrentPool } from '../lib/concurrency.js';
 import { resumeCompactionFor, retryCompactionFor } from '../lib/engine/resumable.js';
 import { migrateBiliSession } from '../lib/engine/migration.js';
-import { freezeContinuation, bindContinuationProgress } from '../lib/continuation-pending.js';
+import { freezeContinuation, bindContinuationProgress, readPendingContinuation } from '../lib/continuation-pending.js';
 import { ContinuationProgressStore } from '../lib/continuation-progress.js';
-import { inspectCompactionEntryState, selectCompactableRange } from '../lib/region.js';
+import { inspectCompactionEntryState, selectCompactableRange, selectSessionMemory } from '../lib/region.js';
 import { handleSummaryConfigRpc, mergeSummaryConfig, readSummaryConfig, readSummaryConfigAsync, writeSummaryConfig } from '../lib/summary-config.js';
-import { projectSummaryMessage } from '../lib/reference-input.js';
+import { deduplicateRepeatedFileReads, projectSummaryMessage } from '../lib/reference-input.js';
 import { commitSnip, planSnip } from '../lib/snip.js';
 import { StockTransactionAdapter } from '../lib/transaction.js';
 import { resolveAdaptiveReinjectLimits } from '../lib/file-reinject.js';
@@ -36,6 +36,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { auditCompaction, auditInstructionProvenance, summarizeProvenanceFailures } from '../lib/audit.js';
+import { auditMemorySelection } from '../lib/constraint-scope.js';
 import { classifyBlockingAuditLost } from '../lib/audit-fallback.js';
 import { numericFacts, numericFactsEquivalent } from '../lib/audit/numeric.js';
 import { decorateCompactCommand } from '../lib/command-compact.js';
@@ -2932,6 +2933,727 @@ await test('goal-round1-P1-3-codeSpanRanges-linear-on-interleaved-tags-and-fence
   const multilineTag = '<blockquote\ndata-attr="x">\n```\nfence line\n```\nInside.\n</blockquote>\nAfter multiline.';
   const outMultiline = instructionText({ role: 'user', blocks: [{ type: 'text', text: multilineTag }] });
   assert.equal(outMultiline.trim(), 'After multiline.');
+});
+
+await test('goal-round2-P1-1-map-reduce-continuation-auto-and-manual-resume', async () => {
+  const VALID_NOTES = '## Goal\nFinish diagnostics.\n## State\nEvidence archived.\n## Next\nReview results.\n## Uncertain\nNone pending.';
+  const makeMrHarness = ({ failAtCall = Infinity } = {}) => {
+    const f = fixture({
+      summaryRetryCount: 0,
+      summaryRetryDelayMs: 0,
+      summaryInputMaxBytes: 50000,
+      maxSummaryChunks: 32,
+      windowFallback: 1000000,
+      continuationMaxExtraCalls: 4,
+    });
+    assert.equal(f.engine.config.summaryConcurrency, 2);
+    assert.equal(f.engine.config.continuationMaxExtraCalls, 4);
+    f.add('system', 'System prompt.');
+    f.add('user', 'Do not delete the audit logs.\n' + 'archiveblob '.repeat(6000));
+    f.add('assistant', 'evidence '.repeat(4000));
+    f.add('assistant', 'more evidence '.repeat(4000));
+    let shouldFail = true;
+    f.ctx.llm.resolveModelInfo = async () => ({ contextWindow: 1000000 });
+    f.ctx.llm.stream = async function* (opts) {
+      f.calls.push(opts);
+      if (shouldFail && f.calls.length === failAtCall) {
+        throw Object.assign(new Error('503 transient failure'), { status: 503 });
+      }
+      yield { type: 'text-delta', text: VALID_NOTES };
+      yield { type: 'finish', kind: 'stop' };
+    };
+    return {
+      ...f,
+      stopFailing() { shouldFail = false; },
+    };
+  };
+
+  // (a) Auto-resume via compactIfNeeded (tryAutoContinuationRegion) after manual Map-Reduce fails partway
+  const hAuto = makeMrHarness({ failAtCall: 4 });
+  await assert.rejects(() => hAuto.engine.compactNow(hAuto.agent, signal()));
+  const pendingAuto = readPendingContinuation(hAuto.engine.sessionState, hAuto.session);
+  assert.ok(pendingAuto?.progressKey);
+  const progressRootAuto = join(hAuto.root, 'continuation-progress');
+  const savedAuto = new ContinuationProgressStore(progressRootAuto, hAuto.session.id, pendingAuto.progressKey).read()?.data;
+  assert.equal(savedAuto?.mode, 'map-reduce');
+  assert.ok((savedAuto?.pageNotes?.length ?? 0) >= 2, `expected >= 2 pageNotes, got ${savedAuto?.pageNotes?.length}`);
+  hAuto.stopFailing();
+  hAuto.engine.sessionState.update(hAuto.session.id, st => {
+    const next = { ...st };
+    delete next.resumableCompaction;
+    return next;
+  });
+  hAuto.session.append('turn/start', { turn: 99 });
+  let autoRes;
+  try {
+    autoRes = await hAuto.engine.compactIfNeeded(hAuto.agent, 'pressure', signal());
+  } finally {
+    hAuto.session.append('turn/end', { turn: 99, reason: { kind: 'completed' } });
+  }
+  assert.ok(autoRes?.continuation);
+  assert.equal(autoRes.continuation.progressKey, pendingAuto.progressKey);
+  assert.ok(autoRes.continuation.resumedPages >= 2, `expected resumedPages >= 2, got ${autoRes.continuation.resumedPages}`);
+  assert.ok(!autoRes.continuation.priorProgressKeys?.includes(pendingAuto.progressKey));
+
+  // (b) Manual-resume via compactNow(..., true) (executeManualRolloverFlow) after Map-Reduce fails partway
+  const hManual = makeMrHarness({ failAtCall: 4 });
+  await assert.rejects(() => hManual.engine.compactNow(hManual.agent, signal()));
+  const pendingManual = readPendingContinuation(hManual.engine.sessionState, hManual.session);
+  assert.ok(pendingManual?.progressKey);
+  const progressRootManual = join(hManual.root, 'continuation-progress');
+  const savedManual = new ContinuationProgressStore(progressRootManual, hManual.session.id, pendingManual.progressKey).read()?.data;
+  assert.equal(savedManual?.mode, 'map-reduce');
+  assert.ok((savedManual?.pageNotes?.length ?? 0) >= 2, `expected >= 2 pageNotes, got ${savedManual?.pageNotes?.length}`);
+  hManual.stopFailing();
+  const manualRes = await hManual.engine.compactNow(hManual.agent, signal(), randomUUID(), true);
+  assert.ok(manualRes?.continuation);
+  assert.equal(manualRes.continuation.progressKey, pendingManual.progressKey);
+  assert.ok(manualRes.continuation.resumedPages >= 2, `expected resumedPages >= 2, got ${manualRes.continuation.resumedPages}`);
+  assert.ok(!manualRes.continuation.priorProgressKeys?.includes(pendingManual.progressKey));
+});
+
+await test('goal-round2-P1-2-selectContinuationWave-linear-under-default-and-tight-budgets', async () => {
+  const defaultCfg200k = resolveConfig({}).config;
+  const cap200k = await resolveSummaryCapacity(
+    { llm: { resolveModelInfo: async () => ({ contextWindow: 200000, maxTokens: 8192 }) }, logger: { warn() {} } },
+    { targets: [{ provider: 'p', model: 'm' }] },
+    defaultCfg200k,
+    signal(),
+  );
+  const buildWaveSession = (nodeCount, { userTextLen = 550, userEvery = 4, withRepeatedReads = false } = {}) => {
+    const f = fixture({ auto: false });
+    f.add('system', 'Sys.');
+    const appendReadPair = (callId, body) => {
+      f.session.append('assistant/message', {
+        message: {
+          id: randomUUID(),
+          role: 'assistant',
+          content: [{ type: 'tool-call', callId, name: 'read_file', arguments: { path: 'src/app.js' } }],
+          source: { kind: 'model', provider: 'p', model: 'm' },
+        },
+      }, { surfaceOp: 'append' });
+      f.session.append('tool/result', {
+        message: {
+          role: 'tool',
+          toolCallId: callId,
+          content: [{ type: 'text', text: body }],
+        },
+      }, { surfaceOp: 'append' });
+    };
+    if (withRepeatedReads) {
+      appendReadPair('tc-r1', 'line1 '.repeat(500));
+    }
+    const start = withRepeatedReads ? 3 : 1;
+    const stop = nodeCount - (withRepeatedReads ? 2 : 0);
+    for (let i = start; i < stop; i += 1) {
+      if (withRepeatedReads && i === 301) {
+        appendReadPair('tc-r-mid', 'lineMid '.repeat(500));
+        continue;
+      }
+      if (i % userEvery === 0) {
+        f.add('user', `User rule ${i}: Must keep module_${i} contract unchanged and verify ${'k'.repeat(userTextLen)}.`);
+      } else {
+        f.add('assistant', `Step ${i} output processed cleanly.`);
+      }
+    }
+    if (withRepeatedReads) {
+      appendReadPair('tc-r2', 'line2 '.repeat(500));
+    }
+    return f.session;
+  };
+
+  // (a) Default 200k 2,060-node workload
+  const s2060 = buildWaveSession(2060, { userTextLen: 550, userEvery: 4 });
+  const t0a = performance.now();
+  const w2060 = selectContinuationWave(s2060, {
+    endSeq: s2060.surface.nodes.at(-1),
+    policy: defaultCfg200k,
+    maxPages: defaultCfg200k.maxSummaryChunks,
+    capacity: cap200k,
+  });
+  const msA = performance.now() - t0a;
+  assert.ok(w2060?.seqs?.length > 0);
+  assert.ok(msA < 1000, `200k 2060-node selectContinuationWave took ${msA.toFixed(1)}ms`);
+  // Maximality: next node beyond wave.end cannot expand the wave further
+  const idx2060 = s2060.surface.nodes.indexOf(w2060.end);
+  if (idx2060 + 1 < s2060.surface.nodes.length) {
+    const w2060Next = selectContinuationWave(s2060, {
+      endSeq: s2060.surface.nodes[idx2060 + 1],
+      policy: defaultCfg200k,
+      maxPages: defaultCfg200k.maxSummaryChunks,
+      capacity: cap200k,
+    });
+    assert.equal(w2060Next.end, w2060.end);
+  }
+
+  // (b) Tight-budget 2,120-node workload (forced smaller tight capacity ceiling)
+  const capTight = await resolveSummaryCapacity(
+    { llm: { resolveModelInfo: async () => ({ contextWindow: 48000, maxTokens: 4096 }) }, logger: { warn() {} } },
+    { targets: [{ provider: 'p', model: 'm' }] },
+    defaultCfg200k,
+    signal(),
+  );
+  const s2120 = buildWaveSession(2120, { userTextLen: 260, userEvery: 4 });
+  const t0b = performance.now();
+  const w2120 = selectContinuationWave(s2120, {
+    endSeq: s2120.surface.nodes.at(-1),
+    policy: defaultCfg200k,
+    maxPages: defaultCfg200k.maxSummaryChunks,
+    capacity: capTight,
+  });
+  const msB = performance.now() - t0b;
+  assert.ok(w2120?.seqs?.length > 0);
+  assert.ok(msB < 1000, `tight 2120-node selectContinuationWave took ${msB.toFixed(1)}ms`);
+
+  // (c) Tight-budget 2,122-node repeated-read workload (waveSupersededReads.size > 0)
+  const s2122 = buildWaveSession(2122, { userTextLen: 260, userEvery: 4, withRepeatedReads: true });
+  assert.ok(deduplicateRepeatedFileReads(s2122, s2122.surface.nodes).size > 0, 'repeated reads must actually deduplicate');
+  const t0c = performance.now();
+  const w2122 = selectContinuationWave(s2122, {
+    endSeq: s2122.surface.nodes.at(-1),
+    policy: defaultCfg200k,
+    maxPages: defaultCfg200k.maxSummaryChunks,
+    capacity: capTight,
+  });
+  const msC = performance.now() - t0c;
+  assert.ok(w2122?.seqs?.length > 0);
+  assert.ok(msC < 1000, `tight repeated-read 2122-node selectContinuationWave took ${msC.toFixed(1)}ms`);
+
+  // Verify non-monotonic workReport exactness still holds
+  const fMono = fixture({ auto: false, continuationMemoryBytes: 2048 });
+  fMono.add('system', 'Sys.');
+  fMono.add('assistant', `Verified baseline. ${'details '.repeat(360)}`);
+  fMono.add('assistant', 'note '.repeat(300));
+  const seqA2 = fMono.add('assistant', 'note '.repeat(300)).seq;
+  const seqA3 = fMono.add('assistant', 'Done.').seq;
+  fMono.add('assistant', 'Payload '.repeat(600));
+  const monoCapacity = {
+    targets: [{ provider: 'p', model: 'm', key: '["p","m"]', window: 200000, output: 8192, margin: 12000, inputRatio: 0.85, maxInputBytes: 14500, scale: 1, source: 'test' }],
+    shrinkLimit: Infinity,
+    shrinkTokenLimit: Infinity,
+    observedOverflows: 0,
+    cjkTokensPerChar: 0.75,
+  };
+  assert.throws(
+    () => selectContinuationWave(fMono.session, { endSeq: seqA2, policy: fMono.engine.config, maxPages: 3, capacity: monoCapacity }),
+    err => err?.code === 'CONTINUATION_CAPACITY',
+  );
+  const wMono = selectContinuationWave(fMono.session, { endSeq: fMono.surface.nodes.at(-1), policy: fMono.engine.config, maxPages: 3, capacity: monoCapacity });
+  assert.equal(wMono.end, seqA3);
+});
+
+await test('goal-round2-P1-3-selectMemoryMessages-linear-on-percent-dates-and-decimals', () => {
+  // (a) 600 percentage constraints
+  const pctMsgs = Array.from({ length: 600 }, (_, i) => ({
+    seq: i,
+    role: 'user',
+    text: `覆盖率必须达到 ${(10 + i * 0.1).toFixed(1)}% 且保留详细测试报告和日志`,
+  }));
+  const t0a = performance.now();
+  const pctRes = selectMemoryMessages(pctMsgs);
+  const pctMs = performance.now() - t0a;
+  assert.equal(pctRes.active.length, 600);
+  assert.ok(pctMs < 750, `600 pct rules took ${pctMs.toFixed(1)}ms`);
+
+  // (b) 336 calendar date constraints (common '2026' across all entries)
+  const dateMsgs = Array.from({ length: 336 }, (_, i) => ({
+    seq: i,
+    role: 'user',
+    text: `必须在 2026年${(Math.floor(i / 28) % 12) + 1}月${(i % 28) + 1}日 完成第 ${i} 批每日备份归档任务`,
+  }));
+  const t0b = performance.now();
+  const dateRes = selectMemoryMessages(dateMsgs);
+  const dateMs = performance.now() - t0b;
+  assert.equal(dateRes.active.length, 336);
+  assert.ok(dateMs < 500, `336 date rules took ${dateMs.toFixed(1)}ms`);
+
+  // (c) 300 non-scalar decimal constraints
+  const decMsgs = Array.from({ length: 300 }, (_, i) => ({
+    seq: i,
+    role: 'user',
+    text: `错误率不得高于 ${(1.1 + i * 0.1).toFixed(1)} 个百分点且保留全部异常检测日志。`,
+  }));
+  const t0c = performance.now();
+  const decRes = selectMemoryMessages(decMsgs);
+  const decMs = performance.now() - t0c;
+  assert.equal(decRes.active.length, 211);
+  assert.ok(decMs < 500, `300 decimal rules took ${decMs.toFixed(1)}ms`);
+
+  // (d) Exact equivalence semantics preserved: 2026年 vs 20年 vs 30年 remain distinct; 05 vs 5 match; targeted polarity reversal retires only target
+  const distinctDates = selectMemoryMessages([
+    { seq: 1, role: 'user', text: '2026年冻结日志归档。' },
+    { seq: 2, role: 'user', text: '20年冻结日志归档。' },
+    { seq: 3, role: 'user', text: '30年冻结日志归档。' },
+  ]);
+  assert.equal(distinctDates.active.length, 3);
+
+  const leadingZeroDistinct = selectMemoryMessages([
+    { seq: 1, role: 'user', text: '最多保留 05 个历史快照。' },
+    { seq: 2, role: 'user', text: '最多保留 5 个历史快照。' },
+  ]);
+  assert.equal(leadingZeroDistinct.active.length, 2);
+
+  const leadingZeroConflict = selectMemoryMessages([
+    { seq: 1, role: 'user', text: 'Must retain at least 05 backup snapshots.' },
+    { seq: 2, role: 'user', text: 'Must retain at least 06 backup snapshots.' },
+  ]);
+  assert.equal(leadingZeroConflict.active.length, 1);
+  assert.equal(leadingZeroConflict.active[0].seq, 2);
+
+  const groupWithReversal = [
+    ...Array.from({ length: 120 }, (_, i) => ({
+      seq: i,
+      role: 'user',
+      text: `module_${i} 的覆盖率必须达到 ${(10 + i * 0.1).toFixed(1)}% 且保留详细测试报告和日志`,
+    })),
+    {
+      seq: 999,
+      role: 'user',
+      text: 'module_42 的覆盖率不要必须达到 14.2% 且不要保留详细测试报告和日志',
+    },
+  ];
+  const revRes = selectMemoryMessages(groupWithReversal);
+  assert.equal(revRes.active.some(m => m.seq === 42), false);
+  assert.equal(revRes.active.some(m => m.seq === 999), true);
+  assert.equal(revRes.active.length, 120);
+});
+
+await test('goal-round2-P1-4-provenance-partial-clause-cancellation-same-seq', async () => {
+  const f = fixture({
+    auditEnabled: true,
+    auditBlockOnLoss: true,
+    auditProvenanceBlock: true,
+    auditExhaustionPolicy: 'block',
+    summaryRetryCount: 0,
+    summaryRetryDelayMs: 0,
+  });
+  f.session.append('turn/start', { turn: 0 });
+  f.add('system', 'Sys.');
+  const u0 = f.add('user', '我已批准发布 alpha-svc 到 staging。我已批准删除临时目录 tmp_old。');
+  f.add('assistant', 'pad '.repeat(2500));
+  const u2 = f.add('user', '取消删除临时目录 tmp_old。');
+  f.add('assistant', 'Done step 3.');
+
+  const sel = selectSessionMemory(f.session, [u0.seq, u0.seq + 1, u2.seq]);
+  const compliantSummary = [
+    '## 1. Primary Request and Intent',
+    '- 用户已批准发布 alpha-svc 到 staging。',
+    '## 2. Key Technical Concepts',
+    '- Staging deployment.',
+    '## 3. Files and Code Sections',
+    '- None modified.',
+    '## 4. Errors and Fixes',
+    '- None.',
+    '## 5. Problem Solving',
+    '- Cancelled temporary cleanup.',
+    '## 6. All User Messages',
+    '[filled by engine]',
+    '## 7. Pending Tasks',
+    '- 发布 alpha-svc 到 staging。',
+    '## 8. Work Completed',
+    '- Prepared staging deployment.',
+    '## 9. Context for Continuing Work',
+    '- Proceed with staging deploy.',
+  ].join('\n');
+  const okAudit = auditMemorySelection({ selection: sel, summaryText: compliantSummary });
+  assert.equal(okAudit.lost.length, 0, `expected 0 lost items, got ${JSON.stringify(okAudit.lost)}`);
+
+  const badSummary = compliantSummary.replace(
+    'Staging deployment.',
+    'Staging deployment. 用户已批准删除临时目录 tmp_old。',
+  );
+  const badAudit = auditMemorySelection({ selection: sel, summaryText: badSummary });
+  assert.equal(badAudit.lost.some(x => x.reason === 'provenance'), true);
+
+  f.ctx.llm.stream = async function* (req) {
+    f.calls.push(req);
+    yield { type: 'text-delta', text: compliantSummary };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  const compactRes = await f.engine.compactRegion(u0.seq, u2.seq, f.agent, signal());
+  assert.ok(compactRes?.summarySeq >= 0);
+});
+
+await test('goal-round2-codex-P1-1-mapreduce-multigroup-reduce-resumes-without-loop', async () => {
+  const f = fixture({
+    summaryRetryCount: 0,
+    summaryRetryDelayMs: 0,
+    summaryInputMaxBytes: 24000,
+    continuationMemoryBytes: 10000,
+    maxSummaryChunks: 32,
+    windowFallback: 1000000,
+    continuationMaxExtraCalls: 4,
+  });
+  f.add('system', 'Sys.');
+  for (let i = 0; i < 4; i += 1) {
+    f.add('assistant', `Segment ${i}: ` + 'artifact '.repeat(450));
+  }
+  const LONG_MAP_NOTE = [
+    '## Goal',
+    'Continue multi-page diagnostics.',
+    '## State',
+    'Evidence remains archived. ' + 'detail '.repeat(750),
+    '## Next',
+    'Complete synthesis.',
+    '## Uncertain',
+    'None.',
+  ].join('\n');
+  const FINAL_MERGE_NOTE = [
+    '## Goal',
+    'Continue multi-page diagnostics.',
+    '## State',
+    'Merged multi-group evidence.',
+    '## Next',
+    'Verify final state.',
+    '## Uncertain',
+    'None.',
+  ].join('\n');
+
+  const capacity = await resolveSummaryCapacity(
+    { llm: { resolveModelInfo: async () => ({ contextWindow: 1000000, maxTokens: 8192 }) }, logger: { warn() {} } },
+    { targets: [{ provider: 'p', model: 'm' }] },
+    f.engine.config,
+    signal(),
+  );
+  const seqs = f.surface.nodes.slice(1);
+  f.ctx.llm.stream = async function* (req) {
+    f.calls.push(req);
+    const body = req.messages.map(m => blocksToText(m.content ?? [])).join('\n');
+    const isMap = body.includes('Independent notes for page ');
+    yield { type: 'text-delta', text: isMap ? LONG_MAP_NOTE : FINAL_MERGE_NOTE };
+    yield { type: 'finish', kind: 'stop' };
+  };
+
+  let progressKey = null;
+  let err1 = null;
+  try {
+    await prepareContinuation({
+      ctx: f.ctx,
+      agent: f.agent,
+      session: f.session,
+      seqs,
+      policy: f.engine.config,
+      capacity,
+      chain: { targets: [{ provider: 'p', model: 'm' }] },
+      compactionId: 'cmp-mr-reduce-1',
+      signal: signal(),
+      archiveRoot: join(f.root, 'archive', 'sess-mr'),
+      onProgressIdentity: k => { progressKey = k; },
+      manualRetry: true,
+      requestId: 'req-mr-1',
+      parallelContinuation: true,
+    });
+  } catch (e) {
+    err1 = e;
+  }
+  assert.equal(err1?.code, 'CONTINUATION_CALL_BUDGET', `expected CONTINUATION_CALL_BUDGET, got ${err1?.code}: ${err1?.message}`);
+  const store = new ContinuationProgressStore(join(f.root, 'archive', 'continuation-progress'), f.session.id, progressKey);
+  const saved1 = store.read()?.data;
+  assert.equal(saved1?.mode, 'map-reduce');
+  assert.equal(saved1?.reduced, false);
+  assert.ok((saved1?.reduceNext ?? 0) >= 4, `expected reduceNext >= 4 saved, got ${saved1?.reduceNext}`);
+  assert.ok(typeof saved1?.reduceMemory === 'string' && saved1.reduceMemory.length > 0);
+  assert.equal(saved1?.reduceGroupHashes?.length, saved1?.reduceNext);
+
+  const callsBeforeResume = f.calls.length;
+  const resumed = await prepareContinuation({
+    ctx: f.ctx,
+    agent: f.agent,
+    session: f.session,
+    seqs,
+    policy: f.engine.config,
+    capacity,
+    chain: { targets: [{ provider: 'p', model: 'm' }] },
+    compactionId: 'cmp-mr-reduce-2',
+    signal: signal(),
+    archiveRoot: join(f.root, 'archive', 'sess-mr'),
+    manualRetry: true,
+    requestId: 'req-mr-2',
+    parallelContinuation: true,
+  });
+  assert.ok(f.calls.length > callsBeforeResume);
+  assert.equal(resumed.summarized.continuation.progressKey, progressKey);
+  const saved2 = store.read()?.data;
+  assert.equal(saved2?.reduced, true);
+  assert.ok((saved2?.reduceNext ?? 0) > saved1.reduceNext);
+
+  // Tampered reduceGroupHashes (unfinished & completed), premature completion, and oversized reduceNext must all fail closed
+  const runExpectInvalid = async (mutated, suffix) => {
+    const cur = store.read();
+    store.write(mutated, cur.revision);
+    await assert.rejects(
+      () => prepareContinuation({
+        ctx: f.ctx,
+        agent: f.agent,
+        session: f.session,
+        seqs,
+        policy: f.engine.config,
+        capacity,
+        chain: { targets: [{ provider: 'p', model: 'm' }] },
+        compactionId: `cmp-mr-reduce-${suffix}`,
+        signal: signal(),
+        archiveRoot: join(f.root, 'archive', 'sess-mr'),
+        manualRetry: true,
+        requestId: `req-mr-${suffix}`,
+        parallelContinuation: true,
+      }),
+      err => err?.code === 'CONTINUATION_PROGRESS_INVALID',
+    );
+  };
+
+  const prematureCompleted = {
+    ...structuredClone(saved1),
+    reduced: true,
+    memory: FINAL_MERGE_NOTE,
+    reduceMemory: FINAL_MERGE_NOTE,
+    last: {
+      rawText: FINAL_MERGE_NOTE,
+      summary: [{ type: 'text', text: FINAL_MERGE_NOTE }],
+      provider: 'p',
+      model: 'm',
+      maxTokens: 8192,
+      language: 'en',
+      usage: null,
+      reconstruction: null,
+    },
+  };
+  await runExpectInvalid(prematureCompleted, 'premature');
+
+  const completedTamperedHash = {
+    ...structuredClone(saved2),
+    reduceGroupHashes: ['f'.repeat(64), ...saved2.reduceGroupHashes.slice(1)],
+  };
+  await runExpectInvalid(completedTamperedHash, 'completed-hash');
+
+  const completedOversizedCursor = {
+    ...structuredClone(saved2),
+    reduceNext: 999,
+    reduceGroupHashes: Array.from({ length: 999 }, (_, i) => saved2.reduceGroupHashes[i] ?? 'a'.repeat(64)),
+  };
+  await runExpectInvalid(completedOversizedCursor, 'completed-cursor');
+
+  await runExpectInvalid(
+    { ...structuredClone(saved1), reduceGroupHashes: ['f'.repeat(64), ...saved1.reduceGroupHashes.slice(1)] },
+    'unreduced-hash',
+  );
+});
+
+await test('goal-round2-codex-P1-2-reordered-checkpoint-superseded-read-uses-surface-index', async () => {
+  const f = fixture({
+    microcompactRepeatedReadMinChars: 500,
+    continuationMemoryBytes: 2048,
+    maxSummaryChunks: 1,
+    summaryInputMaxBytes: 11700,
+    windowFallback: 1000000,
+  });
+  // Construct reordered surface [0, 1, 2, 10, 5, 6] mimicking checkpoint replacement + preserved tail
+  f.add('system', 'Sys.'); // seq 0
+  f.session.append('assistant/message', {
+    message: {
+      id: randomUUID(), role: 'assistant',
+      content: [{ type: 'tool-call', callId: 'c1', name: 'read_file', arguments: { path: 'app.js' } }],
+      source: { kind: 'model', provider: 'p', model: 'm' },
+    },
+  }, { surfaceOp: 'append' }); // seq 1
+  f.session.append('tool/result', {
+    message: { role: 'tool', toolCallId: 'c1', content: [{ type: 'text', text: 'R1_'.repeat(200) }] },
+  }, { surfaceOp: 'append' }); // seq 2 (600 chars)
+  f.add('assistant', 'pad-3'); // seq 3 (not on surface)
+  f.add('assistant', 'pad-4'); // seq 4 (not on surface)
+  f.session.append('assistant/message', {
+    message: {
+      id: randomUUID(), role: 'assistant',
+      content: [{ type: 'tool-call', callId: 'c2', name: 'read_file', arguments: { path: 'app.js' } }],
+      source: { kind: 'model', provider: 'p', model: 'm' },
+    },
+  }, { surfaceOp: 'append' }); // seq 5
+  f.session.append('tool/result', {
+    message: { role: 'tool', toolCallId: 'c2', content: [{ type: 'text', text: 'R2_'.repeat(200) }] },
+  }, { surfaceOp: 'append' }); // seq 6 (supersedes seq 2)
+  // Empty slots 7..9 then checkpoint at seq 10
+  f.add('assistant', 'pad-7');
+  f.add('assistant', 'pad-8');
+  f.add('assistant', 'pad-9');
+  const cpEvent = f.session.append('user/message', {
+    id: randomUUID(), role: 'user',
+    source: { kind: 'compact-checkpoint', compactionId: 'c-prev', memoryRequirements: [], memorySources: [], memoryDecisions: [] },
+    content: [{ type: 'text', text: 'Checkpoint summary: ' + 'x'.repeat(2100) }],
+  }); // seq 10 (sized so [1, 2, 10] fits 1 page ONLY if seq 2 is collapsed, and exceeds 1 page otherwise)
+  f.surface.nodes.splice(0, f.surface.nodes.length, 0, 1, 2, cpEvent.seq, 5, 6);
+
+  const capacity = {
+    targets: [{ provider: 'p', model: 'm', key: '["p","m"]', window: 1000000, output: 8192, margin: 12000, inputRatio: 0.85, maxInputBytes: 11700, scale: 1, source: 'test' }],
+    shrinkLimit: Infinity, shrinkTokenLimit: Infinity, observedOverflows: 0, cjkTokensPerChar: 0.75,
+  };
+  const wave = selectContinuationWave(f.session, {
+    endSeq: 6,
+    policy: f.engine.config,
+    maxPages: 1,
+    capacity,
+  });
+  // seq 6 supersedes seq 2, and seq 6 is OUTSIDE prefix [1, 2, 10], so seq 2 stays ~600B
+  // making [1, 2, 10] > 1 page; wave must safely pick [1, 2] instead of [1, 2, 10].
+  assert.deepEqual(wave.seqs, [1, 2], `expected [1, 2] not [1, 2, 10], got ${JSON.stringify(wave.seqs)}`);
+
+  const VALID_NOTES = '## Goal\nContinue review.\n## State\nEvidence archived.\n## Next\nReview.\n## Uncertain\nNone.';
+  f.ctx.llm.stream = async function* (req) {
+    f.calls.push(req);
+    yield { type: 'text-delta', text: VALID_NOTES };
+    yield { type: 'finish', kind: 'stop' };
+  };
+  const prep = await prepareContinuation({
+    ctx: f.ctx, agent: f.agent, session: f.session, seqs: wave.seqs,
+    policy: f.engine.config, capacity, chain: { targets: [{ provider: 'p', model: 'm' }] },
+    compactionId: 'cmp-reorder', signal: signal(), archiveRoot: join(f.root, 'archive', 'sess-reorder'),
+  });
+  assert.equal(prep.summarized.continuation.pages.length, 1);
+});
+
+await test('goal-round2-codex-P2-3-impossible-checkpoint-budget-fast-fail', async () => {
+  const f = fixture({ auto: false });
+  f.add('system', 'Sys.');
+  for (let i = 1; i < 2000; i += 1) {
+    f.add('assistant', `Assistant step ${i}`);
+  }
+  const cap = await resolveSummaryCapacity(
+    { llm: { resolveModelInfo: async () => ({ contextWindow: 200000, maxTokens: 8192 }) }, logger: { warn() {} } },
+    { targets: [{ provider: 'p', model: 'm' }] },
+    f.engine.config,
+    signal(),
+  );
+  const t0 = performance.now();
+  assert.throws(
+    () => selectContinuationWave(f.session, {
+      endSeq: f.surface.nodes.at(-1),
+      policy: f.engine.config,
+      maxPages: 32,
+      capacity: cap,
+      checkpointBudgetTokens: 1000,
+    }),
+    err => err?.code === 'CONTINUATION_TOO_LARGE',
+  );
+  const elapsed = performance.now() - t0;
+  assert.ok(elapsed < 200, `impossible checkpointBudgetTokens took ${elapsed.toFixed(1)}ms`);
+
+  // Custom estimateCheckpointTokens charging differently for equal-length scope strings must agree with prepareContinuation
+  const fs = fixture({ continuationMemoryBytes: 2048, summaryInputMaxBytes: 14400 });
+  fs.add('system', 'Sys.');
+  for (let i = 1; i <= 11; i += 1) {
+    fs.add('assistant', `msg ${String(i).padStart(2, '0')}`);
+  }
+  const capCustom = {
+    targets: [{ provider: 'p', model: 'm', key: '["p","m"]', window: 200000, output: 8192, margin: 12000, inputRatio: 0.85, maxInputBytes: 14400, scale: 1, source: 'test' }],
+    shrinkLimit: Infinity, shrinkTokenLimit: Infinity, observedOverflows: 0, cjkTokensPerChar: 0.75,
+  };
+  const customMeter = (blocks) => {
+    const txt = blocksToText(blocks);
+    return approxTokens(txt) + (txt.includes('Scope: 11 selected') ? 500 : 0);
+  };
+  const basePlan10 = planContinuationMemory([], fs.engine.config, { estimateTokens: customMeter });
+  const budgetTokensCustom = basePlan10.reservedTokens + 150;
+  const waveCustom = selectContinuationWave(fs.session, {
+    endSeq: fs.surface.nodes.at(-1),
+    policy: fs.engine.config,
+    maxPages: 32,
+    capacity: capCustom,
+    checkpointBudgetTokens: budgetTokensCustom,
+    estimateCheckpointTokens: customMeter,
+  });
+  assert.equal(waveCustom.seqs.length, 10, `expected 10-message prefix avoiding 11-message scope penalty, got ${waveCustom.seqs.length}`);
+});
+
+await test('goal-round2-codex-P2-4-provenance-coordinated-conjunction-partial-cancel', () => {
+  for (const conj of ['并', '并且']) {
+    const f = fixture({ auto: false });
+    const u0 = f.add('user', `我已批准发布 alpha-svc 到 staging ${conj}删除临时目录 tmp_old。`);
+    const u1 = f.add('user', '取消删除临时目录 tmp_old。');
+    const sel = selectSessionMemory(f.session, [u0.seq, u1.seq]);
+
+    const baseSummary = [
+      '## 1. Primary Request and Intent',
+      '- KEEP_PLACEHOLDER',
+      '## 2. Key Technical Concepts',
+      '- Staging.',
+      '## 3. Files and Code Sections',
+      '- None.',
+      '## 4. Errors and Fixes',
+      '- None.',
+      '## 5. Problem Solving',
+      '- Cancelled cleanup.',
+      '## 6. All User Messages',
+      '[filled by engine]',
+      '## 7. Pending Tasks',
+      '- DONE_PLACEHOLDER',
+      '## 8. Work Completed',
+      '- Prepared.',
+      '## 9. Context for Continuing Work',
+      '- Continue.',
+    ].join('\n');
+
+    const okSummary = baseSummary
+      .replace('KEEP_PLACEHOLDER', '用户已批准发布 alpha-svc 到 staging。')
+      .replace('DONE_PLACEHOLDER', '发布 alpha-svc 到 staging。');
+    const okAudit = auditMemorySelection({ selection: sel, summaryText: okSummary });
+    assert.equal(okAudit.lost.length, 0, `${conj}: expected 0 lost items, got ${JSON.stringify(okAudit.lost)}`);
+
+    const badCancelledSummary = baseSummary
+      .replace('KEEP_PLACEHOLDER', '用户已批准删除临时目录 tmp_old。')
+      .replace('DONE_PLACEHOLDER', '删除 tmp_old。');
+    const badCancelledAudit = auditMemorySelection({ selection: sel, summaryText: badCancelledSummary });
+    assert.equal(badCancelledAudit.lost.some(x => x.reason === 'provenance'), true, conj);
+
+    const badCompoundSummary = baseSummary
+      .replace('KEEP_PLACEHOLDER', `用户已批准发布 alpha-svc 到 staging ${conj}删除临时目录 tmp_old。`)
+      .replace('DONE_PLACEHOLDER', '发布 alpha-svc。');
+    const badCompoundAudit = auditMemorySelection({ selection: sel, summaryText: badCompoundSummary });
+    assert.equal(badCompoundAudit.lost.some(x => x.reason === 'provenance'), true, conj);
+  }
+});
+
+await test('goal-round2-codex-P2-5-tolerance-float-parity-and-alternating-month-linear', () => {
+  const vals = [
+    '1.0000000000009',
+    '1.0000000000008',
+    '1.0000000000007',
+    '1.0000000000006',
+    '1.0000000000005',
+    '1.0000000000004',
+    '1.0000000000018',
+  ];
+  const brute = (msgs) => {
+    const kept = [];
+    for (const m of msgs) {
+      for (let i = kept.length - 1; i >= 0; i -= 1) {
+        const rep = auditCompaction({
+          userMessages: [{ seq: 0, text: kept[i].text }],
+          summaryText: m.text,
+          checkpointText: kept[i].text,
+          threshold: 0.85,
+        });
+        if (rep.lost.some(x => ['polarity', 'value', 'unit', 'range', 'relation', 'exception', 'reference'].includes(x.reason))) {
+          kept.splice(i, 1);
+        }
+      }
+      kept.push(m);
+    }
+    return kept.map(m => m.seq);
+  };
+  for (const seqVals of [vals, [...vals.slice(0, 6).reverse(), vals[6]]]) {
+    const msgs = seqVals.map((v, seq) => ({ seq, role: 'user', text: `Must wait ${v} seconds before checking the logs.` }));
+    const got = selectMemoryMessages(msgs).active.map(m => m.seq);
+    assert.deepEqual(got, brute(msgs));
+  }
+
+  const altMonthMsgs = Array.from({ length: 2000 }, (_, i) => ({
+    seq: i,
+    role: 'user',
+    text: `必须在 ${2000 + i}年${(i % 2) + 1}月9日 完成每日备份归档任务`,
+  }));
+  const t0 = performance.now();
+  const altRes = selectMemoryMessages(altMonthMsgs);
+  const altMs = performance.now() - t0;
+  assert.equal(altRes.active.length, 2000);
+  assert.ok(altMs < 500, `2000 alternating-month rules took ${altMs.toFixed(1)}ms`);
 });
 
 for (const engine of fixtures) engine.dispose();

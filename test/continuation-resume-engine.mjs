@@ -12,7 +12,7 @@ async function fixture(extra={},response=NOTES){
  add('Stable system','system');add('如果报告提到它，不要写库。\n'+'archiveblob '.repeat(6000));add('evidence '.repeat(4000),'assistant');
  const calls=[];const measure=()=>{const nodes=surface.nodes.map(seq=>({seq,tokens:approxTokens(blocksToText(session.deriveEventMessage(events[seq])?.content))}));return {nodes,totalTokens:nodes.reduce((n,x)=>n+x.tokens,0)};};
  const ctx={on(){},provide(){},logger:{info(){},warn(){}},sessions:{async flush(){}},tokenMeter:{measure},llm:{async resolveModelInfo(){return {contextWindow:1000000};},async *stream(options){calls.push(options);const text=typeof response==='function'?await response(options,calls.length):response;if(text instanceof Error)throw text;yield {type:'text-delta',text};yield {type:'finish',kind:'stop'};}}};
- const engine=new WeaveCompactionEngine(ctx,resolveConfig({summaryRetryCount:0,summaryRetryDelayMs:0,archiveDir:join(root,'archive'),summaryInputMaxBytes:50000,maxSummaryChunks:32,windowFallback:1000000,...extra}).config);engine.historyToolsAvailable=true;
+ const engine=new WeaveCompactionEngine(ctx,resolveConfig({summaryConcurrency:1,summaryRetryCount:0,summaryRetryDelayMs:0,archiveDir:join(root,'archive'),summaryInputMaxBytes:50000,maxSummaryChunks:32,windowFallback:1000000,...extra}).config);engine.historyToolsAvailable=true;
  const agent={session,options:{provider:'p',model:'m'},runMaintenance:fn=>fn(new AbortController().signal)};
  const run=()=>engine._compactNowInner(agent,new AbortController().signal,undefined,true);
  const request=()=>surface.nodes.map(seq=>session.deriveEventMessage(events[seq]));
