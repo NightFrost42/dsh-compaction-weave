@@ -108,7 +108,7 @@ dsh plugin --profile web add /absolute/path/dsh-compaction-weave-0.6.0.tgz
 
 ## 测试与验证
 
-`0.6.0` 已在本地通过全部静态拓扑检查（`289` 源文件 / `91` 模块 `0` 环 DAG）、全量离线回归（**104 套 / 1,603 项用例**）及隔离的 **DSH `0.2.2-rc.1` / `0.2.2-rc.3`** 双宿主集成回归（各 **112 套 / 1,735 项用例**，0 失败）。真实模型网关三方无失真对比实盘摘要（`Weave 0.6.0` vs `DSH Basic` vs `billion-context@0.0.1328-master.ced22b1`，原始采样保留于 `2026-11-25` `candidateCommit: 01f6502` 的 [`docs/benchmarks/v0.6.0-live-three-way.json`](docs/benchmarks/v0.6.0-live-three-way.json)）：
+`0.6.0` 已在本地通过全部静态拓扑检查（`289` 源文件 / `91` 模块 `0` 环 DAG）、全量离线回归（**104 套 / 1,605 项用例**）及隔离的 **DSH `0.2.2-rc.1` / `0.2.2-rc.3`** 双宿主集成回归（各 **112 套 / 1,737 项用例**，0 失败）。真实模型网关三方无失真对比实盘摘要（`Weave 0.6.0` vs `DSH Basic` vs `billion-context@0.0.1328-master.ced22b1`，原始采样保留于 `2026-11-25` `candidateCommit: 01f6502` 的 [`docs/benchmarks/v0.6.0-live-three-way.json`](docs/benchmarks/v0.6.0-live-three-way.json)）：
 
 | 对比维度（2026-11-25 实盘） | `Weave 0.6.0` | `DSH Basic` | `billion-context@0.0.1328-master.ced22b1` |
 | --- | :---: | :---: | :---: |

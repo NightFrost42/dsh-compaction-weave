@@ -871,17 +871,35 @@ await test('continuation-map-reduce-mid-map-failure-persists-ordered-prefix-and-
   try {
     let failPage3 = true;
     let totalCalls = 0;
+    let resolvePage2;
+    const page2Done = new Promise((resolve) => { resolvePage2 = resolve; });
     const ctx = {
       llm: {
         async *stream(opts) {
           totalCalls += 1;
           const promptText = JSON.stringify(opts.messages);
           const isMap = promptText.includes('Independent notes for page');
-          if (isMap && failPage3 && promptText.includes('Independent notes for page 3 ')) {
-            await delay(20);
-            throw Object.assign(new Error('page 3 transport error'), { code: 'ECONNRESET' });
+          if (isMap && failPage3) {
+            if (promptText.includes('Independent notes for page 1 ')) {
+              await delay(5);
+            } else if (promptText.includes('Independent notes for page 2 ')) {
+              await delay(10);
+              resolvePage2();
+            } else if (promptText.includes('Independent notes for page 3 ')) {
+              await page2Done;
+              await delay(25);
+              throw Object.assign(new Error('page 3 transport error'), { code: 'ECONNRESET' });
+            } else {
+              // Hold page 4+ until worker pool aborts on page 3 failure so fast 1ms Linux timers never race ahead.
+              await new Promise((resolve, reject) => {
+                const timer = setTimeout(resolve, 1000);
+                opts.signal?.addEventListener('abort', () => {
+                  clearTimeout(timer);
+                  reject(Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORTED' }));
+                }, { once: true });
+              });
+            }
           }
-          await delay(isMap && promptText.includes('Independent notes for page 1 ') ? 5 : 10);
           yield { type: 'text-delta', text: isMap ? INTERMEDIATE_NOTES : VALID_NOTES };
           yield { type: 'usage', usage: { inputTokens: 80, outputTokens: 20, totalTokens: 100 } };
           yield { type: 'finish', kind: 'stop' };

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import {existsSync} from 'node:fs';import {mkdtemp,readFile,readdir,writeFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join,dirname} from 'node:path';
-import {FailureDiagnostics,diagnosticFor,diagnosticText,failureExplanation,diagnosticContext,noteDiagnosticMeasurement,sanitizeWindowLookupFailure} from '../lib/failure-diagnostics.js';import {summarizeWithChain} from '../lib/summary.js';import {dumpAuditRejection} from '../lib/audit-reject.js';import {decorateCompactCommand} from '../lib/command-compact.js';import {resolveSummaryCapacity,assertSummaryCapacity} from '../lib/summary-budget.js';import {resolveConfig} from '../lib/config.js';import {WeaveCompactionEngine} from '../lib/engine.js';
+import {FailureDiagnostics,diagnosticFor,diagnosticText,failureExplanation,diagnosticContext,noteDiagnosticMeasurement,sanitizeWindowLookupFailure} from '../lib/failure-diagnostics.js';import {summarizeWithChain} from '../lib/summary.js';import {dumpAuditRejection} from '../lib/audit-reject.js';import {decorateCompactCommand} from '../lib/command-compact.js';import {resolveSummaryCapacity,assertSummaryCapacity} from '../lib/summary-budget.js';import {resolveConfig} from '../lib/config.js';import {buildCompactionInstruction} from '../lib/prompt.js';import {WeaveCompactionEngine} from '../lib/engine.js';
 const results=[];async function test(name,fn){try{await fn();results.push({name,pass:true});}catch(error){results.push({name,pass:false,error:error.message,stack:error.stack});}}
 const root=await mkdtemp(join(tmpdir(),'weave-failure-reports-'));
 const err=(code,extras={})=>Object.assign(new Error('PRIVATE_TRANSCRIPT sk-'+'x'.repeat(30)),{code,...extras});
@@ -218,5 +218,206 @@ await test('sanitizeWindowLookupFailure-allowlists-codes-and-blocks-secret-prefi
  assert.equal(parsed.errors[0].windowLookupFailure?.code,'UNKNOWN');
  assert.match(diagnosticFor(e).explanation,/code=UNKNOWN/);
  assert.equal(diagnosticFor(e).explanation.includes('VendorCustomFailure'),false);
+});
+await test('issue25-COMPACTION_CAPACITY_BLOCKED-explanation-and-root-cause-precedence',()=>{
+  const pureTarget=failureExplanation(err('COMPACTION_CAPACITY_BLOCKED',{
+    capacityReason:'reduction-target-not-met',
+    measuredTokens:142000,
+    targetTokens:120000,
+    messageBudgetTokens:191808,
+    thresholdTokens:158808,
+    retainTokens:30689,
+    retainedTailTokens:45000,
+    minimumReductionRatio:0.2,
+    committedChunks:1,
+  }));
+  assert.match(pureTarget,/COMPACTION_CAPACITY_BLOCKED/);
+  assert.match(pureTarget,/142000 tokens/);
+  assert.match(pureTarget,/120000 tokens/);
+  assert.match(pureTarget,/45000 tokens/);
+  assert.match(pureTarget,/30689 tokens/);
+  assert.match(pureTarget,/最小压缩幅度 20%/);
+  assert.match(pureTarget,/\/compact/);
+  assert.match(pureTarget,/retainRatio \/ retainTokens/);
+  assert.match(pureTarget,/minimumReductionRatio/);
+  assert.match(pureTarget,/新会话/);
+  assert.doesNotMatch(pureTarget,/preserveRecentMessages/);
+
+  const wrappedAuto=failureExplanation(err('COMPACTION_AUTOMATIC_BLOCKED',{
+    failureCode:'COMPACTION_CAPACITY_BLOCKED',
+    cause:err('COMPACTION_CAPACITY_BLOCKED',{
+      capacityReason:'over-message-budget',
+      measuredTokens:195000,
+      targetTokens:150000,
+      messageBudgetTokens:191808,
+      thresholdTokens:158808,
+      retainTokens:30689,
+      retainedTailTokens:194000,
+      committedChunks:0,
+    }),
+  }));
+  assert.match(wrappedAuto,/COMPACTION_CAPACITY_BLOCKED/);
+  assert.match(wrappedAuto,/195000 tokens/);
+  assert.match(wrappedAuto,/191808 tokens/);
+  assert.match(wrappedAuto,/194000 tokens/);
+  assert.doesNotMatch(wrappedAuto,/preserveRecentMessages/);
+
+  const wrappedApi=failureExplanation(err('COMPACTION_CAPACITY_BLOCKED',{
+    measuredTokens:170000,
+    targetTokens:136000,
+    cause:err('PI_AI_ERROR'),
+  }));
+  assert.match(wrappedApi,/PI_AI_ERROR/);
+  assert.doesNotMatch(wrappedApi,/尾部保留区/);
+});
+await test('issue25-finishAutoBatch-attaches-capacity-details-and-preserves-cause-end-to-end',async()=>{
+  const validSummary=buildCompactionInstruction('en')
+    .split('\n')
+    .filter(line=>/^## [1-9]\./.test(line))
+    .map((heading,idx)=>`${heading}\n${idx===5?'[filled by engine]':'Compact earlier turn.'}`)
+    .join('\n\n');
+  const makeSession=(id,tailTokens)=>{
+    const events=[];
+    const surface={nodes:[],replaceGeneration:0};
+    const nodeTokens=new Map();
+    const s={
+      id,
+      surface,
+      get seq(){return events.length;},
+      eventAt:seq=>events[seq],
+      snapshotEvents:()=>[...events],
+      requestHeader:()=>({config:{provider:'local',model:'fixture'}}),
+      toolHistory:()=>[],
+      deriveEventMessage:ev=>ev?.type==='user/message'?ev.data:ev?.data?.message,
+      append(type,data,opts={}){
+        const ev={seq:events.length,time:Date.now(),type,data,...opts};
+        events.push(ev);
+        if(opts.surfaceOp==='append')surface.nodes.push(ev.seq);
+        else if(opts.surfaceOp?.op==='replace'){
+          const a=surface.nodes.indexOf(opts.surfaceOp.startSeq),b=surface.nodes.indexOf(opts.surfaceOp.endSeq);
+          assert.ok(a>=0&&b>=a);
+          surface.nodes.splice(a,b-a+1,ev.seq);
+          surface.replaceGeneration++;
+        }
+        return ev;
+      },
+    };
+    const pushNode=(role,text,tok)=>{
+      const msg={role,content:[{type:'text',text}],source:role==='assistant'?{kind:'model',provider:'local',model:'fixture'}:{kind:role==='system'?'system-prompt':'user'}};
+      const ev=s.append(`${role}/message`,role==='user'?msg:{message:msg},{surfaceOp:'append'});
+      nodeTokens.set(ev.seq,tok);
+      return ev;
+    };
+    pushNode('system','System.',20);
+    s.append('turn/start',{turn:1});
+    pushNode('user','Compact earlier turn cleanly.\n'+'Archived historical context detail from earlier investigation step. '.repeat(60),10000);
+    pushNode('assistant','Large retained tail turn.',tailTokens);
+    s.append('turn/end',{turn:1});
+    s.append('turn/start',{turn:2});
+    s.append('step/start',{turn:2,step:1});
+    return {s,surface,nodeTokens};
+  };
+
+  // Case A: pure capacity block when continuation is disabled and uncompacted tail exceeds messageBudgetTokens
+  const caseA=makeSession('issue25-cap-pure',95000);
+  const engA=new WeaveCompactionEngine({
+    on(){},provide(){},logger:{info(){},warn(){}},
+    sessions:{get:id=>id===caseA.s.id?caseA.s:null,async flush(){return true;}},
+    tokenMeter:{
+      measure(){
+        const nodes=caseA.surface.nodes.map(seq=>({seq,tokens:caseA.nodeTokens.get(seq)??80}));
+        return {nodes,totalTokens:nodes.reduce((sum,n)=>sum+n.tokens,0),precision:'priced'};
+      },
+    },
+    llm:{
+      async resolveModelInfo(){return {contextWindow:100000,maxTokens:8192};},
+      async *stream(){yield {type:'text-delta',text:validSummary};yield {type:'finish',kind:'stop'};},
+    },
+  },resolveConfig({
+    archiveDir:join(root,'issue25-archive-a'),
+    language:'en',
+    thresholdRatio:0.8,
+    headroomTokens:20000,
+    minimumReductionRatio:0.2,
+    retainRatio:0.16,
+    continuationEnabled:false,
+    summaryRetryCount:0,
+    summaryRetryDelayMs:0,
+    sessionMemoryEnabled:false,
+    observationMaskingEnabled:false,
+  }).config);
+  engA.historyToolsAvailable=true;
+  const agentA={session:caseA.s,options:{provider:'local',model:'fixture'},runMaintenance:fn=>fn(new AbortController().signal)};
+  const thrownA=await rejected(engA.diagnostics.run(caseA.s,{trigger:'automatic',reportContext:engA._diagnosticContext(agentA)},()=>engA.compactIfNeeded(agentA,'pressure',new AbortController().signal)));
+  assert.equal(thrownA.code,'COMPACTION_CAPACITY_BLOCKED');
+  assert.equal(thrownA.capacityReason,'over-message-budget');
+  assert.equal(thrownA.committedChunks,1);
+  assert.ok(Number.isSafeInteger(thrownA.measuredTokens)&&thrownA.measuredTokens>=95000);
+  assert.ok(Number.isSafeInteger(thrownA.targetTokens)&&thrownA.targetTokens>0);
+  assert.equal(thrownA.messageBudgetTokens,91808);
+  assert.ok(Number.isSafeInteger(thrownA.thresholdTokens)&&thrownA.thresholdTokens>0);
+  assert.ok(Number.isSafeInteger(thrownA.retainTokens)&&thrownA.retainTokens>0);
+  assert.equal(thrownA.retainedTailTokens,95000);
+  assert.equal(thrownA.minimumReductionRatio,0.2);
+
+  const diagRecA=diagnosticFor(thrownA);
+  assert.equal(diagRecA?.status,'saved');
+  const diagJsonA=JSON.parse(await readFile(diagRecA.path,'utf8'));
+  assert.equal(diagJsonA.errors[0].code,'COMPACTION_CAPACITY_BLOCKED');
+  assert.equal(diagJsonA.errors[0].capacityReason,'over-message-budget');
+  assert.equal(diagJsonA.errors[0].retainedTailTokens,95000);
+  assert.equal(diagJsonA.errors[0].messageBudgetTokens,91808);
+  assert.equal(diagJsonA.errors[0].committedChunks,1);
+  assert.match(diagRecA.explanation,/COMPACTION_CAPACITY_BLOCKED/);
+  assert.match(diagRecA.explanation,/95000 tokens/);
+  assert.match(diagRecA.explanation,/91808 tokens/);
+  assert.match(diagRecA.explanation,/\/compact/);
+  assert.match(diagRecA.explanation,/retainRatio \/ retainTokens/);
+  assert.match(diagRecA.explanation,/minimumReductionRatio/);
+  assert.doesNotMatch(diagRecA.explanation,/preserveRecentMessages/);
+  engA.dispose();
+
+  // Case B: COMPACTION_CAPACITY_BLOCKED wrapping an underlying API failure preserves cause & surfaces root cause
+  const caseB=makeSession('issue25-cap-api',80000);
+  const engB=new WeaveCompactionEngine({
+    on(){},provide(){},logger:{info(){},warn(){}},
+    sessions:{get:id=>id===caseB.s.id?caseB.s:null,async flush(){return true;}},
+    tokenMeter:{
+      measure(){
+        const nodes=caseB.surface.nodes.map(seq=>({seq,tokens:caseB.nodeTokens.get(seq)??80}));
+        return {nodes,totalTokens:nodes.reduce((sum,n)=>sum+n.tokens,0),precision:'priced'};
+      },
+    },
+    llm:{
+      async resolveModelInfo(){return {contextWindow:100000,maxTokens:8192};},
+      async *stream(){throw Object.assign(new Error('provider api failure'),{code:'PI_AI_ERROR'});},
+    },
+  },resolveConfig({
+    archiveDir:join(root,'issue25-archive-b'),
+    language:'en',
+    thresholdRatio:0.8,
+    headroomTokens:20000,
+    minimumReductionRatio:0.2,
+    retainRatio:0.16,
+    continuationEnabled:true,
+    summaryRetryCount:0,
+    summaryRetryDelayMs:0,
+    sessionMemoryEnabled:false,
+    observationMaskingEnabled:false,
+  }).config);
+  engB.historyToolsAvailable=true;
+  const agentB={session:caseB.s,options:{provider:'local',model:'fixture'},runMaintenance:fn=>fn(new AbortController().signal)};
+  const thrownB=await rejected(engB.diagnostics.run(caseB.s,{trigger:'automatic',reportContext:engB._diagnosticContext(agentB)},()=>engB.compactIfNeeded(agentB,'pressure',new AbortController().signal)));
+  assert.equal(thrownB.code,'COMPACTION_CAPACITY_BLOCKED');
+  assert.equal(thrownB.capacityReason,'over-threshold');
+  assert.equal(thrownB.cause?.code,'SUMMARY_ALL_FAILED');
+  assert.ok(thrownB.cause?.failureCodes?.includes('PI_AI_ERROR')||thrownB.cause?.cause?.code==='PI_AI_ERROR');
+  assert.ok(Number.isSafeInteger(thrownB.measuredTokens)&&thrownB.measuredTokens>=90000);
+  assert.equal(thrownB.retainedTailTokens,90000);
+  const diagRecB=diagnosticFor(thrownB);
+  assert.equal(diagRecB?.status,'saved');
+  assert.match(diagRecB.explanation,/PI_AI_ERROR/);
+  assert.doesNotMatch(diagRecB.explanation,/尾部保留区/);
+  engB.dispose();
 });
 console.log(JSON.stringify({passed:results.filter(x=>x.pass).length,failed:results.filter(x=>!x.pass).length,results},null,2));if(results.some(x=>!x.pass))process.exitCode=1;

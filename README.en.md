@@ -108,7 +108,7 @@ Adjust common options under **Settings → Context Compaction (Weave)** (or on t
 
 ## Tests and verification
 
-`0.6.0` passed all static topology checks (`289` release files / `91` modules, `0`-cycle DAG), offline unit regressions (**104 suites / 1,603 checks**), and isolated dual-host integration suites against **DSH `0.2.2-rc.1` / `0.2.2-rc.3`** (**112 suites / 1,735 checks each**, `0` failures). Live Magpie gateway three-way benchmark summary (`Weave 0.6.0` vs `DSH Basic` vs `billion-context@0.0.1328-master.ced22b1`, raw `2026-11-25` capture preserved at `candidateCommit: 01f6502` in [`docs/benchmarks/v0.6.0-live-three-way.json`](docs/benchmarks/v0.6.0-live-three-way.json)):
+`0.6.0` passed all static topology checks (`289` release files / `91` modules, `0`-cycle DAG), offline unit regressions (**104 suites / 1,605 checks**), and isolated dual-host integration suites against **DSH `0.2.2-rc.1` / `0.2.2-rc.3`** (**112 suites / 1,737 checks each**, `0` failures). Live Magpie gateway three-way benchmark summary (`Weave 0.6.0` vs `DSH Basic` vs `billion-context@0.0.1328-master.ced22b1`, raw `2026-11-25` capture preserved at `candidateCommit: 01f6502` in [`docs/benchmarks/v0.6.0-live-three-way.json`](docs/benchmarks/v0.6.0-live-three-way.json)):
 
 | Comparison metric (2026-11-25 Live) | `Weave 0.6.0` | `DSH Basic` | `billion-context@0.0.1328-master.ced22b1` |
 | --- | :---: | :---: | :---: |
